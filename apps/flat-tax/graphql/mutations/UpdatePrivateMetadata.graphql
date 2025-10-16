@@ -1,0 +1,15 @@
+mutation UpdatePrivateMetadata($id: ID!, $input: [MetadataInput!]!) {
+  updatePrivateMetadata(id: $id, input: $input) {
+    item {
+      privateMetadata {
+        key
+        value
+      }
+    }
+    errors {
+      field
+      message
+      code
+    }
+  }
+}

@@ -1,0 +1,26 @@
+overwrite: true
+schema: "./graphql/schema.graphql"
+documents: "graphql/**/*.graphql"
+generates:
+  generated/graphql.ts:
+    plugins:
+      - "typescript"
+      - "typescript-operations"
+      - "typed-document-node"
+    config:
+      strictScalars: true
+      scalars:
+        _Any: unknown
+        Date: string
+        DateTime: string
+        Decimal: number
+        Minute: number
+        GenericScalar: any
+        JSON: any
+        JSONString: string
+        Metadata: Record<string, string>
+        PositiveDecimal: number
+        Upload: unknown
+        UUID: string
+        WeightScalar: number
+        Day: string
