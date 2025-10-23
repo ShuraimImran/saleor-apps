@@ -16,6 +16,7 @@ const MAX_RETRIES = 1;
 export interface Zip2TaxResponse {
   zip: string;
   taxRate: number;
+  shippingTaxable: boolean;
   city?: string;
   county?: string;
   state?: string;
@@ -35,9 +36,9 @@ export class Zip2TaxClient {
   /**
    * Lookup tax rate for a given ZIP or ZIP+4 code
    * @param zip - ZIP code (5 or 9 digits with hyphen, e.g., "90210" or "90210-3303")
-   * @returns Tax rate as a percentage (e.g., 9.5 for 9.5%)
+   * @returns Tax rate and shipping taxability information
    */
-  async lookupTaxRate(zip: string): Promise<Result<number, Error>> {
+  async lookupTaxRate(zip: string): Promise<Result<Zip2TaxResponse, Error>> {
     logger.info("Looking up tax rate", { zip });
 
     // Validate ZIP format
@@ -76,11 +77,9 @@ export class Zip2TaxClient {
     return err(new Zip2TaxAPIError("Failed to lookup tax rate after retries"));
   }
 
-  private async makeApiCall(zip: string): Promise<Result<number, Error>> {
+  private async makeApiCall(zip: string): Promise<Result<Zip2TaxResponse, Error>> {
     try {
       const url = this.buildApiUrl(zip);
-
-      logger.debug("Making API request", { url: ZIP2TAX_API_URL, zip });
 
       // Create AbortController for timeout
       const controller = new AbortController();
@@ -104,8 +103,6 @@ export class Zip2TaxClient {
 
         // Parse response
         const data = await response.json();
-
-        logger.debug("API response received", { data });
 
         // Extract tax rate from response
         return this.parseTaxRate(data);
@@ -167,7 +164,7 @@ export class Zip2TaxClient {
     return ok(undefined);
   }
 
-  private handleHttpError(status: number, responseText: string): Result<number, Error> {
+  private handleHttpError(status: number, responseText: string): Result<Zip2TaxResponse, Error> {
     logger.error("HTTP error from Zip2Tax API", { status, responseText });
 
     switch (status) {
@@ -206,28 +203,80 @@ export class Zip2TaxClient {
     }
   }
 
-  private parseTaxRate(data: any): Result<number, Error> {
+  private parseTaxRate(data: any): Result<Zip2TaxResponse, Error> {
     try {
       // Handle different possible response formats
       let taxRate: number | undefined;
+      let shippingTaxable = false;
+      let zip = "";
+      let city = "";
+      let county = "";
+      let state = "";
 
       if (typeof data === "object" && data !== null) {
-        // Try common field names
-        taxRate = data.taxRate ?? data.tax_rate ?? data.TaxRate ?? data.rate;
+        // Format 1: Nested z2tLookup structure (most common)
+        // Always use first address: data.z2tLookup.addressInfo.addresses[0]
+        if (data.z2tLookup?.addressInfo?.addresses?.length > 0) {
+          const firstAddress = data.z2tLookup.addressInfo.addresses[0];
+          const addressData = firstAddress?.address;
+          const taxRateString = addressData?.salesTax?.rateInfo?.taxRate;
 
-        // If response has a results array, get the first result
+          if (taxRateString) {
+            taxRate = parseFloat(taxRateString);
+
+            // Extract location data
+            zip = addressData?.zipCode || "";
+            city = addressData?.place || "";
+            county = addressData?.county || "";
+            state = addressData?.state || "";
+
+            // Check notes for shipping taxability
+            const notes = addressData?.notes || [];
+            shippingTaxable = notes.some((n: any) =>
+              n.noteDetail?.note?.toLowerCase().includes("shipping charges are taxable")
+            );
+          }
+        }
+
+        // Format 2: Direct fields (fallback)
+        if (!taxRate) {
+          taxRate = data.taxRate ?? data.tax_rate ?? data.TaxRate ?? data.rate;
+        }
+
+        // Format 3: Results array (fallback)
         if (!taxRate && Array.isArray(data.results) && data.results.length > 0) {
           const firstResult = data.results[0];
           taxRate = firstResult.taxRate ?? firstResult.tax_rate ?? firstResult.TaxRate ?? firstResult.rate;
         }
+
+        // Convert string to number if needed
+        if (typeof taxRate === "string") {
+          taxRate = parseFloat(taxRate);
+        }
       }
 
       if (typeof taxRate === "number" && !isNaN(taxRate)) {
-        logger.info("Tax rate parsed successfully", { taxRate });
-        return ok(taxRate);
+        const response: Zip2TaxResponse = {
+          zip,
+          taxRate,
+          shippingTaxable,
+          city: city || undefined,
+          county: county || undefined,
+          state: state || undefined,
+        };
+
+        logger.info("Tax rate parsed successfully", response);
+        return ok(response);
       }
 
-      logger.error("Failed to parse tax rate from response", { data });
+      logger.error("Failed to parse tax rate from response", {
+        data,
+        attemptedPaths: [
+          "z2tLookup.addressInfo.addresses[0].address.salesTax.rateInfo.taxRate",
+          "taxRate / tax_rate / TaxRate / rate",
+          "results[0].taxRate"
+        ]
+      });
       return err(
         new Zip2TaxAPIError(
           "Unable to parse tax rate from API response",

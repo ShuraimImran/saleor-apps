@@ -84,10 +84,12 @@ export const taxLookupsRouter = router({
         });
       }
 
-      const taxRate = result.value;
+      const zip2TaxResponse = result.value;
+      const taxRate = zip2TaxResponse.taxRate;
+      const shippingTaxable = zip2TaxResponse.shippingTaxable;
 
       // Save to metadata storage
-      await repository.saveLookup(input.zip, taxRate, config.metadataTTLDays);
+      await repository.saveLookup(input.zip, taxRate, shippingTaxable, config.metadataTTLDays);
 
       // Cache in memory
       await taxLookupCache.set(ctx.authData.saleorApiUrl, ctx.authData.appId, input.zip, taxRate);

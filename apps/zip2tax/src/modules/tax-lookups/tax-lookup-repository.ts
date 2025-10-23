@@ -61,8 +61,6 @@ export class TaxLookupRepository {
    */
   async getAllLookups(): Promise<Result<TaxLookupEntry[], Error>> {
     try {
-      logger.debug("Fetching all tax lookups from metadata");
-
       const metadata = await this.settingsManager.get(this.metadataKey);
 
       if (!metadata) {
@@ -77,12 +75,6 @@ export class TaxLookupRepository {
       const validLookups = collection.lookups.filter(
         (lookup) => !isLookupExpired(lookup)
       );
-
-      logger.debug("Tax lookups fetched", {
-        total: collection.lookups.length,
-        valid: validLookups.length,
-        expired: collection.lookups.length - validLookups.length,
-      });
 
       // If we filtered out expired lookups, save the cleaned collection
       if (validLookups.length !== collection.lookups.length) {
@@ -105,8 +97,6 @@ export class TaxLookupRepository {
    */
   async getLookup(zip4: string): Promise<Result<TaxLookupEntry | null, Error>> {
     try {
-      logger.debug("Fetching tax lookup for ZIP", { zip4 });
-
       const allLookupsResult = await this.getAllLookups();
 
       if (allLookupsResult.isErr()) {
@@ -116,17 +106,14 @@ export class TaxLookupRepository {
       const lookup = allLookupsResult.value.find((l) => l.zip4 === zip4);
 
       if (!lookup) {
-        logger.debug("Tax lookup not found in metadata", { zip4 });
         return ok(null);
       }
 
       // Double-check if expired
       if (isLookupExpired(lookup)) {
-        logger.debug("Tax lookup found but expired", { zip4 });
         return ok(null);
       }
 
-      logger.debug("Tax lookup found", { zip4, taxRate: lookup.taxRate });
       return ok(lookup);
     } catch (error) {
       logger.error("Failed to get tax lookup", { error, zip4 });
@@ -144,11 +131,10 @@ export class TaxLookupRepository {
   async saveLookup(
     zip4: string,
     taxRate: number,
+    shippingTaxable: boolean,
     ttlDays: number = 30
   ): Promise<Result<TaxLookupEntry, Error>> {
     try {
-      logger.debug("Saving tax lookup", { zip4, taxRate, ttlDays });
-
       const allLookupsResult = await this.getAllLookups();
 
       if (allLookupsResult.isErr()) {
@@ -161,7 +147,7 @@ export class TaxLookupRepository {
       const filteredLookups = existingLookups.filter((l) => l.zip4 !== zip4);
 
       // Create new lookup entry
-      const newLookup = createTaxLookupEntry(zip4, taxRate, ttlDays);
+      const newLookup = createTaxLookupEntry(zip4, taxRate, shippingTaxable, ttlDays);
 
       // Add new lookup
       const updatedLookups = [...filteredLookups, newLookup];
@@ -197,8 +183,6 @@ export class TaxLookupRepository {
    */
   async deleteLookup(zip4: string): Promise<Result<void, Error>> {
     try {
-      logger.debug("Deleting tax lookup", { zip4 });
-
       const allLookupsResult = await this.getAllLookups();
 
       if (allLookupsResult.isErr()) {
@@ -245,8 +229,6 @@ export class TaxLookupRepository {
    */
   async pruneExpiredLookups(): Promise<Result<number, Error>> {
     try {
-      logger.debug("Pruning expired tax lookups");
-
       const metadata = await this.settingsManager.get(this.metadataKey);
 
       if (!metadata) {

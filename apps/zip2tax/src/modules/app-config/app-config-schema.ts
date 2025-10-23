@@ -22,6 +22,7 @@ export const appConfigSchema = z.object({
    */
   defaultTaxRate: z.number().min(0).max(100).default(0),
   enableTaxCalculation: z.boolean().default(true),
+  shippingTaxable: z.boolean().default(false), // Populated from Zip2Tax response
 
   /**
    * Cache settings

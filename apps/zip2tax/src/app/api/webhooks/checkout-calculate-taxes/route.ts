@@ -120,6 +120,7 @@ async function calculateTaxesHandler(
         quantity: line.quantity,
         productId: undefined, // Product ID not available in this payload structure
       })),
+      shippingPrice: shippingAmount,
       currency: payload.taxBase.currency,
       pricesEnteredWithTax: payload.taxBase.pricesEnteredWithTax,
     };
@@ -138,30 +139,18 @@ async function calculateTaxesHandler(
     }
 
     const tax = taxResult.value;
-    // Use first line's tax rate for overall rate (simplified approach)
-    const taxRate = tax.lines.length > 0 ? tax.lines[0].taxRate : 0;
 
-    // Build response using calculated tax results - matching AvaTax response format
+    // Build response using calculated tax results
     const response: CalculateTaxesResponse = {
-      shipping_price_gross_amount: 0,
-      shipping_price_net_amount: 0,
-      shipping_tax_rate: 0,
+      shipping_price_gross_amount: tax.shippingPrice?.totalGrossMoney.amount || 0,
+      shipping_price_net_amount: tax.shippingPrice?.totalNetMoney.amount || 0,
+      shipping_tax_rate: tax.shippingPrice?.taxRate || 0,
       lines: tax.lines.map(line => ({
         total_gross_amount: line.totalGrossMoney.amount,
         total_net_amount: line.totalNetMoney.amount,
         tax_rate: line.taxRate,
       })),
     };
-
-    // Add shipping tax if there's shipping cost
-    if (shippingAmount > 0) {
-      const shippingTaxAmount = (shippingAmount * taxRate) / 100;
-      const shippingNet = shippingAmount - shippingTaxAmount;
-
-      response.shipping_price_gross_amount = shippingAmount;
-      response.shipping_price_net_amount = shippingNet;
-      response.shipping_tax_rate = taxRate;
-    }
 
     // Use the Saleor SDK response builder for proper formatting
     return NextResponse.json(checkoutCalculateTaxesResponse(response));

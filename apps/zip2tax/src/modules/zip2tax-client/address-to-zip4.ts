@@ -34,7 +34,6 @@ export function extractZip4FromAddress(address: Address): Result<string, Error> 
   const zip4Match = cleanedZip.match(zip4Pattern);
 
   if (zip4Match) {
-    logger.debug("ZIP+4 found in postal code", { zip4: cleanedZip });
     return ok(cleanedZip);
   }
 
@@ -45,7 +44,6 @@ export function extractZip4FromAddress(address: Address): Result<string, Error> 
   if (zip9Match) {
     // Format as ZIP+4 with hyphen
     const formatted = `${cleanedZip.slice(0, 5)}-${cleanedZip.slice(5)}`;
-    logger.debug("9-digit ZIP converted to ZIP+4", { original: cleanedZip, formatted });
     return ok(formatted);
   }
 
@@ -54,7 +52,6 @@ export function extractZip4FromAddress(address: Address): Result<string, Error> 
   const zip5Match = cleanedZip.match(zip5Pattern);
 
   if (zip5Match) {
-    logger.debug("5-digit ZIP found", { zip: cleanedZip });
     // Return as-is, the API can handle 5-digit ZIPs
     return ok(cleanedZip);
   }
@@ -155,3 +152,4 @@ export function normalizeZipCode(zip: string): string {
 
   return cleanedZip;
 }
+

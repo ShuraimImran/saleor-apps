@@ -7,6 +7,7 @@ import { z } from "zod";
 export const taxLookupEntrySchema = z.object({
   zip4: z.string(), // ZIP+4 code (e.g., "90210-3303" or "90210")
   taxRate: z.number().min(0).max(100), // Percentage (e.g., 9.5)
+  shippingTaxable: z.boolean().default(false), // Whether shipping is taxable for this ZIP
   lookupDate: z.string().datetime(), // When this was looked up
   expiresAt: z.string().datetime(), // When this cache entry expires
 });
@@ -42,6 +43,7 @@ export function createTaxLookupsCollection(): TaxLookupsCollection {
 export function createTaxLookupEntry(
   zip4: string,
   taxRate: number,
+  shippingTaxable: boolean,
   ttlDays: number = 30
 ): TaxLookupEntry {
   const now = new Date();
@@ -50,6 +52,7 @@ export function createTaxLookupEntry(
   return taxLookupEntrySchema.parse({
     zip4,
     taxRate,
+    shippingTaxable,
     lookupDate: now.toISOString(),
     expiresAt: expiresAt.toISOString(),
   });

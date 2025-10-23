@@ -27,6 +27,9 @@ const ConfigurationPage: NextPage = () => {
   // Fetch cache stats
   const { data: cacheStats, refetch: refetchStats } = trpcClient.taxLookups.getCacheStats.useQuery();
 
+  // Fetch all cached lookups
+  const { data: allLookups, refetch: refetchLookups } = trpcClient.taxLookups.getAllLookups.useQuery();
+
   // Update config mutation
   const updateConfigMutation = trpcClient.appConfig.updateConfig.useMutation({
     onSuccess: () => {
@@ -46,6 +49,7 @@ const ConfigurationPage: NextPage = () => {
       setLookupResult(data);
       setLookupError("");
       refetchStats();
+      refetchLookups();
     },
     onError: (error) => {
       setLookupError(error.message);
@@ -56,11 +60,22 @@ const ConfigurationPage: NextPage = () => {
   // Clear cache mutation
   const clearCacheMutation = trpcClient.taxLookups.clearCache.useMutation({
     onSuccess: () => {
-      alert("Cache cleared successfully!");
       refetchStats();
+      refetchLookups();
     },
     onError: (error) => {
-      alert(`Failed to clear cache: ${error.message}`);
+      console.error("Failed to clear cache:", error);
+    },
+  });
+
+  // Delete individual lookup mutation
+  const deleteLookupMutation = trpcClient.taxLookups.deleteLookup.useMutation({
+    onSuccess: () => {
+      refetchStats();
+      refetchLookups();
+    },
+    onError: (error) => {
+      console.error("Failed to delete lookup:", error);
     },
   });
 
@@ -104,12 +119,18 @@ const ConfigurationPage: NextPage = () => {
   };
 
   const handleClearCache = async () => {
-    if (confirm("Are you sure you want to clear all cached tax lookups?")) {
-      try {
-        await clearCacheMutation.mutateAsync();
-      } catch (error) {
-        console.error("Failed to clear cache:", error);
-      }
+    try {
+      await clearCacheMutation.mutateAsync();
+    } catch (error) {
+      console.error("Failed to clear cache:", error);
+    }
+  };
+
+  const handleDeleteLookup = async (zip4: string) => {
+    try {
+      await deleteLookupMutation.mutateAsync({ zip4 });
+    } catch (error) {
+      console.error("Failed to delete lookup:", error);
     }
   };
 
@@ -121,7 +142,7 @@ const ConfigurationPage: NextPage = () => {
           Zip2Tax Configuration
         </Text>
         <Text size={3} color="default2">
-          Configure your Zip2Tax API credentials and test tax rate lookups.
+          Configure Zip2Tax API credentials for accurate tax calculations.
         </Text>
       </Box>
 
@@ -342,61 +363,173 @@ const ConfigurationPage: NextPage = () => {
         borderRadius={4}
         backgroundColor="default1"
       >
-        <Text size={5} fontWeight="bold" marginBottom={4}>
-          Cache Statistics
-        </Text>
+        <Box display="flex" justifyContent="space-between" alignItems="center" marginBottom={4}>
+          <Text size={5} fontWeight="bold">
+            Cache Statistics
+          </Text>
+          <Button
+            variant="secondary"
+            size="medium"
+            onClick={handleClearCache}
+            disabled={clearCacheMutation.isLoading || !allLookups || allLookups.length === 0}
+          >
+            {clearCacheMutation.isLoading ? "Clearing..." : "Clear All"}
+          </Button>
+        </Box>
 
-        {cacheStats ? (
+        {cacheStats && (
+          <Box marginBottom={4}>
+            <Box display="flex" gap={8} marginBottom={3}>
+              <Box>
+                <Text size={3} color="default2" marginBottom={1}>
+                  Memory Cache
+                </Text>
+                <Text size={4} fontWeight="medium">
+                  {cacheStats.memoryCache.entries} entries ({cacheStats.memoryCache.ttlMinutes} min TTL)
+                </Text>
+              </Box>
+              <Box>
+                <Text size={3} color="default2" marginBottom={1}>
+                  Metadata Storage
+                </Text>
+                <Text size={4} fontWeight="medium">
+                  {cacheStats.metadataStorage.entries} entries
+                </Text>
+              </Box>
+            </Box>
+          </Box>
+        )}
+
+        {allLookups && allLookups.length > 0 ? (
           <Box>
-            <Box marginBottom={3}>
-              <Text size={4} fontWeight="medium" marginBottom={2}>
-                Memory Cache
-              </Text>
-              <Text size={3} color="default2" marginBottom={1}>
-                Entries: <strong>{cacheStats.memoryCache.entries}</strong>
-              </Text>
-              <Text size={3} color="default2">
-                TTL: <strong>{cacheStats.memoryCache.ttlMinutes} minutes</strong>
-              </Text>
-            </Box>
-
-            <Box marginBottom={4}>
-              <Text size={4} fontWeight="medium" marginBottom={2}>
-                Metadata Storage
-              </Text>
-              <Text size={3} color="default2">
-                Cached Lookups: <strong>{cacheStats.metadataStorage.entries}</strong>
-              </Text>
-            </Box>
-
-            <Button
-              variant="secondary"
-              size="medium"
-              onClick={handleClearCache}
-              disabled={clearCacheMutation.isLoading}
+            <Text size={4} fontWeight="medium" marginBottom={3}>
+              Cached Tax Rates
+            </Text>
+            <Box
+              style={{
+                border: "1px solid #e5e7eb",
+                borderRadius: "4px",
+                overflow: "hidden",
+              }}
             >
-              {clearCacheMutation.isLoading ? "Clearing..." : "Clear All Caches"}
-            </Button>
+              {/* Table Header */}
+              <Box
+                display="flex"
+                padding={3}
+                style={{
+                  backgroundColor: "#f9fafb",
+                  borderBottom: "1px solid #e5e7eb",
+                  fontWeight: "600",
+                }}
+              >
+                <Box style={{ flex: "0 0 140px" }}>
+                  <Text size={3}>ZIP Code</Text>
+                </Box>
+                <Box style={{ flex: "0 0 100px" }}>
+                  <Text size={3}>Tax Rate</Text>
+                </Box>
+                <Box style={{ flex: "0 0 140px" }}>
+                  <Text size={3}>Shipping Taxable</Text>
+                </Box>
+                <Box style={{ flex: "1" }}>
+                  <Text size={3}>Expires</Text>
+                </Box>
+                <Box style={{ flex: "0 0 80px", textAlign: "right" }}>
+                  <Text size={3}>Action</Text>
+                </Box>
+              </Box>
 
-            <Box marginTop={3}>
-              <Text size={2} color="default2">
-                Clearing caches will force fresh lookups from the Zip2Tax API for all future requests.
-              </Text>
+              {/* Table Rows */}
+              {allLookups.map((lookup, index) => (
+                <Box
+                  key={lookup.zip4}
+                  display="flex"
+                  padding={3}
+                  style={{
+                    borderBottom: index < allLookups.length - 1 ? "1px solid #e5e7eb" : "none",
+                    alignItems: "center",
+                  }}
+                >
+                  <Box style={{ flex: "0 0 140px" }}>
+                    <Text size={3} fontWeight="medium">
+                      {lookup.zip4}
+                    </Text>
+                  </Box>
+                  <Box style={{ flex: "0 0 100px" }}>
+                    <Text size={3}>{lookup.taxRate.toFixed(2)}%</Text>
+                  </Box>
+                  <Box style={{ flex: "0 0 140px" }}>
+                    <Box display="flex" alignItems="center" gap={2}>
+                      <Box
+                        style={{
+                          width: "20px",
+                          height: "20px",
+                          borderRadius: "50%",
+                          backgroundColor: lookup.shippingTaxable ? "#22c55e" : "#64748b",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "white",
+                          fontSize: "12px",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {lookup.shippingTaxable ? "✓" : "✗"}
+                      </Box>
+                      <Text size={3}>{lookup.shippingTaxable ? "Yes" : "No"}</Text>
+                    </Box>
+                  </Box>
+                  <Box style={{ flex: "1" }}>
+                    <Text size={2} color="default2">
+                      {new Date(lookup.expiresAt).toLocaleDateString()}
+                    </Text>
+                  </Box>
+                  <Box style={{ flex: "0 0 80px", textAlign: "right" }}>
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      onClick={() => handleDeleteLookup(lookup.zip4)}
+                      disabled={deleteLookupMutation.isLoading}
+                    >
+                      Clear
+                    </Button>
+                  </Box>
+                </Box>
+              ))}
             </Box>
           </Box>
         ) : (
-          <Text size={3} color="default2">
-            Loading cache statistics...
-          </Text>
+          <Box padding={4} style={{ textAlign: "center" }}>
+            <Text size={3} color="default2">
+              No cached tax rates yet. Perform a tax lookup to cache rates.
+            </Text>
+          </Box>
         )}
+
+        <Box marginTop={3}>
+          <Text size={2} color="default2">
+            Tax rates are cached in both memory (fast, temporary) and metadata storage (persistent).
+            Clearing cache will force fresh lookups from the Zip2Tax API.
+          </Text>
+        </Box>
       </Box>
 
       {/* Info Section */}
       <Box marginTop={6}>
         <Text size={3} color="default2">
-          <strong>How it works:</strong> When a customer checks out, their ZIP code is used to lookup
-          the tax rate from Zip2Tax. Results are cached in memory (15 minutes) and metadata storage
-          (30 days) to minimize API calls and improve performance.
+          <strong>How it works:</strong>
+          <br />
+          1. Customer enters ZIP code (5-digit or ZIP+4) during checkout
+          <br />
+          2. App checks memory cache (15 min TTL) for cached rate
+          <br />
+          3. If not in memory, checks metadata storage (30 day TTL)
+          <br />
+          4. If not cached, calls Zip2Tax API to get tax rate and shipping taxable status
+          <br />
+          5. Results are cached in both memory and metadata storage to minimize API calls
+          <br />
+          6. Tax rate is applied to line items, and shipping tax is applied if taxable for that ZIP
         </Text>
       </Box>
     </Box>

@@ -31,6 +31,7 @@ export interface TaxCalculationRequest {
   billingAddress?: TaxCalculationAddress | null;
   shippingAddress?: TaxCalculationAddress | null;
   lines: TaxCalculationLineItem[];
+  shippingPrice?: number;
   currency: string;
   pricesEnteredWithTax?: boolean;
 }
@@ -77,6 +78,8 @@ export class CalculateTaxesUseCase {
         linesCount: request.lines.length,
         hasBillingAddress: !!request.billingAddress,
         hasShippingAddress: !!request.shippingAddress,
+        billingAddress: request.billingAddress,
+        shippingAddress: request.shippingAddress,
       });
 
       // Get app config
@@ -109,19 +112,20 @@ export class CalculateTaxesUseCase {
         logger.error("Failed to get tax rate", { error: taxRateResult.error.message });
         // Fallback to default tax rate or zero
         const fallbackRate = config.defaultTaxRate;
-        logger.info("Using fallback tax rate", { fallbackRate });
-        return ok(this.calculateWithTaxRate(request, fallbackRate));
+        logger.info("Using fallback tax rate", { fallbackRate, shippingTaxable: config.shippingTaxable });
+        return ok(this.calculateWithTaxRate(request, fallbackRate, config.shippingTaxable));
       }
 
       const taxRate = taxRateResult.value;
 
       logger.info("Tax rate determined", {
         taxRate,
+        shippingTaxable: config.shippingTaxable,
         currency: request.currency,
         pricesEnteredWithTax: request.pricesEnteredWithTax,
       });
 
-      return ok(this.calculateWithTaxRate(request, taxRate));
+      return ok(this.calculateWithTaxRate(request, taxRate, config.shippingTaxable));
 
     } catch (error) {
       logger.error("Error calculating taxes", { error });
@@ -130,32 +134,32 @@ export class CalculateTaxesUseCase {
   }
 
   /**
-   * Get tax rate for an address using two-tier caching:
-   * 1. Check memory cache
-   * 2. Check metadata storage
-   * 3. Call Zip2Tax API
+   * Get tax rate for an address using multi-tier approach:
+   * 1. Extract ZIP code from address (5-digit or ZIP+4 if customer entered it)
+   * 2. Check memory cache
+   * 3. Check metadata storage
+   * 4. Call Zip2Tax API
+   * 5. Update shippingTaxable flag in config from Zip2Tax response
    */
   private async getTaxRateForAddress(
     address: TaxCalculationAddress,
     config: any
   ): Promise<Result<number, Error>> {
     try {
-      // Extract ZIP+4 from address
-      const zip4Result = extractZip4FromAddress(address);
+      // Step 1: Extract ZIP code from postal code field
+      const extractResult = extractZip4FromAddress(address);
 
-      if (zip4Result.isErr()) {
-        logger.warn("Failed to extract ZIP code from address", {
-          error: zip4Result.error.message,
+      if (extractResult.isErr()) {
+        logger.error("Failed to extract ZIP code from address", {
+          error: extractResult.error.message,
           address,
         });
-        return err(zip4Result.error);
+        return err(extractResult.error);
       }
 
-      const zip4 = zip4Result.value;
+      const zip4 = extractResult.value;
 
-      logger.debug("ZIP code extracted", { zip4 });
-
-      // 1. Check memory cache
+      // Step 2: Check memory cache
       const cachedRate = await taxLookupCache.get(this.saleorApiUrl, this.appId, zip4);
 
       if (cachedRate !== null) {
@@ -163,7 +167,7 @@ export class CalculateTaxesUseCase {
         return ok(cachedRate);
       }
 
-      // 2. Check metadata storage
+      // Step 3: Check metadata storage
       const lookupResult = await this.taxLookupRepository.getLookup(zip4);
 
       if (lookupResult.isErr()) {
@@ -180,7 +184,7 @@ export class CalculateTaxesUseCase {
         return ok(taxRate);
       }
 
-      // 3. Call Zip2Tax API
+      // Step 4: Call Zip2Tax API
       logger.info("Tax rate not found in cache, calling Zip2Tax API", { zip4 });
 
       // Check if we have credentials
@@ -190,23 +194,46 @@ export class CalculateTaxesUseCase {
       }
 
       const client = new Zip2TaxClient(config.zip2taxUsername, config.zip2taxPassword);
+
+      logger.info("Calling Zip2Tax API", { zip4 });
       const apiResult = await client.lookupTaxRate(zip4);
 
       if (apiResult.isErr()) {
         logger.error("Failed to lookup tax rate from Zip2Tax API", {
           error: apiResult.error.message,
+          errorType: apiResult.error.constructor.name,
           zip4,
         });
         return err(apiResult.error);
       }
 
-      const taxRate = apiResult.value;
+      const zip2TaxResponse = apiResult.value;
+      const taxRate = zip2TaxResponse.taxRate;
+      const shippingTaxable = zip2TaxResponse.shippingTaxable;
 
-      logger.info("Tax rate received from Zip2Tax API", { zip4, taxRate });
+      logger.info("Tax rate received from Zip2Tax API", {
+        zip4,
+        taxRate,
+        shippingTaxable,
+        city: zip2TaxResponse.city,
+        state: zip2TaxResponse.state,
+        willCacheInMemory: true,
+        willCacheInMetadata: true,
+        metadataTTLDays: config.metadataTTLDays,
+      });
 
-      // Store in both caches
+      // Store tax rate in both caches
       await taxLookupCache.set(this.saleorApiUrl, this.appId, zip4, taxRate);
-      await this.taxLookupRepository.saveLookup(zip4, taxRate, config.metadataTTLDays);
+      await this.taxLookupRepository.saveLookup(zip4, taxRate, shippingTaxable, config.metadataTTLDays);
+
+      // Update shippingTaxable flag in config if it changed
+      if (config.shippingTaxable !== shippingTaxable) {
+        logger.info("Updating shippingTaxable flag in config", {
+          previousValue: config.shippingTaxable,
+          newValue: shippingTaxable,
+        });
+        await this.appConfigRepository.updateConfig({ shippingTaxable });
+      }
 
       return ok(taxRate);
 
@@ -221,18 +248,51 @@ export class CalculateTaxesUseCase {
    */
   private calculateWithTaxRate(
     request: TaxCalculationRequest,
-    taxRatePercent: number
+    taxRatePercent: number,
+    shippingTaxable: boolean
   ): TaxCalculationResult {
     // Calculate taxes for each line
     const calculatedLines = request.lines.map(line =>
       this.calculateLineItemTax(line, taxRatePercent, request.currency, request.pricesEnteredWithTax)
     );
 
+    // Calculate shipping tax if applicable
+    let shippingPrice: TaxCalculationResult["shippingPrice"] | undefined;
+
+    if (request.shippingPrice !== undefined && request.shippingPrice > 0) {
+      const shippingTaxRate = shippingTaxable ? taxRatePercent : 0;
+      const shippingNet = request.shippingPrice;
+      const shippingTax = (shippingNet * shippingTaxRate) / 100;
+      const shippingGross = shippingNet + shippingTax;
+
+      shippingPrice = {
+        totalNetMoney: {
+          amount: shippingNet,
+          currency: request.currency,
+        },
+        totalGrossMoney: {
+          amount: shippingGross,
+          currency: request.currency,
+        },
+        taxRate: shippingTaxRate,
+      };
+
+      logger.info("Shipping tax calculated", {
+        shippingTaxable,
+        shippingNet,
+        shippingGross,
+        shippingTax,
+        shippingTaxRate,
+      });
+    }
+
     // Log detailed calculation results
     logger.info("Tax calculation completed", {
       taxRate: taxRatePercent,
+      shippingTaxable,
       currency: request.currency,
       pricesEnteredWithTax: request.pricesEnteredWithTax,
+      hasShipping: !!shippingPrice,
       results: calculatedLines.map(line => ({
         net: line.totalNetMoney.amount,
         gross: line.totalGrossMoney.amount,
@@ -243,7 +303,7 @@ export class CalculateTaxesUseCase {
 
     return {
       lines: calculatedLines,
-      // TODO: Add shipping tax calculation if needed
+      shippingPrice,
     };
   }
 

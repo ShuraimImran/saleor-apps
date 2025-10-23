@@ -28,6 +28,12 @@ export class Zip2TaxAuthError extends Zip2TaxAPIError {}
 export class Zip2TaxTimeoutError extends Zip2TaxAPIError {}
 export class Zip2TaxRateLimitError extends Zip2TaxAPIError {}
 
+export class USPSAPIError extends Zip2TaxError {}
+export class USPSAuthError extends USPSAPIError {}
+export class USPSTimeoutError extends USPSAPIError {}
+export class USPSAddressNotFoundError extends USPSAPIError {}
+export class USPSInvalidAddressError extends USPSAPIError {}
+
 export class WebhookError extends Zip2TaxError {}
 export class InvalidWebhookPayloadError extends WebhookError {}
 export class WebhookAuthenticationError extends WebhookError {}

@@ -38,7 +38,7 @@ const handler = createAppRegisterHandler({
     });
   },
   onAuthAplSaved: async (_req, context) => {
-    logger.info("Flat Tax app configuration set up successfully", {
+    logger.info("Zip2Tax app configuration set up successfully", {
       saleorApiUrl: context.authData.saleorApiUrl,
     });
   },
