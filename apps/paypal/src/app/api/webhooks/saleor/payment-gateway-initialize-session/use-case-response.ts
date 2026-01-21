@@ -5,6 +5,20 @@ import { PaymentGatewayInitializeSession } from "@/generated/app-webhooks-types/
 import { AppContext } from "@/lib/app-context";
 import { PayPalClientId } from "@/modules/paypal/paypal-client-id";
 
+/**
+ * Saved payment method for ACDC Card Vaulting (Phase 1)
+ * Returned in PaymentGatewayInitializeSession for "Return Buyer" flow
+ */
+export interface SavedPaymentMethod {
+  id: string; // PayPal payment token ID (vault_id)
+  type: "card";
+  card: {
+    brand: string;
+    lastDigits: string;
+    expiry?: string;
+  };
+}
+
 class Success extends SuccessWebhookResponse {
   readonly pk: PayPalClientId;
   readonly merchantClientId?: string;
@@ -16,6 +30,7 @@ class Success extends SuccessWebhookResponse {
     advancedCardProcessing: boolean;
     vaulting: boolean;
   };
+  readonly savedPaymentMethods: SavedPaymentMethod[];
 
   private static ResponseDataSchema = z.object({
     paypalClientId: z.string(),
@@ -28,6 +43,16 @@ class Success extends SuccessWebhookResponse {
       advancedCardProcessing: z.boolean(),
       vaulting: z.boolean(),
     }).optional(),
+    // ACDC Card Vaulting - saved payment methods for Return Buyer flow
+    savedPaymentMethods: z.array(z.object({
+      id: z.string(),
+      type: z.literal("card"),
+      card: z.object({
+        brand: z.string(),
+        lastDigits: z.string(),
+        expiry: z.string().optional(),
+      }),
+    })).optional(),
   });
 
   constructor(args: {
@@ -41,6 +66,7 @@ class Success extends SuccessWebhookResponse {
       advancedCardProcessing: boolean;
       vaulting: boolean;
     };
+    savedPaymentMethods?: SavedPaymentMethod[];
     appContext: AppContext;
   }) {
     super(args.appContext);
@@ -48,6 +74,7 @@ class Success extends SuccessWebhookResponse {
     this.merchantClientId = args.merchantClientId;
     this.merchantId = args.merchantId;
     this.paymentMethodReadiness = args.paymentMethodReadiness;
+    this.savedPaymentMethods = args.savedPaymentMethods || [];
   }
 
   getResponse() {
@@ -57,6 +84,7 @@ class Success extends SuccessWebhookResponse {
         merchantClientId: this.merchantClientId,
         merchantId: this.merchantId,
         paymentMethodReadiness: this.paymentMethodReadiness,
+        savedPaymentMethods: this.savedPaymentMethods.length > 0 ? this.savedPaymentMethods : undefined,
       }),
     };
 

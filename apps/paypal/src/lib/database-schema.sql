@@ -174,3 +174,37 @@ COMMENT ON COLUMN wsm_global_paypal_config.webhook_url IS 'The URL registered wi
 -- Run this if upgrading from a previous version
 ALTER TABLE wsm_global_paypal_config ADD COLUMN IF NOT EXISTS webhook_id TEXT;
 ALTER TABLE wsm_global_paypal_config ADD COLUMN IF NOT EXISTS webhook_url TEXT;
+
+-- PayPal Customer Vault Table
+-- Maps Saleor customers to PayPal vault customers for card vaulting (Phase 1 ACDC)
+CREATE TABLE IF NOT EXISTS paypal_customer_vault (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  saleor_api_url TEXT NOT NULL,           -- Saleor instance URL
+  saleor_user_id TEXT NOT NULL,           -- Saleor customer/user ID
+  paypal_customer_id TEXT NOT NULL,       -- PayPal vault customer ID (same as saleor_user_id per Option A)
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  CONSTRAINT unique_customer_per_instance UNIQUE (saleor_api_url, saleor_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_vault_saleor_url ON paypal_customer_vault(saleor_api_url);
+CREATE INDEX IF NOT EXISTS idx_customer_vault_saleor_user_id ON paypal_customer_vault(saleor_user_id);
+CREATE INDEX IF NOT EXISTS idx_customer_vault_paypal_customer_id ON paypal_customer_vault(paypal_customer_id);
+
+-- Trigger to update updated_at timestamp for customer vault
+CREATE OR REPLACE FUNCTION update_customer_vault_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_customer_vault_timestamp
+  BEFORE UPDATE ON paypal_customer_vault
+  FOR EACH ROW
+  EXECUTE FUNCTION update_customer_vault_timestamp();
+
+COMMENT ON TABLE paypal_customer_vault IS 'Maps Saleor customers to PayPal vault customers for ACDC card vaulting';
+COMMENT ON COLUMN paypal_customer_vault.saleor_user_id IS 'Saleor user/customer ID used as the PayPal customer ID';
+COMMENT ON COLUMN paypal_customer_vault.paypal_customer_id IS 'PayPal vault customer ID (mirrors saleor_user_id per design decision)';

@@ -121,6 +121,18 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
       };
       card?: {
         vault_id?: string;
+        // ACDC Card Vaulting - "Save During Purchase" flow (Phase 1)
+        attributes?: {
+          vault?: {
+            store_in_vault: "ON_SUCCESS";
+          };
+          customer?: {
+            id: string; // PayPal vault customer ID (Saleor user ID per Option A)
+          };
+          verification?: {
+            method?: "SCA_ALWAYS" | "SCA_WHEN_REQUIRED";
+          };
+        };
       };
       venmo?: {
         experience_context?: {
@@ -130,6 +142,8 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
         vault_id?: string;
       };
     };
+    // ACDC Card Vaulting - customer ID for vault association
+    vaultCustomerId?: string;
   }): Promise<Result<PayPalOrder, unknown>> {
     // Build amount object with breakdown if items are provided
     // PayPal requires: amount.value = breakdown.item_total + breakdown.shipping + breakdown.tax_total
@@ -214,6 +228,32 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
     // Add payment_source if provided (includes callback_configuration for shipping callbacks)
     if (args.paymentSource) {
       requestBody.payment_source = args.paymentSource;
+    }
+
+    // Handle ACDC Card Vaulting - add vault attributes if vaultCustomerId is provided
+    // This enables "Save During Purchase" flow for Phase 1 ACDC vaulting
+    if (args.vaultCustomerId) {
+      // Ensure payment_source.card exists with vault attributes
+      if (!requestBody.payment_source) {
+        requestBody.payment_source = {};
+      }
+      if (!requestBody.payment_source.card) {
+        requestBody.payment_source.card = {};
+      }
+
+      // Add vault attributes for ACDC card vaulting
+      requestBody.payment_source.card.attributes = {
+        ...requestBody.payment_source.card.attributes,
+        vault: {
+          store_in_vault: "ON_SUCCESS",
+        },
+        customer: {
+          id: args.vaultCustomerId,
+        },
+        verification: {
+          method: "SCA_WHEN_REQUIRED",
+        },
+      };
     }
 
     return ResultAsync.fromPromise(

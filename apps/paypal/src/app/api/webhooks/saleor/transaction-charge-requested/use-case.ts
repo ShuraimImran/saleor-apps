@@ -150,7 +150,26 @@ export class TransactionChargeRequestedUseCase {
       );
     }
 
-    const saleorMoneyResult = resolveSaleorMoneyFromPayPalOrder(captureOrderResult.value);
+    const capturedOrder = captureOrderResult.value;
+
+    // ========================================
+    // ACDC Card Vaulting - Check for vault response (Phase 1)
+    // ========================================
+    // After successful capture, if card was vaulted, the response contains vault info
+    const vaultInfo = capturedOrder.payment_source?.card?.attributes?.vault;
+    if (vaultInfo) {
+      this.logger.info("Card successfully vaulted during purchase", {
+        vaultId: vaultInfo.id,
+        vaultStatus: vaultInfo.status,
+        customerId: vaultInfo.customer?.id,
+        cardBrand: capturedOrder.payment_source?.card?.brand,
+        cardLastDigits: capturedOrder.payment_source?.card?.last_digits,
+      });
+    } else {
+      this.logger.debug("No vault info in capture response (vaulting may not have been requested)");
+    }
+
+    const saleorMoneyResult = resolveSaleorMoneyFromPayPalOrder(capturedOrder);
 
     if (saleorMoneyResult.isErr()) {
       this.logger.error("Failed to create Saleor money", {
@@ -164,12 +183,22 @@ export class TransactionChargeRequestedUseCase {
 
     const saleorMoney = saleorMoneyResult.value;
 
+    // Include vault info in the success response data
+    const vaultingResult = vaultInfo ? {
+      vaulted: true,
+      paymentTokenId: vaultInfo.id,
+      customerId: vaultInfo.customer?.id,
+      cardBrand: capturedOrder.payment_source?.card?.brand,
+      cardLastDigits: capturedOrder.payment_source?.card?.last_digits,
+    } : undefined;
+
     return ok(
       new TransactionChargeRequestedUseCaseResponses.Success({
         transactionResult: new ChargeSuccessResult(),
         paypalOrderId: orderIdResult,
         saleorMoney,
         appContext: appContextContainer.getContextValue(),
+        vaultingResult,
       }),
     );
   }

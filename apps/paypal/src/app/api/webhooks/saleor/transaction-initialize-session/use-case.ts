@@ -32,11 +32,45 @@ import {
   AuthorizationFailureResult,
 } from "@/modules/transaction-result/failure-result";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
+import {
+  PostgresCustomerVaultRepository,
+  ICustomerVaultRepository,
+} from "@/modules/customer-vault/customer-vault-repository";
 
 import {
   TransactionInitializeSessionUseCaseResponses,
   TransactionInitializeSessionUseCaseResponsesType,
 } from "./use-case-response";
+
+/**
+ * Vaulting data passed from frontend via transaction.data
+ * Used for ACDC Card Vaulting (Phase 1)
+ */
+interface VaultingData {
+  // "Save During Purchase" flow - save card for future use
+  savePaymentMethod?: boolean;
+  // "Return Buyer" flow - use previously saved card
+  vaultId?: string;
+  // Saleor user ID (required for vaulting - logged-in users only)
+  saleorUserId?: string;
+}
+
+/**
+ * Parse vaulting data from transaction event data
+ */
+function parseVaultingData(eventData: unknown): VaultingData {
+  if (!eventData || typeof eventData !== "object") {
+    return {};
+  }
+
+  const data = eventData as Record<string, unknown>;
+
+  return {
+    savePaymentMethod: typeof data.savePaymentMethod === "boolean" ? data.savePaymentMethod : undefined,
+    vaultId: typeof data.vaultId === "string" ? data.vaultId : undefined,
+    saleorUserId: typeof data.saleorUserId === "string" ? data.saleorUserId : undefined,
+  };
+}
 
 /**
  * Helper function to extract and map line items from Saleor to PayPal format
@@ -541,7 +575,20 @@ export class TransactionInitializeSessionUseCase {
 
     // Build payment source configuration
     // This enables callbacks for shipping address changes and other checkout updates
-    const paymentSource = env.APP_API_BASE_URL
+    let paymentSource: {
+      paypal?: {
+        experience_context?: any;
+        vault_id?: string;
+      };
+      card?: {
+        vault_id?: string;
+        attributes?: {
+          vault?: { store_in_vault: "ON_SUCCESS" };
+          customer?: { id: string };
+          verification?: { method: "SCA_WHEN_REQUIRED" | "SCA_ALWAYS" };
+        };
+      };
+    } | undefined = env.APP_API_BASE_URL
       ? {
           paypal: {
             experience_context: {
@@ -559,6 +606,68 @@ export class TransactionInitializeSessionUseCase {
           },
         }
       : undefined;
+
+    // ========================================
+    // ACDC Card Vaulting (Phase 1)
+    // ========================================
+    // Parse vaulting data from event.data (passed by frontend)
+    const vaultingData = parseVaultingData((event as any).data);
+    let vaultCustomerId: string | undefined;
+
+    this.logger.debug("Vaulting data from event", {
+      savePaymentMethod: vaultingData.savePaymentMethod,
+      hasVaultId: !!vaultingData.vaultId,
+      hasSaleorUserId: !!vaultingData.saleorUserId,
+    });
+
+    // "Return Buyer" flow - use previously saved card
+    if (vaultingData.vaultId) {
+      this.logger.info("Return Buyer flow - using vaulted card", {
+        vaultId: vaultingData.vaultId,
+      });
+
+      // Add vault_id to payment_source.card for using saved card
+      if (!paymentSource) {
+        paymentSource = {};
+      }
+      paymentSource.card = {
+        vault_id: vaultingData.vaultId,
+      };
+    }
+
+    // "Save During Purchase" flow - save card for future use
+    if (vaultingData.savePaymentMethod && vaultingData.saleorUserId) {
+      this.logger.info("Save During Purchase flow - will vault card on success", {
+        saleorUserId: vaultingData.saleorUserId,
+      });
+
+      try {
+        // Get or create customer vault mapping
+        const customerVaultRepo = PostgresCustomerVaultRepository.create(getPool());
+        const customerVaultResult = await customerVaultRepo.getOrCreate(
+          authData.saleorApiUrl,
+          vaultingData.saleorUserId
+        );
+
+        if (customerVaultResult.isOk()) {
+          vaultCustomerId = customerVaultResult.value.paypalCustomerId;
+          this.logger.info("Customer vault mapping ready", {
+            saleorUserId: vaultingData.saleorUserId,
+            paypalCustomerId: vaultCustomerId,
+          });
+        } else {
+          this.logger.warn("Failed to get/create customer vault mapping, proceeding without vaulting", {
+            error: customerVaultResult.error,
+          });
+        }
+      } catch (error) {
+        this.logger.warn("Error in customer vault mapping, proceeding without vaulting", {
+          error,
+        });
+      }
+    } else if (vaultingData.savePaymentMethod && !vaultingData.saleorUserId) {
+      this.logger.warn("savePaymentMethod requested but no saleorUserId provided - vaulting requires logged-in user");
+    }
 
     // Create PayPal order
     const createOrderStart = Date.now();
@@ -584,6 +693,8 @@ export class TransactionInitializeSessionUseCase {
       shipping,
       softDescriptor,
       paymentSource,
+      // ACDC Card Vaulting - customer ID for "Save During Purchase" flow
+      vaultCustomerId,
     });
     const createOrderTime = Date.now() - createOrderStart;
     const totalUseCaseTime = Date.now() - useCaseStartTime;
@@ -652,6 +763,12 @@ export class TransactionInitializeSessionUseCase {
             client_token: null, // PayPal doesn't use client tokens like Stripe
             paypal_order_id: paypalOrder.id,
             environment: config.environment,
+            // ACDC Card Vaulting status
+            vaulting: {
+              enabled: !!vaultCustomerId,
+              customerId: vaultCustomerId || null,
+              isReturnBuyer: !!vaultingData.vaultId,
+            },
           },
           appContext: appContextContainer.getContextValue(),
         }),

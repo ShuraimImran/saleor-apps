@@ -60,9 +60,14 @@ const handler = paymentGatewayInitializeSessionWebhookDefinition.createHandler(
 
       setObservabilitySaleorApiUrl(saleorApiUrlResult.value, ctx.payload.version);
 
+      // Extract saleorUserId from payload data for vaulting support
+      const payloadData = (ctx.payload as any).data;
+      const saleorUserId = typeof payloadData?.saleorUserId === "string" ? payloadData.saleorUserId : undefined;
+
       const result = await useCase.execute({
         channelId: ctx.payload.sourceObject.channel.id,
         authData: ctx.authData,
+        saleorUserId,
       });
 
       return result.match(

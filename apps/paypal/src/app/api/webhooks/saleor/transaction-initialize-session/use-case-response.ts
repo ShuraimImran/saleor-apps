@@ -51,12 +51,22 @@ class Success extends SuccessWebhookResponse {
   }
 }
 
+/**
+ * Vaulting status in ActionRequired response (Phase 1 ACDC Card Vaulting)
+ */
+interface VaultingStatus {
+  enabled: boolean;
+  customerId: string | null;
+  isReturnBuyer: boolean;
+}
+
 class ActionRequired extends SuccessWebhookResponse {
   readonly transactionResult: ChargeActionRequiredResult | AuthorizationActionRequiredResult;
   readonly paypalOrderId: PayPalOrderId;
   readonly data: {
     paypal_order_id: string;
     environment: string;
+    vaulting?: VaultingStatus;
   };
 
   constructor(args: {
@@ -66,6 +76,7 @@ class ActionRequired extends SuccessWebhookResponse {
       client_token: string | null;
       paypal_order_id: string;
       environment: string;
+      vaulting?: VaultingStatus;
     };
     appContext: AppContext;
   }) {
@@ -75,6 +86,7 @@ class ActionRequired extends SuccessWebhookResponse {
     this.data = {
       paypal_order_id: args.data.paypal_order_id,
       environment: args.data.environment,
+      vaulting: args.data.vaulting,
     };
   }
 

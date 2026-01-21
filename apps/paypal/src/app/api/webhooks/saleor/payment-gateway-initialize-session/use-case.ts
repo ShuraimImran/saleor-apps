@@ -11,10 +11,16 @@ import { PayPalConfigRepo } from "@/modules/paypal/configuration/paypal-config-r
 import { SaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { IPayPalPartnerReferralsApi } from "@/modules/paypal/partner-referrals/paypal-partner-referrals-api";
 import { createPayPalMerchantId } from "@/modules/paypal/paypal-merchant-id";
+import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
+import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
+import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
+import { PostgresCustomerVaultRepository } from "@/modules/customer-vault/customer-vault-repository";
+import { getPool } from "@/lib/database";
 
 import {
   PaymentGatewayInitializeSessionUseCaseResponses,
   PaymentGatewayInitializeSessionUseCaseResponsesType,
+  SavedPaymentMethod,
 } from "./use-case-response";
 
 export class PaymentGatewayInitializeSessionUseCase {
@@ -49,13 +55,14 @@ export class PaymentGatewayInitializeSessionUseCase {
   async execute(params: {
     channelId: string;
     authData: import("@saleor/app-sdk/APL").AuthData;
+    saleorUserId?: string; // For ACDC Card Vaulting - fetch saved cards
   }): Promise<
     Result<
       PaymentGatewayInitializeSessionUseCaseResponsesType,
       AppIsNotConfiguredResponse | BrokenAppResponse
     >
   > {
-    const { channelId, authData } = params;
+    const { channelId, authData, saleorUserId } = params;
 
     const paypalConfigForThisChannel = await this.paypalConfigRepo.getPayPalConfig(authData);
 
@@ -144,12 +151,87 @@ export class PaymentGatewayInitializeSessionUseCase {
         }
       }
 
+      // ========================================
+      // ACDC Card Vaulting - Fetch saved payment methods (Phase 1)
+      // ========================================
+      let savedPaymentMethods: SavedPaymentMethod[] = [];
+
+      if (saleorUserId && paymentMethodReadiness?.vaulting) {
+        this.logger.info("Fetching saved payment methods for user", {
+          saleorUserId,
+        });
+
+        try {
+          // Check if customer has a vault mapping
+          const customerVaultRepo = PostgresCustomerVaultRepository.create(getPool());
+          const customerVaultResult = await customerVaultRepo.getBySaleorUserId(
+            authData.saleorApiUrl,
+            saleorUserId
+          );
+
+          if (customerVaultResult.isOk() && customerVaultResult.value) {
+            const paypalCustomerId = customerVaultResult.value.paypalCustomerId;
+
+            // Fetch saved payment methods from PayPal
+            const vaultingApi = PayPalVaultingApi.create({
+              clientId: createPayPalClientId(config.clientId),
+              clientSecret: createPayPalClientSecret(config.clientSecret),
+              merchantId: config.merchantId ? (config.merchantId as any) : undefined,
+              merchantEmail: config.merchantEmail || undefined,
+              env: config.environment as "SANDBOX" | "LIVE",
+            });
+
+            const paymentTokensResult = await vaultingApi.listPaymentTokens({
+              customerId: paypalCustomerId,
+            });
+
+            if (paymentTokensResult.isOk()) {
+              const tokens = paymentTokensResult.value.payment_tokens || [];
+
+              // Map PayPal payment tokens to SavedPaymentMethod format
+              savedPaymentMethods = tokens
+                .filter(token => token.payment_source?.card) // Filter for cards only (Phase 1)
+                .map(token => ({
+                  id: token.id,
+                  type: "card" as const,
+                  card: {
+                    brand: token.payment_source.card?.brand || "Unknown",
+                    lastDigits: token.payment_source.card?.last_digits || "****",
+                    expiry: token.payment_source.card?.expiry,
+                  },
+                }));
+
+              this.logger.info("Retrieved saved payment methods", {
+                saleorUserId,
+                paypalCustomerId,
+                count: savedPaymentMethods.length,
+              });
+            } else {
+              this.logger.warn("Failed to fetch saved payment methods from PayPal", {
+                saleorUserId,
+                error: paymentTokensResult.error,
+              });
+            }
+          } else {
+            this.logger.debug("No customer vault mapping found for user", {
+              saleorUserId,
+            });
+          }
+        } catch (error) {
+          this.logger.warn("Error fetching saved payment methods, continuing without them", {
+            saleorUserId,
+            error,
+          });
+        }
+      }
+
       return ok(
         new PaymentGatewayInitializeSessionUseCaseResponses.Success({
           pk: config.clientId,
           merchantClientId: config.merchantClientId,
           merchantId: config.merchantId,
           paymentMethodReadiness,
+          savedPaymentMethods,
           appContext: appContextContainer.getContextValue(),
         }),
       );

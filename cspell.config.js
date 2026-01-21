@@ -62,6 +62,7 @@ export default {
     "paypal",
     "PAYPAL",
     "PPCP",
+    "ACDC",
     "pryce",
     "quickstart",
     "saleor",

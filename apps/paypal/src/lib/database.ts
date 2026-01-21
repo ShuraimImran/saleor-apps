@@ -213,6 +213,37 @@ export const initializeDatabase = async (): Promise<void> => {
       BEFORE UPDATE ON paypal_merchant_onboarding
       FOR EACH ROW
       EXECUTE FUNCTION update_merchant_onboarding_timestamp();
+
+    -- PayPal Customer Vault Table
+    -- Maps Saleor customers to PayPal vault customers for card vaulting
+    CREATE TABLE IF NOT EXISTS paypal_customer_vault (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      saleor_api_url TEXT NOT NULL,           -- Saleor instance URL
+      saleor_user_id TEXT NOT NULL,           -- Saleor customer/user ID
+      paypal_customer_id TEXT NOT NULL,       -- PayPal vault customer ID (same as saleor_user_id per Option A)
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      CONSTRAINT unique_customer_per_instance UNIQUE (saleor_api_url, saleor_user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_customer_vault_saleor_url ON paypal_customer_vault(saleor_api_url);
+    CREATE INDEX IF NOT EXISTS idx_customer_vault_saleor_user_id ON paypal_customer_vault(saleor_user_id);
+    CREATE INDEX IF NOT EXISTS idx_customer_vault_paypal_customer_id ON paypal_customer_vault(paypal_customer_id);
+
+    -- Trigger to update updated_at timestamp for customer vault
+    CREATE OR REPLACE FUNCTION update_customer_vault_timestamp()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.updated_at = NOW();
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DROP TRIGGER IF EXISTS trigger_update_customer_vault_timestamp ON paypal_customer_vault;
+    CREATE TRIGGER trigger_update_customer_vault_timestamp
+      BEFORE UPDATE ON paypal_customer_vault
+      FOR EACH ROW
+      EXECUTE FUNCTION update_customer_vault_timestamp();
   `;
 
   try {

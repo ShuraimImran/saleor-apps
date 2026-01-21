@@ -59,7 +59,26 @@ export interface PayPalOrder {
       available_networks?: string[];
       type?: string;
       authentication_result?: any;
-      attributes?: any;
+      attributes?: {
+        // ACDC Card Vaulting response - contains vault info after successful capture
+        vault?: {
+          id?: string; // Payment token ID (vaulted card identifier)
+          status?: "VAULTED" | "CREATED" | "APPROVED";
+          customer?: {
+            id?: string; // PayPal vault customer ID
+          };
+          links?: Array<{
+            href: string;
+            rel: string;
+            method: string;
+          }>;
+        };
+        verification?: {
+          method?: string;
+          status?: string;
+          three_d_secure?: any;
+        };
+      };
       from_request?: any;
       expiry?: string;
       billing_address?: any;
@@ -181,6 +200,18 @@ export interface IPayPalOrdersApi {
       };
       card?: {
         vault_id?: string;
+        // ACDC Card Vaulting - "Save During Purchase" flow (Phase 1)
+        attributes?: {
+          vault?: {
+            store_in_vault: "ON_SUCCESS";
+          };
+          customer?: {
+            id: string;
+          };
+          verification?: {
+            method?: "SCA_ALWAYS" | "SCA_WHEN_REQUIRED";
+          };
+        };
       };
       venmo?: {
         experience_context?: {
@@ -190,6 +221,8 @@ export interface IPayPalOrdersApi {
         vault_id?: string;
       };
     };
+    // ACDC Card Vaulting - customer ID for vault association
+    vaultCustomerId?: string;
   }): Promise<Result<PayPalOrder, unknown>>;
 
   captureOrder(args: { orderId: PayPalOrderId }): Promise<Result<PayPalOrder, unknown>>;

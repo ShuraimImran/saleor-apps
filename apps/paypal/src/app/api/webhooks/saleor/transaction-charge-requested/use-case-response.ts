@@ -7,21 +7,36 @@ import { SaleorMoney } from "@/modules/saleor/saleor-money";
 import { ChargeFailureResult } from "@/modules/transaction-result/failure-result";
 import { ChargeSuccessResult } from "@/modules/transaction-result/success-result";
 
+/**
+ * ACDC Card Vaulting result (Phase 1)
+ * Returned when a card is successfully vaulted during purchase
+ */
+export interface VaultingResult {
+  vaulted: boolean;
+  paymentTokenId?: string;
+  customerId?: string;
+  cardBrand?: string;
+  cardLastDigits?: string;
+}
+
 class Success extends SuccessWebhookResponse {
   readonly transactionResult: ChargeSuccessResult;
   readonly saleorMoney: SaleorMoney;
   readonly paypalOrderId: PayPalOrderId;
+  readonly vaultingResult?: VaultingResult;
 
   constructor(args: {
     transactionResult: ChargeSuccessResult;
     saleorMoney: SaleorMoney;
     paypalOrderId: PayPalOrderId;
     appContext: AppContext;
+    vaultingResult?: VaultingResult;
   }) {
     super(args.appContext);
     this.transactionResult = args.transactionResult;
     this.saleorMoney = args.saleorMoney;
     this.paypalOrderId = args.paypalOrderId;
+    this.vaultingResult = args.vaultingResult;
   }
 
   getResponse(): Response {
