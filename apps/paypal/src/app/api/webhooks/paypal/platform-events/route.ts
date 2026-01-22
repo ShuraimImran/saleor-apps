@@ -15,6 +15,39 @@ import {
 import { TransactionEventTypeEnum } from "@/generated/graphql";
 import { saleorApp } from "@/lib/saleor-app";
 
+/**
+ * PayPal Vault Token Resource
+ * Used for VAULT.PAYMENT-TOKEN.* events
+ */
+interface PayPalVaultTokenResource {
+  id: string; // The vault payment token ID
+  customer_id: string; // The customer ID associated with this token
+  payment_source: {
+    card?: {
+      last_digits: string;
+      brand: string;
+      expiry: string;
+      billing_address?: {
+        address_line_1?: string;
+        admin_area_2?: string;
+        admin_area_1?: string;
+        postal_code?: string;
+        country_code?: string;
+      };
+    };
+    paypal?: {
+      email_address: string;
+      account_id: string;
+    };
+    venmo?: {
+      email_address: string;
+      user_name: string;
+    };
+  };
+  status?: string;
+  time_created?: string;
+}
+
 const logger = createLogger("PayPalPlatformWebhooks");
 
 /**
@@ -109,6 +142,17 @@ export async function POST(request: NextRequest) {
 
       case "PAYMENT.AUTHORIZATION.VOIDED": {
         await handleAuthorizationVoided(resource as PayPalAuthorizationResource);
+        return NextResponse.json({ received: true }, { status: 200 });
+      }
+
+      // Vaulting events
+      case "VAULT.PAYMENT-TOKEN.CREATED": {
+        await handleVaultTokenCreated(resource as PayPalVaultTokenResource);
+        return NextResponse.json({ received: true }, { status: 200 });
+      }
+
+      case "VAULT.PAYMENT-TOKEN.DELETED": {
+        await handleVaultTokenDeleted(resource as PayPalVaultTokenResource);
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
@@ -560,6 +604,150 @@ async function handleAuthorizationVoided(resource: PayPalAuthorizationResource):
     logger.warn("No Saleor metadata found in voided authorization", {
       authorizationId,
       customId,
+    });
+  }
+}
+
+/**
+ * Handle VAULT.PAYMENT-TOKEN.CREATED event
+ * A payment method was successfully vaulted
+ *
+ * This confirms that a card/PayPal/Venmo account was saved to the vault.
+ * The token is already stored during the synchronous flow (when the order is captured
+ * with vault attributes), but this webhook provides confirmation.
+ */
+async function handleVaultTokenCreated(resource: PayPalVaultTokenResource): Promise<void> {
+  const tokenId = resource.id;
+  const customerId = resource.customer_id;
+  const paymentSource = resource.payment_source;
+
+  // Determine payment method type
+  let paymentMethodType: string;
+  let paymentMethodDetails: Record<string, any> = {};
+
+  if (paymentSource.card) {
+    paymentMethodType = "card";
+    paymentMethodDetails = {
+      lastDigits: paymentSource.card.last_digits,
+      brand: paymentSource.card.brand,
+      expiry: paymentSource.card.expiry,
+    };
+  } else if (paymentSource.paypal) {
+    paymentMethodType = "paypal";
+    paymentMethodDetails = {
+      email: paymentSource.paypal.email_address,
+      accountId: paymentSource.paypal.account_id,
+    };
+  } else if (paymentSource.venmo) {
+    paymentMethodType = "venmo";
+    paymentMethodDetails = {
+      email: paymentSource.venmo.email_address,
+      userName: paymentSource.venmo.user_name,
+    };
+  } else {
+    paymentMethodType = "unknown";
+  }
+
+  logger.info("Vault payment token created", {
+    tokenId,
+    customerId,
+    paymentMethodType,
+    ...paymentMethodDetails,
+    timeCreated: resource.time_created,
+  });
+
+  // The token is typically stored synchronously during the capture flow.
+  // This webhook serves as confirmation. We could use it to:
+  // 1. Verify our database is in sync
+  // 2. Send a confirmation email to the customer
+  // 3. Update any pending vault status
+
+  try {
+    const pool = getPool();
+
+    // Check if we have this token in our database
+    const existingToken = await pool.query(
+      `SELECT id, saleor_user_id FROM paypal_customer_vault
+       WHERE paypal_vault_id = $1 AND paypal_customer_id = $2`,
+      [tokenId, customerId]
+    );
+
+    if (existingToken.rowCount && existingToken.rowCount > 0) {
+      logger.info("Vault token already exists in database - confirmed via webhook", {
+        tokenId,
+        customerId,
+        saleorUserId: existingToken.rows[0].saleor_user_id,
+      });
+    } else {
+      // Token not in our database - this could happen if:
+      // 1. Token was created outside our app (e.g., via PayPal dashboard)
+      // 2. There was a sync issue during the original vault operation
+      logger.warn("Vault token not found in database - may need manual sync", {
+        tokenId,
+        customerId,
+        paymentMethodType,
+      });
+    }
+  } catch (error) {
+    logger.error("Error checking vault token in database", {
+      tokenId,
+      customerId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Handle VAULT.PAYMENT-TOKEN.DELETED event
+ * A payment method was deleted from the vault
+ *
+ * This can happen when:
+ * 1. The customer deletes via our app (we already handle this)
+ * 2. The customer deletes via PayPal.com
+ * 3. The token expires or is revoked by PayPal
+ *
+ * We should sync our database to reflect this deletion.
+ */
+async function handleVaultTokenDeleted(resource: PayPalVaultTokenResource): Promise<void> {
+  const tokenId = resource.id;
+  const customerId = resource.customer_id;
+
+  logger.info("Vault payment token deleted", {
+    tokenId,
+    customerId,
+  });
+
+  try {
+    const pool = getPool();
+
+    // Delete the token from our database if it exists
+    const result = await pool.query(
+      `DELETE FROM paypal_customer_vault
+       WHERE paypal_vault_id = $1 AND paypal_customer_id = $2
+       RETURNING id, saleor_user_id, payment_method_type`,
+      [tokenId, customerId]
+    );
+
+    if (result.rowCount && result.rowCount > 0) {
+      const deletedToken = result.rows[0];
+      logger.info("Vault token deleted from database via webhook", {
+        tokenId,
+        customerId,
+        saleorUserId: deletedToken.saleor_user_id,
+        paymentMethodType: deletedToken.payment_method_type,
+      });
+    } else {
+      // Token was not in our database - might have already been deleted
+      logger.info("Vault token not found in database - may have been deleted already", {
+        tokenId,
+        customerId,
+      });
+    }
+  } catch (error) {
+    logger.error("Error deleting vault token from database", {
+      tokenId,
+      customerId,
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 }

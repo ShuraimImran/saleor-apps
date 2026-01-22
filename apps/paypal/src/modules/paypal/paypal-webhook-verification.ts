@@ -1,13 +1,16 @@
-import crypto from "crypto";
 import { createLogger } from "@/lib/logger";
+import { PayPalClient } from "./paypal-client";
+import { PayPalClientId } from "./paypal-client-id";
+import { PayPalClientSecret } from "./paypal-client-secret";
+import { PayPalEnv, getPayPalApiUrl } from "./paypal-env";
 
 const logger = createLogger("PayPalWebhookVerification");
 
 /**
  * PayPal Webhook Signature Verification
  *
- * Verifies that a webhook request actually came from PayPal by validating
- * the webhook signature using PayPal's public certificate.
+ * Verifies that a webhook request actually came from PayPal by calling
+ * PayPal's verify-webhook-signature API endpoint.
  *
  * @see https://developer.paypal.com/api/rest/webhooks/rest/#verify-webhook-signature
  */
@@ -20,86 +23,165 @@ export interface WebhookHeaders {
 }
 
 export interface WebhookVerificationParams {
-  webhookId: string; // Your webhook ID from PayPal
+  webhookId: string;
   headers: WebhookHeaders;
-  body: any; // The webhook event body
+  body: any;
+  clientId: PayPalClientId;
+  clientSecret: PayPalClientSecret;
+  env: PayPalEnv;
+}
+
+export interface WebhookVerificationResult {
+  verified: boolean;
+  verificationStatus: string;
 }
 
 /**
- * Verifies webhook signature (simplified version)
+ * Verifies webhook signature using PayPal's API
  *
- * PRODUCTION IMPLEMENTATION REQUIRED:
- * - Fetch PayPal certificate from cert_url
- * - Construct expected signature string
- * - Verify signature using certificate public key
- * - Cache certificates for performance
+ * This method calls PayPal's /v1/notifications/verify-webhook-signature endpoint
+ * which is the recommended approach for webhook verification.
  *
- * For now, this is a placeholder that logs verification attempts.
+ * @returns Object containing verification result
  */
 export async function verifyWebhookSignature(
   params: WebhookVerificationParams
-): Promise<boolean> {
-  const { webhookId, headers, body } = params;
+): Promise<WebhookVerificationResult> {
+  const { webhookId, headers, body, clientId, clientSecret, env } = params;
 
-  logger.debug("Verifying webhook signature", {
+  logger.info("Verifying webhook signature via PayPal API", {
     webhookId,
     transmissionId: headers["paypal-transmission-id"],
     transmissionTime: headers["paypal-transmission-time"],
     authAlgo: headers["paypal-auth-algo"],
   });
 
-  // TODO: IMPLEMENT FULL SIGNATURE VERIFICATION
-  // For production, you MUST verify the webhook signature:
-  //
-  // 1. Construct the expected signature string:
-  //    transmission_id + "|" + transmission_time + "|" + webhook_id + "|" + crc32(body)
-  //
-  // 2. Fetch PayPal certificate from cert_url (cache it!)
-  //
-  // 3. Verify signature using certificate's public key
-  //
-  // Example implementation:
-  // const expectedString = `${headers["paypal-transmission-id"]}|${headers["paypal-transmission-time"]}|${webhookId}|${crc32(body)}`;
-  // const cert = await fetchPayPalCertificate(headers["paypal-cert-url"]);
-  // const verifier = crypto.createVerify(headers["paypal-auth-algo"]);
-  // verifier.update(expectedString);
-  // return verifier.verify(cert, headers["paypal-transmission-sig"], "base64");
+  // Check for required headers
+  const missingHeaders: string[] = [];
+  if (!headers["paypal-transmission-id"]) missingHeaders.push("paypal-transmission-id");
+  if (!headers["paypal-transmission-time"]) missingHeaders.push("paypal-transmission-time");
+  if (!headers["paypal-transmission-sig"]) missingHeaders.push("paypal-transmission-sig");
+  if (!headers["paypal-cert-url"]) missingHeaders.push("paypal-cert-url");
+  if (!headers["paypal-auth-algo"]) missingHeaders.push("paypal-auth-algo");
 
-  logger.warn(
-    "Webhook signature verification not fully implemented - accepting all webhooks. IMPLEMENT IN PRODUCTION!"
-  );
+  if (missingHeaders.length > 0) {
+    logger.warn("Missing required PayPal webhook headers", {
+      missingHeaders,
+      webhookId,
+    });
+    return {
+      verified: false,
+      verificationStatus: `MISSING_HEADERS: ${missingHeaders.join(", ")}`,
+    };
+  }
 
-  // For development: accept all webhooks
-  // In production: MUST implement full verification
-  return true;
+  try {
+    // Get access token
+    const baseUrl = getPayPalApiUrl(env);
+    const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+
+    const tokenResponse = await fetch(`${baseUrl}/v1/oauth2/token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${auth}`,
+      },
+      body: "grant_type=client_credentials",
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      logger.error("Failed to get access token for webhook verification", {
+        status: tokenResponse.status,
+        error: errorText,
+      });
+      return {
+        verified: false,
+        verificationStatus: "AUTH_FAILED",
+      };
+    }
+
+    const tokenData = (await tokenResponse.json()) as { access_token: string };
+
+    // Call verify-webhook-signature endpoint
+    const verifyPayload = {
+      auth_algo: headers["paypal-auth-algo"],
+      cert_url: headers["paypal-cert-url"],
+      transmission_id: headers["paypal-transmission-id"],
+      transmission_sig: headers["paypal-transmission-sig"],
+      transmission_time: headers["paypal-transmission-time"],
+      webhook_id: webhookId,
+      webhook_event: body,
+    };
+
+    const verifyResponse = await fetch(`${baseUrl}/v1/notifications/verify-webhook-signature`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${tokenData.access_token}`,
+      },
+      body: JSON.stringify(verifyPayload),
+    });
+
+    if (!verifyResponse.ok) {
+      const errorText = await verifyResponse.text();
+      logger.error("PayPal webhook signature verification API call failed", {
+        status: verifyResponse.status,
+        error: errorText,
+        webhookId,
+      });
+      return {
+        verified: false,
+        verificationStatus: `API_ERROR: ${verifyResponse.status}`,
+      };
+    }
+
+    const verifyResult = (await verifyResponse.json()) as {
+      verification_status: "SUCCESS" | "FAILURE";
+    };
+
+    logger.info("Webhook signature verification result", {
+      webhookId,
+      verificationStatus: verifyResult.verification_status,
+      transmissionId: headers["paypal-transmission-id"],
+    });
+
+    return {
+      verified: verifyResult.verification_status === "SUCCESS",
+      verificationStatus: verifyResult.verification_status,
+    };
+  } catch (error) {
+    logger.error("Exception during webhook signature verification", {
+      error: error instanceof Error ? error.message : String(error),
+      webhookId,
+    });
+    return {
+      verified: false,
+      verificationStatus: `EXCEPTION: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
 
 /**
- * CRC32 checksum calculation (needed for signature verification)
+ * Extract webhook verification headers from a request
  */
-function crc32(str: string): number {
-  const table = generateCRC32Table();
-  let crc = 0 ^ -1;
+export function extractWebhookHeaders(request: Request): WebhookHeaders | null {
+  const transmissionId = request.headers.get("paypal-transmission-id");
+  const transmissionTime = request.headers.get("paypal-transmission-time");
+  const transmissionSig = request.headers.get("paypal-transmission-sig");
+  const certUrl = request.headers.get("paypal-cert-url");
+  const authAlgo = request.headers.get("paypal-auth-algo");
 
-  for (let i = 0; i < str.length; i++) {
-    crc = (crc >>> 8) ^ table[(crc ^ str.charCodeAt(i)) & 0xff];
+  // If any required header is missing, return null
+  if (!transmissionId || !transmissionTime || !transmissionSig || !certUrl || !authAlgo) {
+    return null;
   }
 
-  return (crc ^ -1) >>> 0;
-}
-
-function generateCRC32Table(): number[] {
-  const table: number[] = [];
-
-  for (let i = 0; i < 256; i++) {
-    let c = i;
-
-    for (let j = 0; j < 8; j++) {
-      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    }
-
-    table[i] = c;
-  }
-
-  return table;
+  return {
+    "paypal-transmission-id": transmissionId,
+    "paypal-transmission-time": transmissionTime,
+    "paypal-transmission-sig": transmissionSig,
+    "paypal-cert-url": certUrl,
+    "paypal-auth-algo": authAlgo,
+  };
 }

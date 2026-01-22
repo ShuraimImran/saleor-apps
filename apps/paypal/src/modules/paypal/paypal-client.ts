@@ -317,4 +317,74 @@ export class PayPalClient {
   getPartnerMerchantId(): string | null {
     return this.partnerMerchantId;
   }
+
+  /**
+   * Generate a User ID Token for the PayPal JS SDK vaulting functionality.
+   * This token is used in the `data-user-id-token` attribute of PayPal buttons
+   * to enable saved payment methods for returning buyers.
+   *
+   * Reference: PayPal IWT requirement for vaulted PayPal/Venmo button display
+   *
+   * @param targetCustomerId - The PayPal vault customer ID (typically Saleor user ID)
+   * @returns The user ID token (JWT) to be used in the JS SDK
+   */
+  async generateUserIdToken(targetCustomerId: string): Promise<string> {
+    logger.info("Generating PayPal User ID Token", {
+      env: this.env,
+      target_customer_id: targetCustomerId,
+    });
+
+    const tokenGenerationStart = Date.now();
+    const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64");
+
+    // Build the request body for user ID token generation
+    const bodyParams = new URLSearchParams({
+      grant_type: "client_credentials",
+      response_type: "id_token",
+      target_customer_id: targetCustomerId,
+    });
+
+    // Add Auth Assertion header for merchant context (required for partner integrations)
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${auth}`,
+    };
+
+    const authAssertion = this.generateAuthAssertion();
+    if (authAssertion) {
+      headers["PayPal-Auth-Assertion"] = authAssertion;
+    }
+
+    const response = await fetch(`${this.baseUrl}/v1/oauth2/token`, {
+      method: "POST",
+      headers,
+      body: bodyParams.toString(),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error("PayPal User ID Token generation failed", {
+        env: this.env,
+        status: response.status,
+        error: errorText,
+        generation_time_ms: Date.now() - tokenGenerationStart,
+      });
+      throw new Error(`PayPal User ID Token generation failed: ${response.status} - ${errorText}`);
+    }
+
+    const data = (await response.json()) as {
+      id_token: string;
+      expires_in: number;
+    };
+
+    const generationTime = Date.now() - tokenGenerationStart;
+
+    logger.info("PayPal User ID Token generated successfully", {
+      env: this.env,
+      expires_in_seconds: data.expires_in,
+      generation_time_ms: generationTime,
+    });
+
+    return data.id_token;
+  }
 }

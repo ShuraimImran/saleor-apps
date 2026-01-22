@@ -575,6 +575,7 @@ export class TransactionInitializeSessionUseCase {
 
     // Build payment source configuration
     // This enables callbacks for shipping address changes and other checkout updates
+    // IWT Requirement: app_switch_preference enables native PayPal app checkout on mobile
     let paymentSource: {
       paypal?: {
         experience_context?: any;
@@ -593,6 +594,9 @@ export class TransactionInitializeSessionUseCase {
           paypal: {
             experience_context: {
               ...experienceContext,
+              // IWT Requirement: Enable app switch for mobile checkout
+              // When true, allows PayPal to switch to the native PayPal app if installed
+              app_switch_preference: true,
               callback_configuration: {
                 callback_url: `${env.APP_API_BASE_URL}/api/webhooks/paypal/order-update-callback`,
                 callback_events: [
@@ -605,7 +609,15 @@ export class TransactionInitializeSessionUseCase {
             },
           },
         }
-      : undefined;
+      : {
+          // Even without callback URL, set app_switch_preference for IWT compliance
+          paypal: {
+            experience_context: {
+              ...experienceContext,
+              app_switch_preference: true,
+            },
+          },
+        };
 
     // ========================================
     // ACDC Card Vaulting (Phase 1)
