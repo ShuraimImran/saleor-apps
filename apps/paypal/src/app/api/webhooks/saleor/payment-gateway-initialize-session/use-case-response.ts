@@ -31,6 +31,7 @@ class Success extends SuccessWebhookResponse {
     vaulting: boolean;
   };
   readonly savedPaymentMethods: SavedPaymentMethod[];
+  readonly userIdToken?: string;
 
   private static ResponseDataSchema = z.object({
     paypalClientId: z.string(),
@@ -53,6 +54,9 @@ class Success extends SuccessWebhookResponse {
         expiry: z.string().optional(),
       }),
     })).optional(),
+    // User ID Token for JS SDK vaulting (data-user-id-token attribute)
+    // Required for displaying vaulted PayPal/Venmo buttons and saving new payment methods
+    userIdToken: z.string().optional(),
   });
 
   constructor(args: {
@@ -67,6 +71,7 @@ class Success extends SuccessWebhookResponse {
       vaulting: boolean;
     };
     savedPaymentMethods?: SavedPaymentMethod[];
+    userIdToken?: string;
     appContext: AppContext;
   }) {
     super(args.appContext);
@@ -75,6 +80,7 @@ class Success extends SuccessWebhookResponse {
     this.merchantId = args.merchantId;
     this.paymentMethodReadiness = args.paymentMethodReadiness;
     this.savedPaymentMethods = args.savedPaymentMethods || [];
+    this.userIdToken = args.userIdToken;
   }
 
   getResponse() {
@@ -85,6 +91,7 @@ class Success extends SuccessWebhookResponse {
         merchantId: this.merchantId,
         paymentMethodReadiness: this.paymentMethodReadiness,
         savedPaymentMethods: this.savedPaymentMethods.length > 0 ? this.savedPaymentMethods : undefined,
+        userIdToken: this.userIdToken,
       }),
     };
 

@@ -133,6 +133,13 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
             method?: "SCA_ALWAYS" | "SCA_WHEN_REQUIRED";
           };
         };
+        // MIT (Merchant-Initiated Transaction) - "Buyer Not Present" flow (Phase 1)
+        // Used when charging a saved card without buyer interaction
+        stored_credential?: {
+          payment_initiator: "CUSTOMER" | "MERCHANT";
+          payment_type: "ONE_TIME" | "RECURRING" | "UNSCHEDULED";
+          usage: "FIRST" | "SUBSEQUENT" | "DERIVED";
+        };
       };
       venmo?: {
         experience_context?: {

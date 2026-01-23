@@ -53,6 +53,10 @@ interface VaultingData {
   vaultId?: string;
   // Saleor user ID (required for vaulting - logged-in users only)
   saleorUserId?: string;
+  // MIT (Merchant-Initiated Transaction) - "Buyer Not Present" flow
+  // When true, the transaction is initiated by the merchant without buyer interaction
+  // Used for: subscriptions, delayed charges, reorders, etc.
+  merchantInitiated?: boolean;
 }
 
 /**
@@ -69,6 +73,7 @@ function parseVaultingData(eventData: unknown): VaultingData {
     savePaymentMethod: typeof data.savePaymentMethod === "boolean" ? data.savePaymentMethod : undefined,
     vaultId: typeof data.vaultId === "string" ? data.vaultId : undefined,
     saleorUserId: typeof data.saleorUserId === "string" ? data.saleorUserId : undefined,
+    merchantInitiated: typeof data.merchantInitiated === "boolean" ? data.merchantInitiated : undefined,
   };
 }
 
@@ -588,6 +593,12 @@ export class TransactionInitializeSessionUseCase {
           customer?: { id: string };
           verification?: { method: "SCA_WHEN_REQUIRED" | "SCA_ALWAYS" };
         };
+        // MIT (Merchant-Initiated Transaction) - stored credential for "Buyer Not Present" flow
+        stored_credential?: {
+          payment_initiator: "CUSTOMER" | "MERCHANT";
+          payment_type: "ONE_TIME" | "RECURRING" | "UNSCHEDULED";
+          usage: "FIRST" | "SUBSEQUENT" | "DERIVED";
+        };
       };
     } | undefined = env.APP_API_BASE_URL
       ? {
@@ -630,21 +641,48 @@ export class TransactionInitializeSessionUseCase {
       savePaymentMethod: vaultingData.savePaymentMethod,
       hasVaultId: !!vaultingData.vaultId,
       hasSaleorUserId: !!vaultingData.saleorUserId,
+      merchantInitiated: vaultingData.merchantInitiated,
     });
 
     // "Return Buyer" flow - use previously saved card
     if (vaultingData.vaultId) {
+      const isMIT = vaultingData.merchantInitiated === true;
+
       this.logger.info("Return Buyer flow - using vaulted card", {
         vaultId: vaultingData.vaultId,
+        merchantInitiated: isMIT,
+        flow: isMIT ? "Buyer Not Present (MIT)" : "Buyer Present",
       });
 
       // Add vault_id to payment_source.card for using saved card
       if (!paymentSource) {
         paymentSource = {};
       }
+
+      // Build card payment source with vault_id
       paymentSource.card = {
         vault_id: vaultingData.vaultId,
       };
+
+      // MIT (Merchant-Initiated Transaction) - add stored_credential for "Buyer Not Present" flow
+      // This is required when charging a saved card without buyer interaction
+      // (e.g., subscriptions, delayed charges, reorders)
+      if (isMIT) {
+        paymentSource.card = {
+          ...paymentSource.card,
+          stored_credential: {
+            payment_initiator: "MERCHANT" as const,
+            payment_type: "UNSCHEDULED" as const,
+            usage: "SUBSEQUENT" as const,
+          },
+        };
+
+        this.logger.info("MIT stored_credential added to payment source", {
+          payment_initiator: "MERCHANT",
+          payment_type: "UNSCHEDULED",
+          usage: "SUBSEQUENT",
+        });
+      }
     }
 
     // "Save During Purchase" flow - save card for future use

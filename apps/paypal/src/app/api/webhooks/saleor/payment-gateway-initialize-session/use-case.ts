@@ -12,6 +12,7 @@ import { SaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { IPayPalPartnerReferralsApi } from "@/modules/paypal/partner-referrals/paypal-partner-referrals-api";
 import { createPayPalMerchantId } from "@/modules/paypal/paypal-merchant-id";
 import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
+import { PayPalClient } from "@/modules/paypal/paypal-client";
 import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
 import { PostgresCustomerVaultRepository } from "@/modules/customer-vault/customer-vault-repository";
@@ -225,6 +226,60 @@ export class PaymentGatewayInitializeSessionUseCase {
         }
       }
 
+      // ========================================
+      // User ID Token Generation (IWT Requirement)
+      // ========================================
+      // Generate user ID token for JS SDK vaulting (data-user-id-token attribute)
+      // Required for: displaying vaulted PayPal/Venmo buttons, saving new payment methods
+      let userIdToken: string | undefined;
+
+      if (saleorUserId && paymentMethodReadiness?.vaulting) {
+        this.logger.info("Generating user ID token for vaulting", {
+          saleorUserId,
+        });
+
+        try {
+          // Get or create customer vault mapping to get the PayPal customer ID
+          const customerVaultRepo = PostgresCustomerVaultRepository.create(getPool());
+          const customerVaultResult = await customerVaultRepo.getOrCreate(
+            authData.saleorApiUrl,
+            saleorUserId
+          );
+
+          if (customerVaultResult.isOk()) {
+            const paypalCustomerId = customerVaultResult.value.paypalCustomerId;
+
+            // Create PayPal client with merchant context for user ID token generation
+            const paypalClient = PayPalClient.create({
+              clientId: createPayPalClientId(config.clientId),
+              clientSecret: createPayPalClientSecret(config.clientSecret),
+              merchantId: config.merchantId ? (config.merchantId as any) : undefined,
+              merchantEmail: config.merchantEmail || undefined,
+              env: config.environment as "SANDBOX" | "LIVE",
+            });
+
+            // Generate the user ID token
+            userIdToken = await paypalClient.generateUserIdToken(paypalCustomerId);
+
+            this.logger.info("User ID token generated successfully", {
+              saleorUserId,
+              paypalCustomerId,
+              tokenLength: userIdToken.length,
+            });
+          } else {
+            this.logger.warn("Failed to get/create customer vault mapping for user ID token", {
+              saleorUserId,
+              error: customerVaultResult.error,
+            });
+          }
+        } catch (error) {
+          this.logger.warn("Error generating user ID token, continuing without it", {
+            saleorUserId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
       return ok(
         new PaymentGatewayInitializeSessionUseCaseResponses.Success({
           pk: config.clientId,
@@ -232,6 +287,7 @@ export class PaymentGatewayInitializeSessionUseCase {
           merchantId: config.merchantId,
           paymentMethodReadiness,
           savedPaymentMethods,
+          userIdToken,
           appContext: appContextContainer.getContextValue(),
         }),
       );
