@@ -16,10 +16,11 @@
 
 This document analyzes the current PayPal integration against the official "Web Shop Manager - Integration Guide (1).pdf" to identify missing features and ensure 100% compliance with PayPal's integration requirements.
 
-**Overall Status:** ~92% Backend Complete
+**Overall Status:** ~97% Backend Complete
 **Critical Missing Features:** 1 (Soft Descriptor)
-**Medium Priority Gaps:** 3 (Webhooks, Callbacks)
-**Low Priority Items:** 2 (Vaulting, SFTP)
+**Medium Priority Gaps:** 2 (Webhooks, Callbacks)
+**Low Priority Items:** 1 (SFTP)
+**Completed in Phase 2:** Vaulting (Card, PayPal, Venmo, Apple Pay, RBM)
 
 **Recent Updates (Dec 26, 2025):**
 - ✅ Fixed BN code to only apply to Orders API (was incorrectly in all APIs)
@@ -231,87 +232,42 @@ const order = await paypalOrdersApi.createOrder({
 
 ## ⚠️ MEDIUM PRIORITY GAPS
 
-### 2. **Vaulting Integration** ⚠️ MEDIUM PRIORITY
+### 2. **Vaulting Integration** ✅ COMPLETE (Phase 2)
 **PDF Requirement (Pages 16-24):**
 > The Vaulting SDK & APIs allow you to securely store a buyer's payment information.
 
-**Status:** ⚠️ API LAYER IMPLEMENTED, NOT INTEGRATED
+**Status:** ✅ FULLY IMPLEMENTED (Backend)
 
-**Current Implementation:**
-- ✅ **API Layer Complete**:
-  - **File**: `src/modules/paypal/paypal-vaulting-api.ts`
-  - **Lines**: 1-283
-  - All API methods implemented: createSetupToken, createPaymentToken, getPaymentToken, deletePaymentToken, listPaymentTokens
+**Implementation Complete:**
+- ✅ **API Layer**: `src/modules/paypal/paypal-vaulting-api.ts`
+- ✅ **Database Schema**: `customer_vault` table for Saleor-to-PayPal customer mapping
+- ✅ **Repository**: `PostgresCustomerVaultRepository` for CRUD operations
+- ✅ **Webhook Integration**: All vaulting flows connected to payment webhooks
 
-**What's Missing:**
-1. ❌ **Database Schema** - No table to store vaulted payment mappings
-2. ❌ **Webhook Integration** - Not connected to payment flow
-3. ❌ **UI** - No interface for displaying saved payment methods
-4. ❌ **Merchant-level Configuration** - No vaulting toggle in settings
+**Supported Payment Methods:**
+1. ✅ **ACDC Cards** - Vault with purchase, return buyer, MIT
+2. ✅ **PayPal Wallet** - Vault with purchase, return buyer, MIT
+3. ✅ **Venmo** - Vault with purchase, return buyer (no MIT - buyer-present only)
+4. ✅ **Apple Pay** - Vault with purchase, return buyer, MIT
 
-**Merchant-Level Vaulting Requirements:**
+**Implemented Flows:**
+- ✅ **Vault with Purchase**: `savePaymentMethod: true` in transactionInitialize
+- ✅ **Return Buyer**: `vaultId` parameter to use saved payment method
+- ✅ **MIT (Merchant Initiated)**: `merchantInitiated: true` for buyer-not-present
+- ✅ **Vault Without Purchase (RBM)**: Setup Token flow via tRPC handlers
+- ✅ **List Saved Methods**: `savedPaymentMethods` in PaymentGatewayInitialize response
+- ✅ **Delete Saved Method**: tRPC handler for deletion
+- ✅ **User ID Token**: For JS SDK `data-user-id-token` attribute
 
-Per PayPal documentation, **merchant-level vaulting** means:
-- Each merchant has their own vault of customer payment methods
-- Customers' saved payment methods are scoped to each merchant
-- Platform (WSM) facilitates but doesn't own the vault
-
-**Database Schema Required:**
-```sql
-CREATE TABLE paypal_vaulted_payments (
-  id UUID PRIMARY KEY,
-
-  -- Saleor customer mapping
-  saleor_user_id VARCHAR NOT NULL,
-  saleor_channel_id VARCHAR NOT NULL,
-
-  -- PayPal identifiers (REQUIRED per PayPal docs)
-  paypal_customer_id VARCHAR NOT NULL,  -- customer.id (PayPal-generated)
-  paypal_vault_id VARCHAR NOT NULL,      -- vault.id (payment token ID)
-
-  -- Merchant scoping (merchant-level vaulting)
-  merchant_id VARCHAR NOT NULL,          -- Which merchant owns this vault entry
-
-  -- Payment method metadata
-  payment_source_type VARCHAR NOT NULL,  -- 'PAYPAL', 'CARD', 'VENMO'
-  display_info JSONB,                    -- { brand, last4, expiry, etc. }
-
-  -- Timestamps
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-
-  -- Constraints
-  UNIQUE(saleor_user_id, merchant_id, paypal_vault_id),
-  INDEX(saleor_user_id, merchant_id),
-  INDEX(paypal_customer_id)
-);
-```
-
-**PayPal Documentation Requirements:**
-1. **Must Store** (per PayPal docs):
-   - `customer.id` - PayPal-generated customer ID (returned in vault response)
-   - `vault.id` - Payment token ID (returned in vault response)
-   - Your internal customer reference (optional: `merchant_customer_id`)
-
-2. **Retrieval**: Use `listPaymentTokens(customer_id)` to get all tokens for a customer
-
-3. **Usage**: Pass `vault.id` in subsequent orders to use saved payment method
-
-**Implementation Scope:**
-- Create database migration for vaulted_payments table
-- Implement repository pattern for vaulted payment CRUD
-- Add "vault with purchase" flow in transaction-initialize-session
-- Add "vault without purchase" flow (separate endpoint)
-- Create endpoint to list saved payment methods for a customer
-- Build UI for displaying saved payment methods
-- Add merchant configuration toggle for vaulting
-
-**Priority:** Medium (Optional for basic certification, required for subscriptions/recurring)
+**Key Files:**
+- `src/modules/customer-vault/customer-vault-repository.ts` - Database layer
+- `src/modules/customer-vault/trpc-handlers/` - tRPC endpoints for RBM
+- `src/app/api/webhooks/saleor/transaction-initialize-session/use-case.ts` - Vaulting flows
+- `src/app/api/webhooks/saleor/payment-gateway-initialize-session/use-case.ts` - List saved methods
 
 **References:**
-- PDF Pages 16-24: "Vaulting" section
-- PayPal Doc: https://developer.paypal.com/docs/multiparty/checkout/save-payment-methods/during-purchase/orders-api/paypal/
-- PayPal Doc: https://developer.paypal.com/docs/multiparty/checkout/save-payment-methods/during-purchase/orders-api/cards/
+- [PHASE_2_DEFERRED_ITEMS.md](./PHASE_2_DEFERRED_ITEMS.md) - Phase 2 completion status
+- [FRONTEND_VAULTING_INTEGRATION.md](./FRONTEND_VAULTING_INTEGRATION.md) - Frontend integration guide
 
 ---
 
@@ -579,19 +535,27 @@ export async function POST(request: Request) {
 
 ---
 
-### FUTURE (Phase 2)
+### Phase 2 Remaining (Non-Vaulting Features)
 
-#### 4. Implement Vaulting ⚠️ MEDIUM
-**Scope:**
-- Database schema and migration
-- Repository pattern implementation
-- Webhook integration
-- UI for saved payment methods
-- Merchant configuration
+#### 4. L2/L3 Processing ⚠️ MEDIUM
+**Scope:** B2B enhanced card data for lower interchange rates
 
-**Timeline:** 1-2 weeks (large feature set)
+#### 5. Recurring Billing Module ⚠️ MEDIUM
+**Scope:** Subscriptions API, Billing Plans API
 
-#### 5. Setup SFTP Reporting 📌 LOW
+#### 6. Pay Later Messaging 📌 LOW
+**Scope:** JS SDK messaging component
+
+#### 7. RTAU (Real Time Account Updater) 📌 LOW
+**Scope:** Card update notifications for vaulted cards
+
+#### 8. Package Tracking 📌 LOW
+**Scope:** Order API tracking information
+
+#### 9. Fastlane 📌 LOW
+**Scope:** Accelerated checkout experience
+
+#### 10. Setup SFTP Reporting 📌 LOW
 **Scope:**
 - SFTP client implementation
 - Report parsing
@@ -625,7 +589,7 @@ export async function POST(request: Request) {
 | Apple Pay Domains | 14 | ✅ Complete | - | Register/Get/Delete |
 | Debug ID Logging | 26 | ✅ Complete | - | **FIXED DEC 26** (all 3 sources) |
 | PayPal Webhooks | 8, 25 | ❌ Missing | MEDIUM | Platform events |
-| Vaulting API | 16-24 | ⚠️ Partial | MEDIUM | API exists, not integrated |
+| Vaulting API | 16-24 | ✅ Complete | - | Phase 2 complete (all payment methods) |
 | SFTP Reports | 25 | ❌ Missing | LOW | Post-launch ops |
 
 **Legend:**
@@ -637,14 +601,14 @@ export async function POST(request: Request) {
 
 ## 📝 SUMMARY STATISTICS
 
-### Overall Backend Implementation: 92% Complete
+### Overall Backend Implementation: 97% Complete
 
 **By Category:**
 - **Authentication & Headers**: 100% ✅ (3/3)
 - **Merchant Onboarding**: 100% ✅ (7/7)
 - **Payment Processing**: 83% ⚠️ (5/6) - Missing: Soft Descriptor
 - **Apple Pay**: 100% ✅ (3/3)
-- **Vaulting**: 20% ⚠️ (1/5) - API layer only
+- **Vaulting**: 100% ✅ (6/6) - Phase 2 complete (Card, PayPal, Venmo, Apple Pay, RBM)
 - **Webhooks**: 50% ⚠️ (3/6) - Saleor webhooks complete, PayPal webhooks missing
 - **Logging**: 100% ✅ (3/3)
 - **Configuration**: 100% ✅ (3/3)
@@ -656,8 +620,7 @@ export async function POST(request: Request) {
 **Post-Launch Enhancements:**
 1. PayPal Webhooks (3-5 days)
 2. Shipping/Contact Callbacks (2-3 days)
-3. Vaulting Integration (1-2 weeks)
-4. SFTP Reporting (1 week)
+3. SFTP Reporting (1 week)
 
 ---
 
@@ -673,6 +636,6 @@ export async function POST(request: Request) {
 
 ---
 
-**Last Updated:** 2025-12-26
-**Version:** 2.0
-**Status:** 92% Backend Complete - 1 Critical Gap Remaining (Soft Descriptor)
+**Last Updated:** 2026-01-23
+**Version:** 3.0
+**Status:** 97% Backend Complete - Phase 2 Vaulting Done, Soft Descriptor pending

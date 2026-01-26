@@ -25,16 +25,19 @@ const inputSchema = z.object({
 
 /**
  * tRPC Handler for creating a payment token from an approved setup token
- * (Vault Without Purchase - Step 2)
+ * (Vault Without Purchase / RBM - Step 2)
  *
- * This completes the "Save for Later" flow:
+ * This completes the "Save for Later" flow for all payment methods:
  *
  * 1. Frontend called createSetupToken -> received setupTokenId
- * 2. Buyer entered card details via Card Fields
+ * 2. Buyer entered details/approved:
+ *    - Cards: via Card Fields
+ *    - PayPal: via redirect/popup approval
+ *    - Venmo: via redirect/popup approval
  * 3. Setup token status changed to APPROVED
  * 4. Frontend calls this endpoint with setupTokenId
  * 5. Backend converts setup token to permanent payment token
- * 6. Card is now vaulted and can be used for future purchases
+ * 6. Payment method is now vaulted and can be used for future purchases
  *
  * @see https://developer.paypal.com/docs/api/payment-tokens/v3/#payment-tokens_create
  */
@@ -144,22 +147,54 @@ export class CreatePaymentTokenHandler {
 
         const paymentToken = paymentTokenResult.value;
 
+        // Determine payment method type from the response
+        const paymentSource = paymentToken.payment_source;
+        let paymentMethodType: "card" | "paypal" | "venmo" = "card";
+        if (paymentSource?.paypal) {
+          paymentMethodType = "paypal";
+        } else if (paymentSource?.venmo) {
+          paymentMethodType = "venmo";
+        }
+
         logger.info("Payment token created successfully", {
           saleorUserId: input.saleorUserId,
           paymentTokenId: paymentToken.id,
-          cardBrand: paymentToken.payment_source?.card?.brand,
-          cardLastDigits: paymentToken.payment_source?.card?.last_digits,
+          paymentMethodType,
+          cardBrand: paymentSource?.card?.brand,
+          cardLastDigits: paymentSource?.card?.last_digits,
+          // Note: PII (email, username) intentionally omitted from logs for GDPR/PCI compliance
         });
 
-        // Return the vaulted card details
+        // Return the vaulted payment method details
         return {
           paymentTokenId: paymentToken.id,
           customerId: paymentToken.customer.id,
-          card: paymentToken.payment_source?.card
+          paymentMethodType,
+          // Card details (ACDC)
+          card: paymentSource?.card
             ? {
-                brand: paymentToken.payment_source.card.brand || "Unknown",
-                lastDigits: paymentToken.payment_source.card.last_digits || "****",
-                expiry: paymentToken.payment_source.card.expiry,
+                brand: paymentSource.card.brand || "Unknown",
+                lastDigits: paymentSource.card.last_digits || "****",
+                expiry: paymentSource.card.expiry,
+              }
+            : null,
+          // PayPal wallet details
+          paypal: paymentSource?.paypal
+            ? {
+                email: paymentSource.paypal.email_address || "Unknown",
+                name: paymentSource.paypal.name
+                  ? `${paymentSource.paypal.name.given_name || ""} ${paymentSource.paypal.name.surname || ""}`.trim()
+                  : undefined,
+              }
+            : null,
+          // Venmo details
+          venmo: paymentSource?.venmo
+            ? {
+                email: paymentSource.venmo.email_address,
+                userName: paymentSource.venmo.user_name,
+                name: paymentSource.venmo.name
+                  ? `${paymentSource.venmo.name.given_name || ""} ${paymentSource.venmo.name.surname || ""}`.trim()
+                  : undefined,
               }
             : null,
         };

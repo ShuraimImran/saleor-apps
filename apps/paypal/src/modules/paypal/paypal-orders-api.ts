@@ -117,7 +117,20 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
             >;
           };
         };
+        // PayPal Wallet Vaulting - "Return Buyer" flow (Phase 2)
+        // Used when paying with a previously saved PayPal account
         vault_id?: string;
+        // PayPal Wallet Vaulting - "Save During Purchase" flow (Phase 2)
+        // Used to save PayPal account during checkout for future use
+        attributes?: {
+          vault?: {
+            store_in_vault: "ON_SUCCESS";
+            usage_type?: "MERCHANT" | "PLATFORM";
+          };
+          customer?: {
+            id: string; // PayPal vault customer ID
+          };
+        };
       };
       card?: {
         vault_id?: string;
@@ -146,7 +159,39 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
           brand_name?: string;
           shipping_preference?: "GET_FROM_FILE" | "NO_SHIPPING" | "SET_PROVIDED_ADDRESS";
         };
+        // Venmo Vaulting - "Return Buyer" flow (Phase 2)
         vault_id?: string;
+        // Venmo Vaulting - "Save During Purchase" flow (Phase 2)
+        attributes?: {
+          vault?: {
+            store_in_vault: "ON_SUCCESS";
+            usage_type?: "MERCHANT" | "PLATFORM";
+          };
+          customer?: {
+            id: string;
+          };
+        };
+      };
+      apple_pay?: {
+        // Apple Pay Vaulting - "Return Buyer" flow (Phase 2)
+        // Used for recurring/unscheduled payments with saved Apple Pay
+        vault_id?: string;
+        // Apple Pay Vaulting - "Save During Purchase" flow (Phase 2)
+        attributes?: {
+          vault?: {
+            store_in_vault: "ON_SUCCESS";
+            usage_type?: "MERCHANT" | "PLATFORM";
+          };
+          customer?: {
+            id: string;
+          };
+        };
+        // Apple Pay specific fields
+        stored_credential?: {
+          payment_initiator: "CUSTOMER" | "MERCHANT";
+          payment_type: "ONE_TIME" | "RECURRING" | "UNSCHEDULED";
+          usage: "FIRST" | "SUBSEQUENT" | "DERIVED";
+        };
       };
     };
     // ACDC Card Vaulting - customer ID for vault association

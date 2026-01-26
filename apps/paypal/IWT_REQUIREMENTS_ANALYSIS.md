@@ -3,6 +3,7 @@
 This document analyzes the current implementation status against PayPal's Integration Walkthrough (IWT) requirements. The IWT is PayPal's certification process that must be completed before live account provisioning.
 
 **Document Created:** 2026-01-22
+**Last Updated:** 2026-01-24
 **Source Documents:** IWT Checklist, FSS, Integration Guide
 **Codebase Analyzed:** apps/paypal
 
@@ -153,23 +154,24 @@ Before certification, the following materials must be prepared and submitted to 
 | `PayPal-Auth-Assertion` in generate user ID token calls | Done | N/A | Auth Assertion implemented |
 | Existing customer ID passed when vaulting new method | Done | N/A | Customer vault repository handles |
 
-### PayPal Wallet Vaulting
+### PayPal Wallet Vaulting ✅ COMPLETE
 
 | Requirement | Backend | Frontend | Notes |
 |-------------|---------|----------|-------|
-| Option to vault PayPal during checkout | Not Done | Not Done | Phase 2 - PayPal wallet vaulting |
-| Vault PayPal without purchase | Not Done | Not Done | Phase 2 - Setup tokens flow |
-| Return buyer: one-click checkout with vaulted PayPal | Not Done | Not Done | Phase 2 |
-| Vaulted PayPal/Venmo shown on buttons | N/A | Not Done | JS SDK `data-user-id-token` |
-| `data-user-id-token` populated for branded methods | Partial | Not Done | Backend can generate, FE must use |
-| Buyer-not-present transactions with vaulted PayPal | Not Done | N/A | Phase 2 - requires vault_id support |
+| Option to vault PayPal during checkout | ✅ Done | Not Done | `savePaymentMethod: true, paymentMethodType: "paypal"` |
+| Vault PayPal without purchase | ✅ Done | Not Done | Setup tokens flow via tRPC |
+| Return buyer: one-click checkout with vaulted PayPal | ✅ Done | Not Done | `vaultId` parameter |
+| Vaulted PayPal/Venmo shown on buttons | ✅ Done | Not Done | `userIdToken` returned in response |
+| `data-user-id-token` populated for branded methods | ✅ Done | Not Done | Backend generates, FE must use |
+| Buyer-not-present transactions with vaulted PayPal | ✅ Done | N/A | `merchantInitiated: true` |
 
-### Venmo Vaulting
+### Venmo Vaulting ✅ COMPLETE
 
 | Requirement | Backend | Frontend | Notes |
 |-------------|---------|----------|-------|
-| Option to vault Venmo during checkout | Not Done | Not Done | Phase 2 |
-| Return buyer: one-click with vaulted Venmo | Not Done | Not Done | Phase 2 |
+| Option to vault Venmo during checkout | ✅ Done | Not Done | `savePaymentMethod: true, paymentMethodType: "venmo"` |
+| Return buyer: one-click with vaulted Venmo | ✅ Done | Not Done | `vaultId` parameter |
+| Note: Venmo MIT | N/A | N/A | NOT supported - Venmo is buyer-present only per FSS |
 
 ### ACDC Card Vaulting
 
@@ -205,14 +207,26 @@ PayPal webhook handlers now support:
 - `PAYMENT.CAPTURE.REFUNDED` ✅ (Already existed)
 - `PAYMENT.CAPTURE.REVERSED` ✅ (Already existed)
 
-### Phase 2 Backend Items (Verify with IE if required for IWT)
+### Phase 2 Vaulting ✅ COMPLETE
 
-| Item | Priority | Complexity | Notes |
-|------|----------|------------|-------|
-| PayPal wallet vaulting | Phase 2 | Medium | Vault instruction in payment_source.paypal |
-| Venmo vaulting | Phase 2 | Medium | Vault instruction in payment_source.venmo |
-| Apple Pay vaulting | Phase 2 | Medium | Apple Pay token vaulting |
-| Vault without purchase integration | Phase 2 | Medium | Setup tokens flow end-to-end |
+| Item | Status | Notes |
+|------|--------|-------|
+| PayPal wallet vaulting | ✅ Done | Vault with purchase, return buyer, MIT |
+| Venmo vaulting | ✅ Done | Vault with purchase, return buyer (no MIT) |
+| Apple Pay vaulting | ✅ Done | Vault with purchase, return buyer, MIT |
+| Vault without purchase (RBM) | ✅ Done | Setup tokens flow for card/paypal/venmo |
+| User ID Token generation | ✅ Done | For JS SDK `data-user-id-token` |
+
+### Phase 2 Remaining (Non-Vaulting)
+
+| Item | Priority | Notes |
+|------|----------|-------|
+| L2/L3 Processing | Phase 2 | B2B enhanced data |
+| Recurring Billing Module | Phase 2 | Subscriptions API |
+| Pay Later Messaging | Phase 2 | JS SDK component |
+| RTAU | Phase 2 | Card update notifications |
+| Package Tracking | Phase 2 | Order API tracking |
+| Fastlane | Phase 2 | Accelerated checkout |
 
 ---
 
@@ -297,12 +311,22 @@ PayPal webhook handlers now support:
 - [ ] Pay Later messaging
 - [ ] Error handling and display
 
-### Phase 2 (Not Required for Initial IWT - Verify with IE)
+### Phase 2 Vaulting ✅ COMPLETE
 
-- [ ] PayPal wallet vaulting
-- [ ] Venmo vaulting
-- [ ] Apple Pay vaulting
-- [ ] Vault without purchase
+- [x] PayPal wallet vaulting
+- [x] Venmo vaulting
+- [x] Apple Pay vaulting
+- [x] Vault without purchase (RBM)
+- [x] User ID Token generation
+
+### Phase 2 Remaining (Non-Vaulting - To Be Implemented)
+
+- [ ] L2/L3 Processing
+- [ ] Recurring Billing Module
+- [ ] Pay Later Messaging
+- [ ] RTAU
+- [ ] Package Tracking
+- [ ] Fastlane
 
 ---
 

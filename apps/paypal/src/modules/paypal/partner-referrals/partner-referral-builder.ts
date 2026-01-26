@@ -101,6 +101,12 @@ export class PartnerReferralBuilder {
   /**
    * Add advanced vaulting (save payment methods)
    * Must be requested along with EXPRESS_CHECKOUT or PPCP
+   *
+   * IWT Requirements:
+   * - ADVANCED_VAULTING product
+   * - PAYPAL_WALLET_VAULTING_ADVANCED capability
+   * - VAULT feature
+   * - BILLING_AGREEMENT feature
    */
   withAdvancedVaulting(): this {
     if (!this.request.products) {
@@ -116,6 +122,19 @@ export class PartnerReferralBuilder {
     }
     if (!this.request.capabilities.includes("PAYPAL_WALLET_VAULTING_ADVANCED")) {
       this.request.capabilities.push("PAYPAL_WALLET_VAULTING_ADVANCED");
+    }
+
+    // IWT Requirement: Add VAULT and BILLING_AGREEMENT features for vaulting
+    // These features enable the merchant to save and reuse payment methods
+    const operations = this.request.operations;
+    if (operations && operations[0]?.api_integration_preference?.rest_api_integration?.third_party_details) {
+      const features = operations[0].api_integration_preference.rest_api_integration.third_party_details.features;
+      if (features && !features.includes("VAULT")) {
+        features.push("VAULT");
+      }
+      if (features && !features.includes("BILLING_AGREEMENT")) {
+        features.push("BILLING_AGREEMENT");
+      }
     }
 
     return this;

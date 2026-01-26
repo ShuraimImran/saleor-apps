@@ -190,17 +190,68 @@ export class PaymentGatewayInitializeSessionUseCase {
               const tokens = paymentTokensResult.value.payment_tokens || [];
 
               // Map PayPal payment tokens to SavedPaymentMethod format
-              savedPaymentMethods = tokens
-                .filter(token => token.payment_source?.card) // Filter for cards only (Phase 1)
-                .map(token => ({
-                  id: token.id,
-                  type: "card" as const,
-                  card: {
-                    brand: token.payment_source.card?.brand || "Unknown",
-                    lastDigits: token.payment_source.card?.last_digits || "****",
-                    expiry: token.payment_source.card?.expiry,
-                  },
-                }));
+              // Supports Card (Phase 1), PayPal Wallet, Venmo, and Apple Pay (Phase 2)
+              for (const token of tokens) {
+                // Card payment method (ACDC - Phase 1)
+                if (token.payment_source?.card) {
+                  savedPaymentMethods.push({
+                    id: token.id,
+                    type: "card",
+                    card: {
+                      brand: token.payment_source.card.brand || "Unknown",
+                      lastDigits: token.payment_source.card.last_digits || "****",
+                      expiry: token.payment_source.card.expiry,
+                    },
+                  });
+                }
+                // PayPal wallet payment method (Phase 2)
+                else if (token.payment_source?.paypal) {
+                  const paypalName = token.payment_source.paypal.name;
+                  savedPaymentMethods.push({
+                    id: token.id,
+                    type: "paypal",
+                    paypal: {
+                      email: token.payment_source.paypal.email_address || "Unknown",
+                      name: paypalName?.given_name
+                        ? `${paypalName.given_name} ${paypalName.surname || ""}`.trim()
+                        : undefined,
+                    },
+                  });
+                }
+                // Venmo payment method (Phase 2)
+                else if (token.payment_source?.venmo) {
+                  const venmoName = token.payment_source.venmo.name;
+                  savedPaymentMethods.push({
+                    id: token.id,
+                    type: "venmo",
+                    venmo: {
+                      email: token.payment_source.venmo.email_address,
+                      userName: token.payment_source.venmo.user_name,
+                      name: venmoName?.given_name
+                        ? `${venmoName.given_name} ${venmoName.surname || ""}`.trim()
+                        : undefined,
+                    },
+                  });
+                }
+                // Apple Pay payment method (Phase 2)
+                else if (token.payment_source?.apple_pay) {
+                  const applePayName = token.payment_source.apple_pay.name;
+                  savedPaymentMethods.push({
+                    id: token.id,
+                    type: "apple_pay",
+                    applePay: {
+                      brand: token.payment_source.apple_pay.card?.brand,
+                      lastDigits: token.payment_source.apple_pay.card?.last_digits,
+                      expiry: token.payment_source.apple_pay.card?.expiry,
+                      cardType: token.payment_source.apple_pay.card?.type,
+                      email: token.payment_source.apple_pay.email_address,
+                      name: applePayName?.given_name
+                        ? `${applePayName.given_name} ${applePayName.surname || ""}`.trim()
+                        : undefined,
+                    },
+                  });
+                }
+              }
 
               this.logger.info("Retrieved saved payment methods", {
                 saleorUserId,

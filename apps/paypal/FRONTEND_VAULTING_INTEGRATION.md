@@ -2,15 +2,17 @@
 
 ## Overview
 
-Implement frontend support for PayPal card vaulting, integrating PayPal JS SDK with Saleor's GraphQL payment flow. This enables customers to save payment methods during checkout and use saved cards for future purchases.
+Implement frontend support for PayPal payment method vaulting, integrating PayPal JS SDK with Saleor's GraphQL payment flow. This enables customers to save payment methods during checkout and use saved methods for future purchases.
 
-**Scope:** ACDC Card Vaulting (Phase 1)
+**Scope:**
+- Phase 1: ACDC Card Vaulting
+- Phase 2: PayPal Wallet, Venmo, Apple Pay Vaulting
 
 ---
 
 ## PayPal JS SDK Integration
 
-The storefront must load and configure PayPal's JavaScript SDK to render payment components securely. Card data is captured by PayPal's hosted fields (PCI compliant - card data never touches your servers).
+The storefront must load and configure PayPal's JavaScript SDK to render payment components securely.
 
 ### Script Configuration
 
@@ -25,10 +27,12 @@ The storefront must load and configure PayPal's JavaScript SDK to render payment
 **Parameters:**
 - `client-id`: Partner's PayPal Client ID (from `paypalClientId` in response)
 - `merchant-id`: Merchant's PayPal Merchant ID (from `merchantId` in response)
-- `components`: `buttons,card-fields` for ACDC
+- `components`: `buttons,card-fields` (add `applepay,googlepay` as needed)
 - `intent`: Match the Saleor action type (`capture` for CHARGE, `authorize` for AUTHORIZE)
 - `data-partner-attribution-id`: BN Code for partner attribution
-- `data-user-id-token`: User ID Token for vaulting (from `userIdToken` in response)
+- `data-user-id-token`: **CRITICAL for Phase 2** - User ID Token for vaulting (from `userIdToken` in response)
+
+> **IWT Requirement (Page 15):** The JS SDK script tag's `data-user-id-token` attribute must be populated with a user ID token for buyers with a vaulted branded payment method (PayPal/Venmo).
 
 ---
 
@@ -43,77 +47,9 @@ For vaulting to work, the frontend must obtain a user ID token from the backend 
 
 ---
 
-## Vaulting UI Requirements
+## Response Data Structure
 
-### Flow 1: Save During Purchase (New Card)
-
-**UI Components Needed:**
-- Checkbox: "Save this card for future purchases"
-- Only visible for logged-in customers
-- Positioned below the card fields
-
-**Implementation:**
-1. Render PayPal card fields using JS SDK
-2. Add save card checkbox (your own UI element)
-3. On form submit, pass the checkbox value through Saleor
-
-**Saleor GraphQL Call:**
-
-```graphql
-mutation {
-  transactionInitialize(
-    id: "checkout-id"
-    paymentGateway: {
-      id: "paypal-app-id"
-      data: {
-        savePaymentMethod: true
-        saleorUserId: "user-123"  # Required for vaulting
-      }
-    }
-  ) {
-    transaction {
-      id
-      status
-    }
-    data
-    errors {
-      field
-      message
-    }
-  }
-}
-```
-
----
-
-### Flow 2: Return Buyer (Saved Cards)
-
-#### Step 1: Fetch Saved Cards & Configuration
-
-```graphql
-mutation {
-  paymentGatewayInitialize(
-    id: "checkout-id"
-    paymentGateways: [{
-      id: "paypal-app-id"
-      data: {
-        saleorUserId: "user-123"  # Required to fetch saved cards
-      }
-    }]
-  ) {
-    gatewayConfigs {
-      id
-      data
-      errors {
-        field
-        message
-      }
-    }
-  }
-}
-```
-
-**Response Data Structure:**
+### paymentGatewayInitialize Response
 
 ```json
 {
@@ -138,12 +74,32 @@ mutation {
       }
     },
     {
-      "id": "9mm5623r",
-      "type": "card",
-      "card": {
-        "brand": "MASTERCARD",
-        "lastDigits": "4444",
-        "expiry": "06/2026"
+      "id": "9pp7834m",
+      "type": "paypal",
+      "paypal": {
+        "email": "buyer@example.com",
+        "name": "John Doe"
+      }
+    },
+    {
+      "id": "2vv9182k",
+      "type": "venmo",
+      "venmo": {
+        "email": "buyer@venmo.com",
+        "userName": "@johndoe",
+        "name": "John Doe"
+      }
+    },
+    {
+      "id": "4aa3921x",
+      "type": "apple_pay",
+      "applePay": {
+        "brand": "VISA",
+        "lastDigits": "1234",
+        "expiry": "03/2028",
+        "cardType": "CREDIT",
+        "email": "buyer@icloud.com",
+        "name": "John Doe"
       }
     }
   ],
@@ -155,86 +111,21 @@ mutation {
 - `paypalClientId`: Partner's PayPal Client ID for JS SDK
 - `merchantId`: Merchant's PayPal Merchant ID for JS SDK
 - `paymentMethodReadiness`: Object indicating which payment methods are available
-- `savedPaymentMethods`: Array of saved cards (when `saleorUserId` provided and vaulting enabled)
+- `savedPaymentMethods`: Array of saved payment methods (cards, PayPal wallets, Venmo, Apple Pay)
 - `userIdToken`: JWT token for JS SDK `data-user-id-token` attribute
-
-#### Step 2: Display Saved Cards UI
-
-- Show a list of saved cards with brand icon, last 4 digits, and expiry
-- Radio button or selectable card component for each
-- "Use a different card" option to show card fields
-
-**Example UI:**
-```
-[ ] VISA **** 7704 (Expires 12/2027)
-[ ] MASTERCARD **** 4444 (Expires 06/2026)
-[ ] Use a different card
-```
-
-#### Step 3: Pay with Saved Card
-
-```graphql
-mutation {
-  transactionInitialize(
-    id: "checkout-id"
-    paymentGateway: {
-      id: "paypal-app-id"
-      data: {
-        vaultId: "8kk8451t"  # The 'id' from savedPaymentMethods
-      }
-    }
-  ) {
-    transaction {
-      id
-      status
-    }
-    data
-    errors {
-      field
-      message
-    }
-  }
-}
-```
-
-**Note:** Use the `id` field from `savedPaymentMethods` as the `vaultId` in the request.
-
-**Response Data Structure for transactionInitialize:**
-
-```json
-{
-  "transaction": {
-    "id": "txn-123",
-    "status": "PENDING"
-  },
-  "data": {
-    "paypal_order_id": "5O190127TN364715T",
-    "environment": "SANDBOX",
-    "vaulting": {
-      "enabled": true,
-      "customerId": "cust_abc123",
-      "isReturnBuyer": true
-    }
-  }
-}
-```
-
-**Response Fields:**
-- `paypal_order_id`: PayPal order ID (use for JS SDK callbacks)
-- `environment`: PayPal environment ("SANDBOX" or "LIVE")
-- `vaulting.enabled`: Whether vaulting is active for this transaction
-- `vaulting.customerId`: PayPal customer ID (if vaulting enabled)
-- `vaulting.isReturnBuyer`: `true` if using a saved card (`vaultId` provided)
 
 ---
 
-### Flow 3: Return Buyer Adding New Card
+# Phase 1: ACDC Card Vaulting
 
-When the customer has saved cards but selects "Use a different card":
+## Flow 1: Save Card During Purchase
 
-1. Show PayPal card fields (same as new customer)
-2. Show "Save this card" checkbox
-3. Pass `savePaymentMethod: true` and `saleorUserId` if checked
+**UI Components Needed:**
+- Checkbox: "Save this card for future purchases"
+- Only visible for logged-in customers
+- Positioned below the card fields
+
+**Saleor GraphQL Call:**
 
 ```graphql
 mutation {
@@ -243,218 +134,226 @@ mutation {
     paymentGateway: {
       id: "paypal-app-id"
       data: {
+        paymentMethodType: "card"
         savePaymentMethod: true
         saleorUserId: "user-123"
       }
     }
   ) {
-    transaction {
-      id
-      status
-    }
+    transaction { id status }
     data
-    errors {
-      field
-      message
+    errors { field message }
+  }
+}
+```
+
+## Flow 2: Return Buyer - Pay with Saved Card
+
+```graphql
+mutation {
+  transactionInitialize(
+    id: "checkout-id"
+    paymentGateway: {
+      id: "paypal-app-id"
+      data: {
+        paymentMethodType: "card"
+        vaultId: "8kk8451t"
+      }
     }
+  ) {
+    transaction { id status }
+    data
+    errors { field message }
+  }
+}
+```
+
+## Flow 3: MIT - Charge Saved Card Without Buyer
+
+```graphql
+mutation {
+  transactionInitialize(
+    id: "checkout-id"
+    paymentGateway: {
+      id: "paypal-app-id"
+      data: {
+        paymentMethodType: "card"
+        vaultId: "8kk8451t"
+        merchantInitiated: true
+      }
+    }
+  ) {
+    transaction { id status }
+    data
+    errors { field message }
   }
 }
 ```
 
 ---
 
-## PayPal JS SDK Card Fields Implementation
+# Phase 2: PayPal Wallet Vaulting
 
-### HTML Container
+> **IWT Requirement (Page 15):** Buyers are presented the option to vault their PayPal wallet during checkout. Buyers with a vaulted PayPal wallet are shown the one-click return-buyer checkout flow.
 
-```html
-<div id="card-name-field-container"></div>
-<div id="card-number-field-container"></div>
-<div id="card-expiry-field-container"></div>
-<div id="card-cvv-field-container"></div>
+## Flow 1: Vault PayPal Wallet During Purchase
 
-<label>
-  <input type="checkbox" id="save-card-checkbox" />
-  Save this card for future purchases
-</label>
+When buyer clicks PayPal button and completes checkout, they can save their PayPal account.
 
-<button id="card-field-submit-button">Pay</button>
-```
-
-### JS SDK Initialization
+**Frontend Implementation:**
 
 ```javascript
-// Initialize card fields
-const cardFields = paypal.CardFields({
+paypal.Buttons({
+  // Enable vaulting in the button configuration
   createOrder: async () => {
-    // Call Saleor to create order via transactionInitialize
     const response = await saleorTransactionInitialize({
-      savePaymentMethod: document.getElementById('save-card-checkbox').checked,
-      saleorUserId: currentUser.id  // Pass logged-in user ID
+      paymentMethodType: "paypal",
+      savePaymentMethod: true,  // Save PayPal wallet
+      saleorUserId: currentUser.id
     });
-
-    // Return the PayPal order ID from response.data.paypal_order_id
     return response.data.paypal_order_id;
   },
 
   onApprove: async (data) => {
-    // Order approved, capture/authorize through Saleor
-    const result = await saleorTransactionProcess(data.orderID);
-    // Show success
-  },
-
-  onError: (err) => {
-    // Handle errors
-    console.error('PayPal CardFields error:', err);
+    // Complete the payment
+    await saleorTransactionProcess(data.orderID);
   }
-});
-
-// Render individual fields
-cardFields.NameField().render("#card-name-field-container");
-cardFields.NumberField().render("#card-number-field-container");
-cardFields.ExpiryField().render("#card-expiry-field-container");
-cardFields.CVVField().render("#card-cvv-field-container");
-
-// Submit handler
-document.getElementById("card-field-submit-button").addEventListener("click", () => {
-  cardFields.submit();
-});
+}).render('#paypal-button-container');
 ```
 
----
+**Saleor GraphQL Call:**
 
-## Key Requirements
+```graphql
+mutation {
+  transactionInitialize(
+    id: "checkout-id"
+    paymentGateway: {
+      id: "paypal-app-id"
+      data: {
+        paymentMethodType: "paypal"
+        savePaymentMethod: true
+        saleorUserId: "user-123"
+      }
+    }
+  ) {
+    transaction { id status }
+    data
+    errors { field message }
+  }
+}
+```
 
-| Requirement | Value | Notes |
-|-------------|-------|-------|
-| `saleorUserId` required for vaulting | Yes | Must be passed in both initialize calls |
-| `userIdToken` usage | JS SDK `data-user-id-token` | Enables vaulted button display |
-| Saved card field name | `id` | Use as `vaultId` in transactionInitialize |
-| Card details structure | Nested under `card` object | `{ id, type, card: { brand, lastDigits, expiry } }` |
-| Guest checkout | No vaulting | Don't show save checkbox |
-| `merchantInitiated` for MIT | `true` | Set when charging without buyer presence |
-| Vault Without Purchase | tRPC endpoints | Use `createSetupToken` + `createPaymentTokenFromSetupToken` |
+## Flow 2: Return Buyer - One-Click PayPal Checkout
 
----
+> **IWT Requirement (Page 15):** Buyers that have a vaulted PayPal or Venmo payment method are shown their vaulted payment method on the rendered PayPal or Venmo buttons.
 
-## Error Handling
+When `data-user-id-token` is set and buyer has saved PayPal wallet, the PayPal button shows their saved account for one-click checkout.
 
-Handle these scenarios gracefully:
+**Frontend Implementation:**
 
-1. **Vaulting not enabled for merchant**: `paymentMethodReadiness.vaulting === false`
-   - Don't show save checkbox
-   - Don't fetch saved cards
+```javascript
+// The JS SDK automatically shows vaulted payment when data-user-id-token is set
+// No additional code needed - just ensure userIdToken is in script tag
 
-2. **No saved cards**: `savedPaymentMethods` is empty or undefined
-   - Show card fields directly
+paypal.Buttons({
+  createOrder: async () => {
+    const response = await saleorTransactionInitialize({
+      paymentMethodType: "paypal",
+      vaultId: "9pp7834m"  // Saved PayPal wallet ID
+    });
+    return response.data.paypal_order_id;
+  },
 
-3. **User not logged in**: No `saleorUserId` available
-   - Don't show save checkbox
-   - Proceed as guest checkout
+  onApprove: async (data) => {
+    await saleorTransactionProcess(data.orderID);
+  }
+}).render('#paypal-button-container');
+```
 
-4. **Card vaulting fails**: Backend logs warning, payment still succeeds
-   - Show success to user
-   - Card won't be saved for future
+**Saleor GraphQL Call:**
 
-5. **Setup token not approved (Vault Without Purchase)**:
-   - Error code: `PRECONDITION_FAILED`
-   - Message: "Setup token is not approved or has already been used"
-   - User must re-enter card details
+```graphql
+mutation {
+  transactionInitialize(
+    id: "checkout-id"
+    paymentGateway: {
+      id: "paypal-app-id"
+      data: {
+        paymentMethodType: "paypal"
+        vaultId: "9pp7834m"
+      }
+    }
+  ) {
+    transaction { id status }
+    data
+    errors { field message }
+  }
+}
+```
 
-6. **Customer vault mapping not found**:
-   - Error code: `NOT_FOUND`
-   - Message: "Customer vault mapping not found. Did you call createSetupToken first?"
-   - Ensure `createSetupToken` is called before `createPaymentTokenFromSetupToken`
+## Flow 3: Vault PayPal Without Purchase (RBM)
 
-7. **MIT transaction fails**:
-   - Common reasons: Card expired, insufficient funds, card blocked
-   - Display appropriate error message to merchant/admin
-   - Consider notifying customer to update payment method
+> **IWT Requirement (Page 15):** Buyers are able to vault their PayPal wallet without placing an order.
 
----
-
-## Flow 4: Vault Without Purchase (Save for Later)
-
-This flow allows customers to save a card without making a purchase (e.g., "My Account" > "Payment Methods" > "Add Card").
+For "My Account" > "Payment Methods" > "Add PayPal":
 
 ### Step 1: Create Setup Token
 
-Call the tRPC endpoint to create a setup token:
-
 ```typescript
-// Using tRPC client
 const result = await trpcClient.customerVault.createSetupToken.mutate({
-  saleorUserId: "user-123",  // Required: Saleor user ID
-  returnUrl: "https://store.example.com/account/payment-methods",  // Optional
-  cancelUrl: "https://store.example.com/account/payment-methods",  // Optional
-  brandName: "My Store",  // Optional: Brand name for 3DS verification
-  verificationMethod: "SCA_WHEN_REQUIRED",  // Optional: "SCA_WHEN_REQUIRED" | "SCA_ALWAYS"
+  saleorUserId: "user-123",
+  paymentMethodType: "paypal",  // Specify PayPal wallet
+  returnUrl: "https://store.example.com/account/payment-methods",
+  cancelUrl: "https://store.example.com/account/payment-methods",
+  brandName: "My Store",
+  description: "Save PayPal for future purchases",
+  usageType: "MERCHANT"
 });
 
 // Response:
 // {
 //   setupTokenId: "5C991763SB123456Y",
 //   status: "PAYER_ACTION_REQUIRED",
-//   approvalUrl: "https://www.paypal.com/...",  // Optional redirect URL
-//   customerId: "cust_abc123"  // PayPal customer ID
+//   approvalUrl: "https://www.paypal.com/...",  // Redirect buyer here
+//   customerId: "cust_abc123",
+//   paymentMethodType: "paypal"
 // }
 ```
 
-### Step 2: Render PayPal Card Fields with Setup Token
+### Step 2: Redirect to PayPal for Approval
 
 ```javascript
-const cardFields = paypal.CardFields({
-  createVaultSetupToken: async () => {
-    // Return the setup token ID from Step 1
-    return setupTokenResult.setupTokenId;
-  },
+// Redirect buyer to PayPal approval page
+window.location.href = result.approvalUrl;
 
-  onApprove: async (data) => {
-    // Setup token approved, create payment token to complete vaulting
-    console.log('Setup token approved:', data.vaultSetupToken);
-    await completeVaulting(data.vaultSetupToken);
-  },
-
-  onError: (err) => {
-    console.error('CardFields error:', err);
-  }
-});
-
-// Render card fields
-cardFields.NameField().render("#card-name-field-container");
-cardFields.NumberField().render("#card-number-field-container");
-cardFields.ExpiryField().render("#card-expiry-field-container");
-cardFields.CVVField().render("#card-cvv-field-container");
+// Or use popup
+window.open(result.approvalUrl, 'paypal-approval', 'width=500,height=600');
 ```
 
-### Step 3: Create Payment Token from Approved Setup Token
-
-After the customer enters card details and the setup token is approved:
+### Step 3: After Approval - Create Payment Token
 
 ```typescript
-// Complete the vaulting process
+// Called after buyer returns from PayPal approval
 const paymentToken = await trpcClient.customerVault.createPaymentTokenFromSetupToken.mutate({
   saleorUserId: "user-123",
-  setupTokenId: "5C991763SB123456Y",  // From Step 1
+  setupTokenId: "5C991763SB123456Y"
 });
 
 // Response:
 // {
-//   paymentTokenId: "8kk8451t",  // This is the vault_id for future payments
+//   paymentTokenId: "9pp7834m",  // Use as vault_id for future payments
 //   customerId: "cust_abc123",
-//   card: {
-//     brand: "VISA",
-//     lastDigits: "7704",
-//     expiry: "12/2027"
+//   paymentMethodType: "paypal",
+//   paypal: {
+//     email: "buyer@example.com",
+//     name: "John Doe"
 //   }
 // }
 ```
 
----
+## Flow 4: MIT - PayPal Buyer Not Present
 
-## Flow 5: Merchant-Initiated Transactions (MIT) - Buyer Not Present
-
-For scenarios where the merchant needs to charge a saved card without buyer interaction (subscriptions, delayed charges, reorders):
+> **IWT Requirement (Page 15):** Buyer-not-present transactions can be processed using the buyer's vaulted PayPal wallet.
 
 ```graphql
 mutation {
@@ -463,131 +362,397 @@ mutation {
     paymentGateway: {
       id: "paypal-app-id"
       data: {
-        vaultId: "8kk8451t"        # Required: Saved payment method ID
-        merchantInitiated: true    # Required: Indicates MIT (Buyer Not Present)
+        paymentMethodType: "paypal"
+        vaultId: "9pp7834m"
+        merchantInitiated: true
       }
     }
   ) {
-    transaction {
-      id
-      status
-    }
+    transaction { id status }
     data
-    errors {
-      field
-      message
-    }
+    errors { field message }
   }
 }
 ```
 
-**Important Notes:**
-- `merchantInitiated: true` signals that this is a Merchant-Initiated Transaction
-- The backend automatically adds `stored_credential` with:
-  - `payment_initiator: "MERCHANT"`
-  - `payment_type: "UNSCHEDULED"`
-  - `usage: "SUBSEQUENT"`
-- This flow does NOT require buyer interaction or 3DS verification
-- Common use cases: subscriptions, installments, delayed charges, reorders
-
 ---
 
-## tRPC Endpoints Reference
+# Phase 2: Venmo Vaulting
 
-The PayPal app exposes these tRPC endpoints for vaulting operations:
+> **IWT Requirement (Page 15):** Buyers are presented the option to vault Venmo as a payment method during checkout. Buyers with vaulted Venmo wallets are shown the one-click return-buyer checkout flow.
 
-| Endpoint | Description |
-|----------|-------------|
-| `customerVault.listSavedPaymentMethods` | List saved cards for a customer |
-| `customerVault.deleteSavedPaymentMethod` | Delete a saved card |
-| `customerVault.createSetupToken` | Create setup token for vault-without-purchase |
-| `customerVault.createPaymentTokenFromSetupToken` | Complete vaulting from approved setup token |
+## Flow 1: Vault Venmo During Purchase
 
-### List Saved Payment Methods
+**Frontend Implementation:**
+
+```javascript
+paypal.Buttons({
+  fundingSource: paypal.FUNDING.VENMO,
+
+  createOrder: async () => {
+    const response = await saleorTransactionInitialize({
+      paymentMethodType: "venmo",
+      savePaymentMethod: true,
+      saleorUserId: currentUser.id
+    });
+    return response.data.paypal_order_id;
+  },
+
+  onApprove: async (data) => {
+    await saleorTransactionProcess(data.orderID);
+  }
+}).render('#venmo-button-container');
+```
+
+**Saleor GraphQL Call:**
+
+```graphql
+mutation {
+  transactionInitialize(
+    id: "checkout-id"
+    paymentGateway: {
+      id: "paypal-app-id"
+      data: {
+        paymentMethodType: "venmo"
+        savePaymentMethod: true
+        saleorUserId: "user-123"
+      }
+    }
+  ) {
+    transaction { id status }
+    data
+    errors { field message }
+  }
+}
+```
+
+## Flow 2: Return Buyer - One-Click Venmo
+
+Similar to PayPal, when `data-user-id-token` is set, the Venmo button shows saved account.
+
+```graphql
+mutation {
+  transactionInitialize(
+    id: "checkout-id"
+    paymentGateway: {
+      id: "paypal-app-id"
+      data: {
+        paymentMethodType: "venmo"
+        vaultId: "2vv9182k"
+      }
+    }
+  ) {
+    transaction { id status }
+    data
+    errors { field message }
+  }
+}
+```
+
+## Flow 3: Vault Venmo Without Purchase (RBM)
 
 ```typescript
-const result = await trpcClient.customerVault.listSavedPaymentMethods.query({
+const result = await trpcClient.customerVault.createSetupToken.mutate({
   saleorUserId: "user-123",
+  paymentMethodType: "venmo",
+  returnUrl: "https://store.example.com/account/payment-methods",
+  cancelUrl: "https://store.example.com/account/payment-methods",
+  brandName: "My Store",
+  description: "Save Venmo for future purchases",
+  usageType: "MERCHANT"
 });
 
-// Response:
-// {
-//   savedPaymentMethods: [
-//     {
-//       id: "8kk8451t",
-//       type: "card",
-//       card: {
-//         brand: "VISA",
-//         lastDigits: "7704",
-//         expiry: "12/2027"
-//       }
-//     }
-//   ]
-// }
+// Redirect to Venmo approval, then create payment token (same as PayPal flow)
 ```
 
-### Delete Saved Payment Method
+> **Note:** Venmo is **buyer-present only** per FSS. MIT (merchantInitiated: true) is NOT supported for Venmo.
+
+---
+
+# Phase 2: Apple Pay Vaulting
+
+> **Note:** Apple Pay vaulting is primarily for recurring/unscheduled payments. Vault-without-purchase is NOT typically supported for Apple Pay.
+
+## Flow 1: Vault Apple Pay During Purchase
+
+**Frontend Implementation:**
+
+```javascript
+paypal.Applepay().config({
+  // Apple Pay configuration
+}).then(applePayConfig => {
+  const applePaySession = new ApplePaySession(3, {
+    // Apple Pay payment request
+  });
+
+  applePaySession.onpaymentauthorized = async (event) => {
+    const response = await saleorTransactionInitialize({
+      paymentMethodType: "apple_pay",
+      savePaymentMethod: true,
+      saleorUserId: currentUser.id,
+      // Include Apple Pay token data
+    });
+
+    // Complete payment
+  };
+});
+```
+
+**Saleor GraphQL Call:**
+
+```graphql
+mutation {
+  transactionInitialize(
+    id: "checkout-id"
+    paymentGateway: {
+      id: "paypal-app-id"
+      data: {
+        paymentMethodType: "apple_pay"
+        savePaymentMethod: true
+        saleorUserId: "user-123"
+      }
+    }
+  ) {
+    transaction { id status }
+    data
+    errors { field message }
+  }
+}
+```
+
+## Flow 2: Return Buyer - Pay with Saved Apple Pay
+
+```graphql
+mutation {
+  transactionInitialize(
+    id: "checkout-id"
+    paymentGateway: {
+      id: "paypal-app-id"
+      data: {
+        paymentMethodType: "apple_pay"
+        vaultId: "4aa3921x"
+      }
+    }
+  ) {
+    transaction { id status }
+    data
+    errors { field message }
+  }
+}
+```
+
+## Flow 3: MIT - Apple Pay Recurring/Unscheduled
+
+```graphql
+mutation {
+  transactionInitialize(
+    id: "checkout-id"
+    paymentGateway: {
+      id: "paypal-app-id"
+      data: {
+        paymentMethodType: "apple_pay"
+        vaultId: "4aa3921x"
+        merchantInitiated: true
+      }
+    }
+  ) {
+    transaction { id status }
+    data
+    errors { field message }
+  }
+}
+```
+
+---
+
+# Saved Payment Methods UI
+
+## Displaying Saved Payment Methods
+
+Based on `savedPaymentMethods` array from `paymentGatewayInitialize`:
+
+```jsx
+function SavedPaymentMethodsList({ savedPaymentMethods, onSelect }) {
+  return (
+    <div className="saved-payment-methods">
+      {savedPaymentMethods.map(method => {
+        switch (method.type) {
+          case 'card':
+            return (
+              <PaymentMethodOption
+                key={method.id}
+                icon={<CardIcon brand={method.card.brand} />}
+                label={`${method.card.brand} •••• ${method.card.lastDigits}`}
+                subtitle={`Expires ${method.card.expiry}`}
+                onClick={() => onSelect(method.id, 'card')}
+              />
+            );
+
+          case 'paypal':
+            return (
+              <PaymentMethodOption
+                key={method.id}
+                icon={<PayPalIcon />}
+                label="PayPal"
+                subtitle={method.paypal.email}
+                onClick={() => onSelect(method.id, 'paypal')}
+              />
+            );
+
+          case 'venmo':
+            return (
+              <PaymentMethodOption
+                key={method.id}
+                icon={<VenmoIcon />}
+                label="Venmo"
+                subtitle={method.venmo.userName || method.venmo.email}
+                onClick={() => onSelect(method.id, 'venmo')}
+              />
+            );
+
+          case 'apple_pay':
+            return (
+              <PaymentMethodOption
+                key={method.id}
+                icon={<ApplePayIcon />}
+                label={`Apple Pay - ${method.applePay.brand} •••• ${method.applePay.lastDigits}`}
+                subtitle={`Expires ${method.applePay.expiry}`}
+                onClick={() => onSelect(method.id, 'apple_pay')}
+              />
+            );
+        }
+      })}
+
+      <PaymentMethodOption
+        icon={<AddIcon />}
+        label="Use a different payment method"
+        onClick={() => onSelect(null, null)}
+      />
+    </div>
+  );
+}
+```
+
+---
+
+# tRPC Endpoints Reference
+
+| Endpoint | Description | Payment Methods |
+|----------|-------------|-----------------|
+| `customerVault.listSavedPaymentMethods` | List all saved payment methods | All |
+| `customerVault.deleteSavedPaymentMethod` | Delete a saved payment method | All |
+| `customerVault.createSetupToken` | Create setup token for vault-without-purchase | Card, PayPal, Venmo |
+| `customerVault.createPaymentTokenFromSetupToken` | Complete vaulting from approved setup token | Card, PayPal, Venmo |
+
+### createSetupToken Parameters
 
 ```typescript
-const result = await trpcClient.customerVault.deleteSavedPaymentMethod.mutate({
-  saleorUserId: "user-123",
-  paymentTokenId: "8kk8451t",  // The 'id' from savedPaymentMethods
-});
+{
+  saleorUserId: string;           // Required
+  paymentMethodType: "card" | "paypal" | "venmo";  // Default: "card"
+  returnUrl?: string;             // Redirect after approval
+  cancelUrl?: string;             // Redirect on cancel
+  brandName?: string;             // Brand name shown to buyer
+  verificationMethod?: "SCA_WHEN_REQUIRED" | "SCA_ALWAYS";  // For cards
+  description?: string;           // For PayPal/Venmo
+  usageType?: "MERCHANT" | "PLATFORM";  // For PayPal/Venmo
+}
+```
 
-// Response:
-// {
-//   success: true,
-//   deletedPaymentTokenId: "8kk8451t"
-// }
+### createPaymentTokenFromSetupToken Response
+
+```typescript
+{
+  paymentTokenId: string;         // Use as vaultId for future payments
+  customerId: string;             // PayPal customer ID
+  paymentMethodType: "card" | "paypal" | "venmo";
+  card?: {                        // For card type
+    brand: string;
+    lastDigits: string;
+    expiry?: string;
+  };
+  paypal?: {                      // For paypal type
+    email: string;
+    name?: string;
+  };
+  venmo?: {                       // For venmo type
+    email?: string;
+    userName?: string;
+    name?: string;
+  };
+}
 ```
 
 ---
 
-## Complete Flow Diagram (Updated)
+# Data Parameters Summary
 
-```
-Guest User:
-  paymentGatewayInitialize (no saleorUserId)
-    -> Returns: paypalClientId, merchantId, paymentMethodReadiness
-    -> No userIdToken, no savedPaymentMethods
-    -> Show card fields only
+## transactionInitialize Data Parameters
 
-Logged-in User (First Purchase - Save During Purchase):
-  paymentGatewayInitialize (with saleorUserId)
-    -> Returns: paypalClientId, merchantId, paymentMethodReadiness, userIdToken
-    -> savedPaymentMethods = [] (empty)
-    -> Show card fields + "Save card" checkbox
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `paymentMethodType` | `"card" \| "paypal" \| "venmo" \| "apple_pay"` | No (default: `"card"`) | Type of payment method |
+| `savePaymentMethod` | `boolean` | No | Save payment method for future use |
+| `vaultId` | `string` | No | ID of saved payment method to use |
+| `saleorUserId` | `string` | Required for vaulting | Saleor user ID |
+| `merchantInitiated` | `boolean` | No | MIT - buyer not present transaction |
 
-  transactionInitialize (savePaymentMethod: true, saleorUserId)
-    -> Card is vaulted on successful payment
+## Flow Decision Matrix
 
-Logged-in User (Return Buyer - Buyer Present):
-  paymentGatewayInitialize (with saleorUserId)
-    -> Returns: paypalClientId, merchantId, paymentMethodReadiness, userIdToken, savedPaymentMethods
-    -> Show saved cards list + "Use different card" option
-
-  transactionInitialize (vaultId: "xxx")
-    -> Pay with saved card (buyer present, 3DS if required)
-
-Logged-in User (Vault Without Purchase - Save for Later):
-  createSetupToken (saleorUserId)
-    -> Returns: setupTokenId, customerId
-    -> Render PayPal Card Fields with setup token
-
-  createPaymentTokenFromSetupToken (saleorUserId, setupTokenId)
-    -> Card is vaulted without making a purchase
-
-Merchant-Initiated Transaction (Buyer Not Present):
-  transactionInitialize (vaultId: "xxx", merchantInitiated: true)
-    -> Charge saved card without buyer interaction
-    -> No 3DS verification required
-```
+| Scenario | paymentMethodType | savePaymentMethod | vaultId | merchantInitiated |
+|----------|-------------------|-------------------|---------|-------------------|
+| New card | `"card"` | `false` | - | - |
+| Save card during purchase | `"card"` | `true` | - | - |
+| Pay with saved card | `"card"` | - | `"xxx"` | `false` |
+| MIT with saved card | `"card"` | - | `"xxx"` | `true` |
+| Save PayPal during purchase | `"paypal"` | `true` | - | - |
+| One-click PayPal | `"paypal"` | - | `"xxx"` | `false` |
+| MIT with PayPal | `"paypal"` | - | `"xxx"` | `true` |
+| Save Venmo during purchase | `"venmo"` | `true` | - | - |
+| One-click Venmo | `"venmo"` | - | `"xxx"` | `false` |
+| Save Apple Pay | `"apple_pay"` | `true` | - | - |
+| Pay with saved Apple Pay | `"apple_pay"` | - | `"xxx"` | `false` |
+| MIT with Apple Pay | `"apple_pay"` | - | `"xxx"` | `true` |
 
 ---
 
-## References
+# Error Handling
 
-- [IWT_REQUIREMENTS_ANALYSIS.md](./IWT_REQUIREMENTS_ANALYSIS.md) - IWT certification requirements
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| Vaulting not available | `paymentMethodReadiness.vaulting === false` | Don't show save option |
+| No saved methods | `savedPaymentMethods` empty | Show new payment form |
+| User not logged in | No `saleorUserId` | Guest checkout, no vaulting |
+| Setup token not approved | Buyer didn't complete approval | Re-initiate vault flow |
+| Invalid payment method type | Unsupported type passed | Use valid type |
+| MIT not supported | Venmo with `merchantInitiated: true` | Venmo is buyer-present only |
+
+---
+
+# IWT Compliance Checklist
+
+Per IWT Page 15 (Vaulting Requirements):
+
+- [x] User ID Token contains PayPal-Auth-Assertion header (backend)
+- [x] Customer ID passed to "create order" for existing customers (backend)
+- [x] **PayPal:** Vault with purchase option
+- [x] **PayPal:** Vault without purchase (RBM)
+- [x] **PayPal:** Return buyer one-click flow
+- [x] **PayPal:** Vaulted payment shown on buttons (via `data-user-id-token`)
+- [x] **PayPal:** `data-user-id-token` populated for vaulted buyers
+- [x] **PayPal:** Buyer-not-present (MIT) transactions
+- [x] **Venmo:** Vault with purchase option
+- [x] **Venmo:** Return buyer one-click flow
+- [x] **ACDC:** Vault with purchase option
+- [x] **ACDC:** Return buyer saved card selection
+- [x] **ACDC:** Multiple saved cards selection
+- [x] **ACDC:** View saved cards and choose for transaction
+
+---
+
+# References
+
 - [PayPal JS SDK Documentation](https://developer.paypal.com/sdk/js/)
 - [PayPal Card Fields Integration](https://developer.paypal.com/docs/checkout/advanced/integrate/)
 - [PayPal Vaulting API](https://developer.paypal.com/docs/api/payment-tokens/v3/)
+- [PayPal Save Payment Methods](https://developer.paypal.com/docs/checkout/save-payment-methods/)

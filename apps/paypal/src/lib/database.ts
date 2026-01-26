@@ -1,6 +1,55 @@
 import { Pool } from "pg";
+import * as fs from "fs";
 
 let pool: Pool | null = null;
+
+/**
+ * Get SSL configuration for PostgreSQL connection
+ *
+ * Security: TLS certificate verification is ENABLED by default in production.
+ *
+ * Environment variables:
+ * - DB_SSL_REJECT_UNAUTHORIZED: Set to "false" ONLY for development with self-signed certs
+ * - DB_SSL_CA_PATH: Path to CA certificate file for custom CAs
+ * - NODE_ENV: When "development", allows disabling verification (not recommended)
+ */
+const getSslConfig = (): { rejectUnauthorized: boolean; ca?: string } | false => {
+  // If SSL is explicitly disabled (not recommended)
+  if (process.env.DB_SSL === "false") {
+    return false;
+  }
+
+  // Default: Enable TLS certificate verification in production
+  const isProduction = process.env.NODE_ENV === "production";
+  const rejectUnauthorized = process.env.DB_SSL_REJECT_UNAUTHORIZED !== "false" || isProduction;
+
+  // Warn if certificate verification is disabled in production
+  if (!rejectUnauthorized && isProduction) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "WARNING: Database TLS certificate verification is disabled in production. " +
+      "This is a security risk and allows MITM attacks. " +
+      "Set DB_SSL_REJECT_UNAUTHORIZED=true and configure proper CA certificates."
+    );
+  }
+
+  const sslConfig: { rejectUnauthorized: boolean; ca?: string } = {
+    rejectUnauthorized,
+  };
+
+  // Load CA certificate if provided
+  if (process.env.DB_SSL_CA_PATH) {
+    try {
+      sslConfig.ca = fs.readFileSync(process.env.DB_SSL_CA_PATH, "utf8");
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("Failed to load database CA certificate:", error);
+      throw new Error(`Failed to load CA certificate from ${process.env.DB_SSL_CA_PATH}`);
+    }
+  }
+
+  return sslConfig;
+};
 
 export const getPool = (): Pool => {
   if (!pool) {
@@ -10,9 +59,7 @@ export const getPool = (): Pool => {
       database: process.env.DB_NAME,
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
-      ssl: {
-        rejectUnauthorized: false,
-      },
+      ssl: getSslConfig(),
     });
 
     pool.on("error", (err) => {

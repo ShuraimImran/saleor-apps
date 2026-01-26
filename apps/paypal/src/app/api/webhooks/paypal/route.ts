@@ -5,6 +5,12 @@ import { getPool } from "@/lib/database";
 import { PostgresMerchantOnboardingRepository } from "@/modules/merchant-onboarding/merchant-onboarding-repository";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
 import { PayPalPartnerReferralsApiFactory } from "@/modules/paypal/partner-referrals/paypal-partner-referrals-api-factory";
+import {
+  verifyWebhookSignature,
+  extractWebhookHeaders,
+} from "@/modules/paypal/paypal-webhook-verification";
+import { PayPalEnv } from "@/modules/paypal/paypal-env";
+import { withRateLimit, RateLimitConfigs } from "@/lib/rate-limiter";
 
 const logger = createLogger("PayPalWebhookHandler");
 
@@ -106,6 +112,12 @@ async function handleMerchantConsentRevoked(event: PayPalWebhookEvent) {
  * Receives and processes PayPal webhook events
  */
 async function PayPalWebhookHandler(request: NextRequest): Promise<Response> {
+  // Rate limiting - protect against webhook flooding attacks
+  const rateLimitResponse = withRateLimit(request, RateLimitConfigs.webhook);
+  if (rateLimitResponse) {
+    return rateLimitResponse;
+  }
+
   try {
     // Parse webhook body
     const body = await request.text();
@@ -129,9 +141,79 @@ async function PayPalWebhookHandler(request: NextRequest): Promise<Response> {
       resource_type: event.resource_type,
     });
 
-    // TODO: Verify webhook signature
-    // PayPal provides webhook signature verification
-    // Reference: https://developer.paypal.com/api/rest/webhooks/
+    // Verify webhook signature
+    const webhookHeaders = extractWebhookHeaders(request);
+    if (!webhookHeaders) {
+      logger.warn("Missing PayPal webhook signature headers", {
+        event_id: event.id,
+        event_type: event.event_type,
+      });
+      return NextResponse.json(
+        { error: "Missing webhook signature headers" },
+        { status: 401 }
+      );
+    }
+
+    // Get global PayPal config for verification credentials
+    const pool = getPool();
+    const configRepo = GlobalPayPalConfigRepository.create(pool);
+    const configResult = await configRepo.getActiveConfig();
+
+    if (configResult.isErr()) {
+      logger.error("Failed to get PayPal config for webhook verification", {
+        error: configResult.error.message,
+      });
+      return NextResponse.json(
+        { error: "Configuration error" },
+        { status: 500 }
+      );
+    }
+
+    const config = configResult.value;
+    if (!config) {
+      logger.error("No active PayPal configuration found for webhook verification");
+      return NextResponse.json(
+        { error: "PayPal not configured" },
+        { status: 500 }
+      );
+    }
+
+    if (!config.webhookId) {
+      logger.error("No webhook ID configured - cannot verify webhook signature");
+      return NextResponse.json(
+        { error: "Webhook ID not configured" },
+        { status: 500 }
+      );
+    }
+
+    // Verify the webhook signature with PayPal
+    const verificationResult = await verifyWebhookSignature({
+      webhookId: config.webhookId,
+      headers: webhookHeaders,
+      body: event,
+      clientId: config.clientId,
+      clientSecret: config.clientSecret,
+      env: config.environment as PayPalEnv,
+    });
+
+    if (!verificationResult.verified) {
+      logger.warn("PayPal webhook signature verification failed", {
+        event_id: event.id,
+        event_type: event.event_type,
+        verificationStatus: verificationResult.verificationStatus,
+        transmissionId: webhookHeaders["paypal-transmission-id"],
+      });
+      return NextResponse.json(
+        { error: "Invalid webhook signature" },
+        { status: 401 }
+      );
+    }
+
+    logger.info("PayPal webhook signature verified successfully", {
+      event_id: event.id,
+      event_type: event.event_type,
+      transmissionId: webhookHeaders["paypal-transmission-id"],
+    });
 
     // Route to appropriate handler based on event type
     switch (event.event_type) {

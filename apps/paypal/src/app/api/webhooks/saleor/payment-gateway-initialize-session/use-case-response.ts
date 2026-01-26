@@ -6,10 +6,9 @@ import { AppContext } from "@/lib/app-context";
 import { PayPalClientId } from "@/modules/paypal/paypal-client-id";
 
 /**
- * Saved payment method for ACDC Card Vaulting (Phase 1)
- * Returned in PaymentGatewayInitializeSession for "Return Buyer" flow
+ * Saved card payment method for ACDC Card Vaulting (Phase 1)
  */
-export interface SavedPaymentMethod {
+export interface SavedCardPaymentMethod {
   id: string; // PayPal payment token ID (vault_id)
   type: "card";
   card: {
@@ -18,6 +17,55 @@ export interface SavedPaymentMethod {
     expiry?: string;
   };
 }
+
+/**
+ * Saved PayPal wallet payment method for PayPal Wallet Vaulting (Phase 2)
+ */
+export interface SavedPayPalPaymentMethod {
+  id: string; // PayPal payment token ID (vault_id)
+  type: "paypal";
+  paypal: {
+    email: string;
+    name?: string;
+  };
+}
+
+/**
+ * Saved Venmo payment method for Venmo Vaulting (Phase 2)
+ */
+export interface SavedVenmoPaymentMethod {
+  id: string; // PayPal payment token ID (vault_id)
+  type: "venmo";
+  venmo: {
+    email?: string;
+    userName?: string;
+    name?: string;
+  };
+}
+
+/**
+ * Saved Apple Pay payment method for Apple Pay Vaulting (Phase 2)
+ * Used for recurring/unscheduled payments
+ */
+export interface SavedApplePayPaymentMethod {
+  id: string; // PayPal payment token ID (vault_id)
+  type: "apple_pay";
+  applePay: {
+    brand?: string;
+    lastDigits?: string;
+    expiry?: string;
+    cardType?: string;
+    email?: string;
+    name?: string;
+  };
+}
+
+/**
+ * Saved payment method for vaulting
+ * Supports Card (Phase 1), PayPal Wallet, Venmo, and Apple Pay (Phase 2)
+ * Returned in PaymentGatewayInitializeSession for "Return Buyer" flow
+ */
+export type SavedPaymentMethod = SavedCardPaymentMethod | SavedPayPalPaymentMethod | SavedVenmoPaymentMethod | SavedApplePayPaymentMethod;
 
 class Success extends SuccessWebhookResponse {
   readonly pk: PayPalClientId;
@@ -44,16 +92,52 @@ class Success extends SuccessWebhookResponse {
       advancedCardProcessing: z.boolean(),
       vaulting: z.boolean(),
     }).optional(),
-    // ACDC Card Vaulting - saved payment methods for Return Buyer flow
-    savedPaymentMethods: z.array(z.object({
-      id: z.string(),
-      type: z.literal("card"),
-      card: z.object({
-        brand: z.string(),
-        lastDigits: z.string(),
-        expiry: z.string().optional(),
+    // Saved payment methods for Return Buyer flow
+    // Supports Card (Phase 1), PayPal Wallet (Phase 2), and Venmo (Phase 2)
+    savedPaymentMethods: z.array(z.discriminatedUnion("type", [
+      // Card payment method (ACDC - Phase 1)
+      z.object({
+        id: z.string(),
+        type: z.literal("card"),
+        card: z.object({
+          brand: z.string(),
+          lastDigits: z.string(),
+          expiry: z.string().optional(),
+        }),
       }),
-    })).optional(),
+      // PayPal wallet payment method (Phase 2)
+      z.object({
+        id: z.string(),
+        type: z.literal("paypal"),
+        paypal: z.object({
+          email: z.string(),
+          name: z.string().optional(),
+        }),
+      }),
+      // Venmo payment method (Phase 2)
+      z.object({
+        id: z.string(),
+        type: z.literal("venmo"),
+        venmo: z.object({
+          email: z.string().optional(),
+          userName: z.string().optional(),
+          name: z.string().optional(),
+        }),
+      }),
+      // Apple Pay payment method (Phase 2)
+      z.object({
+        id: z.string(),
+        type: z.literal("apple_pay"),
+        applePay: z.object({
+          brand: z.string().optional(),
+          lastDigits: z.string().optional(),
+          expiry: z.string().optional(),
+          cardType: z.string().optional(),
+          email: z.string().optional(),
+          name: z.string().optional(),
+        }),
+      }),
+    ])).optional(),
     // User ID Token for JS SDK vaulting (data-user-id-token attribute)
     // Required for displaying vaulted PayPal/Venmo buttons and saving new payment methods
     userIdToken: z.string().optional(),

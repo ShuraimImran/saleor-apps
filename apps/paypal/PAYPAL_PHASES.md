@@ -2,7 +2,7 @@
 
 This document tracks PayPal integration features by phase, including implementation and testing status.
 
-**Last Updated:** 2026-01-21
+**Last Updated:** 2026-01-23
 
 ---
 
@@ -49,17 +49,31 @@ This document tracks PayPal integration features by phase, including implementat
 
 ---
 
-## Phase 2 (Deferred)
+## Phase 2 (Vaulting - All Payment Methods)
 
 | Feature | Implemented | Tested | Notes |
 |---------|-------------|--------|-------|
-| PayPal Wallet Vaulting | ❌ No | ❌ No | Save PayPal account |
-| Venmo Vaulting | ❌ No | ❌ No | Save Venmo account |
-| Apple Pay Vaulting | ❌ No | ❌ No | Save Apple Pay |
-| Vault Without Purchase | ❌ No | ❌ No | API exists, not integrated |
-| Saved Cards Management UI | ❌ No | ❌ No | Backend ready, needs FE |
-| Recurring Billing | ❌ No | ❌ No | Subscriptions API |
+| PayPal Wallet Vaulting | ✅ Yes | ❌ No | Vault with purchase, return buyer, MIT |
+| Venmo Vaulting | ✅ Yes | ❌ No | Vault with purchase, return buyer (no MIT - buyer-present only) |
+| Apple Pay Vaulting | ✅ Yes | ❌ No | Vault with purchase, return buyer, MIT |
+| Vault Without Purchase (RBM) | ✅ Yes | ❌ No | Card, PayPal, Venmo via Setup Tokens |
+| List Saved Payment Methods | ✅ Yes | ❌ No | All types in PaymentGatewayInitialize |
+| Delete Saved Payment Method | ✅ Yes | ❌ No | tRPC handler |
+| User ID Token Generation | ✅ Yes | ❌ No | For JS SDK `data-user-id-token` |
+
+---
+
+## Phase 2 (Remaining - Non-Vaulting Features)
+
+| Feature | Implemented | Tested | Notes |
+|---------|-------------|--------|-------|
 | L2/L3 Processing | ❌ No | ❌ No | B2B enhanced data |
+| Recurring Billing Module | ❌ No | ❌ No | Subscriptions API |
+| Pay Later Messaging | ❌ No | ❌ No | JS SDK messaging component |
+| Pay Later Messaging Configurator | ❌ No | ❌ No | Admin panel config |
+| RTAU (Real Time Account Updater) | ❌ No | ❌ No | Card update notifications |
+| Package Tracking | ❌ No | ❌ No | Order API tracking info |
+| Fastlane | ❌ No | ❌ No | Accelerated checkout |
 
 ---
 
@@ -74,6 +88,11 @@ This document tracks PayPal integration features by phase, including implementat
 | Soft Descriptor | ✅ Done | Configurable per tenant |
 | Platform Fees | ✅ Done | Partner fee collection |
 | Vaulting (ACDC) | ✅ Done | Phase 1 scope |
+| Vaulting (PayPal Wallet) | ✅ Done | Phase 2 scope |
+| Vaulting (Venmo) | ✅ Done | Phase 2 scope (no MIT) |
+| Vaulting (Apple Pay) | ✅ Done | Phase 2 scope |
+| Vault Without Purchase (RBM) | ✅ Done | Phase 2 scope |
+| User ID Token | ✅ Done | For JS SDK vaulting |
 
 ---
 

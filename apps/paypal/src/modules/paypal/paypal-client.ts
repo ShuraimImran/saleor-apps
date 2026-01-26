@@ -185,27 +185,6 @@ export class PayPalClient {
 
     const fullUrl = `${this.baseUrl}${args.path}`;
 
-    // Console log the complete request details in JSON format
-    console.log("\n" + "=".repeat(80));
-    console.log("PayPal API Request Details:");
-    console.log("=".repeat(80));
-    console.log(
-      JSON.stringify(
-        {
-          endpoint: {
-            method: args.method,
-            url: fullUrl,
-            path: args.path,
-          },
-          headers: headers,
-          payload: args.body || null,
-        },
-        null,
-        2
-      )
-    );
-    console.log("=".repeat(80) + "\n");
-
     // Track response time
     const startTime = Date.now();
 
@@ -237,34 +216,7 @@ export class PayPalClient {
         debug_id: debugId, // Critical for PayPal support
         paypal_debug_id_header: paypalDebugIdHeader,
         correlation_id: correlationIdHeader,
-        error_details: JSON.stringify(errorData, null, 2),
       });
-
-      // Console log error response with timing and debug_id
-      console.log("\n" + "=".repeat(80));
-      console.log("PayPal API Response (ERROR):");
-      console.log("=".repeat(80));
-      console.log(
-        JSON.stringify(
-          {
-            endpoint: {
-              method: args.method,
-              url: fullUrl,
-              path: args.path,
-            },
-            status: response.status,
-            response_time_ms: responseTime,
-            debug_id: debugId,
-            error: errorData,
-          },
-          null,
-          2
-        )
-      );
-      if (debugId) {
-        console.log("PayPal Debug ID (provide to PayPal support):", debugId);
-      }
-      console.log("=".repeat(80) + "\n");
 
       throw {
         statusCode: response.status,
@@ -283,29 +235,6 @@ export class PayPalClient {
       paypal_debug_id: paypalDebugIdHeader,
       correlation_id: correlationIdHeader,
     });
-
-    // Console log successful response with timing
-    console.log("\n" + "=".repeat(80));
-    console.log("PayPal API Response (SUCCESS):");
-    console.log("=".repeat(80));
-    console.log(
-      JSON.stringify(
-        {
-          endpoint: {
-            method: args.method,
-            url: fullUrl,
-            path: args.path,
-          },
-          status: response.status,
-          response_time_ms: responseTime,
-          paypal_debug_id: paypalDebugIdHeader,
-          correlation_id: correlationIdHeader,
-        },
-        null,
-        2
-      )
-    );
-    console.log("=".repeat(80) + "\n");
 
     return response.json() as Promise<T>;
   }

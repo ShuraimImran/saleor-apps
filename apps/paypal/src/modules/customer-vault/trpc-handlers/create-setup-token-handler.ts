@@ -14,11 +14,24 @@ import { PostgresCustomerVaultRepository } from "../customer-vault-repository";
 
 const logger = createLogger("CreateSetupTokenHandler");
 
+/**
+ * Payment method type for vault-without-purchase
+ * Note: Apple Pay typically does not support vault-without-purchase
+ */
+const paymentMethodTypeSchema = z.enum(["card", "paypal", "venmo"]).default("card");
+
 const inputSchema = z.object({
   saleorUserId: z.string().min(1, "saleorUserId is required"),
   /**
+   * Payment method type to vault
+   * - card: ACDC card vaulting
+   * - paypal: PayPal wallet vaulting
+   * - venmo: Venmo vaulting
+   */
+  paymentMethodType: paymentMethodTypeSchema,
+  /**
    * Return URL after buyer approves the setup token
-   * Required for redirect-based flows (e.g., 3DS verification)
+   * Required for redirect-based flows (e.g., 3DS verification, PayPal/Venmo approval)
    */
   returnUrl: z.string().url().optional(),
   /**
@@ -26,30 +39,45 @@ const inputSchema = z.object({
    */
   cancelUrl: z.string().url().optional(),
   /**
-   * Brand name to display during card verification
+   * Brand name to display during verification
    */
   brandName: z.string().optional(),
   /**
-   * SCA verification method
+   * SCA verification method (for cards only)
    * - SCA_WHEN_REQUIRED: Only perform 3DS when required by card network
    * - SCA_ALWAYS: Always perform 3DS verification
    */
   verificationMethod: z.enum(["SCA_WHEN_REQUIRED", "SCA_ALWAYS"]).default("SCA_WHEN_REQUIRED"),
+  /**
+   * Description for PayPal/Venmo vaulting (shown to buyer)
+   */
+  description: z.string().optional(),
+  /**
+   * Usage type for PayPal/Venmo vaulting
+   * - MERCHANT: For merchant-initiated transactions
+   * - PLATFORM: For platform-initiated transactions
+   */
+  usageType: z.enum(["MERCHANT", "PLATFORM"]).default("MERCHANT"),
 });
 
 /**
- * tRPC Handler for creating a setup token (Vault Without Purchase)
+ * tRPC Handler for creating a setup token (Vault Without Purchase / RBM)
  *
- * This enables "Save for Later" flow where buyers can save their card
- * without making a purchase. The flow is:
+ * This enables "Save for Later" flow where buyers can save their payment method
+ * without making a purchase. Supports:
+ * - Card (ACDC): Buyer enters card details via Card Fields
+ * - PayPal: Buyer approves via PayPal redirect/popup
+ * - Venmo: Buyer approves via Venmo redirect/popup
  *
- * 1. Frontend calls createSetupToken with saleorUserId
+ * Flow:
+ * 1. Frontend calls createSetupToken with saleorUserId and paymentMethodType
  * 2. Backend creates PayPal setup token with customer association
- * 3. Frontend renders Card Fields with the setup token
- * 4. Buyer enters card details and approves
+ * 3. For cards: Frontend renders Card Fields with the setup token
+ *    For PayPal/Venmo: Frontend redirects to approvalUrl or opens popup
+ * 4. Buyer enters details/approves
  * 5. Frontend calls createPaymentTokenFromSetupToken to complete vaulting
  *
- * @see https://developer.paypal.com/docs/checkout/save-payment-methods/during-purchase/js-sdk/cards/
+ * @see https://developer.paypal.com/docs/checkout/save-payment-methods/
  */
 export class CreateSetupTokenHandler {
   baseProcedure = protectedClientProcedure;
@@ -109,6 +137,7 @@ export class CreateSetupTokenHandler {
         logger.info("Creating setup token for vault-without-purchase", {
           saleorUserId: input.saleorUserId,
           paypalCustomerId,
+          paymentMethodType: input.paymentMethodType,
         });
 
         // Create setup token via PayPal Vaulting API
@@ -120,9 +149,11 @@ export class CreateSetupTokenHandler {
           env: config.environment as "SANDBOX" | "LIVE",
         });
 
-        const setupTokenResult = await vaultingApi.createSetupToken({
-          customerId: paypalCustomerId,
-          paymentSource: {
+        // Build payment source based on payment method type
+        let paymentSource: Parameters<typeof vaultingApi.createSetupToken>[0]["paymentSource"];
+
+        if (input.paymentMethodType === "card") {
+          paymentSource = {
             card: {
               verification_method: input.verificationMethod,
               experience_context: {
@@ -131,7 +162,41 @@ export class CreateSetupTokenHandler {
                 cancel_url: input.cancelUrl,
               },
             },
-          },
+          };
+        } else if (input.paymentMethodType === "paypal") {
+          paymentSource = {
+            paypal: {
+              description: input.description,
+              usage_type: input.usageType,
+              experience_context: {
+                brand_name: input.brandName,
+                return_url: input.returnUrl,
+                cancel_url: input.cancelUrl,
+                shipping_preference: "NO_SHIPPING",
+              },
+            },
+          };
+        } else if (input.paymentMethodType === "venmo") {
+          paymentSource = {
+            venmo: {
+              description: input.description,
+              usage_type: input.usageType,
+              experience_context: {
+                brand_name: input.brandName,
+                shipping_preference: "NO_SHIPPING",
+              },
+            },
+          };
+        } else {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Unsupported payment method type: ${input.paymentMethodType}`,
+          });
+        }
+
+        const setupTokenResult = await vaultingApi.createSetupToken({
+          customerId: paypalCustomerId,
+          paymentSource,
         });
 
         if (setupTokenResult.isErr()) {
@@ -161,6 +226,7 @@ export class CreateSetupTokenHandler {
           status: setupToken.status,
           approvalUrl,
           customerId: paypalCustomerId,
+          paymentMethodType: input.paymentMethodType,
         };
       } catch (error) {
         if (error instanceof TRPCError) {

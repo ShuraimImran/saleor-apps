@@ -43,13 +43,25 @@ import {
 } from "./use-case-response";
 
 /**
+ * Payment method type for vaulting
+ * - "card": ACDC card vaulting (Phase 1)
+ * - "paypal": PayPal wallet vaulting (Phase 2)
+ * - "venmo": Venmo vaulting (Phase 2)
+ * - "apple_pay": Apple Pay vaulting (Phase 2)
+ */
+type VaultingPaymentMethodType = "card" | "paypal" | "venmo" | "apple_pay";
+
+/**
  * Vaulting data passed from frontend via transaction.data
- * Used for ACDC Card Vaulting (Phase 1)
+ * Supports both ACDC Card Vaulting (Phase 1) and PayPal Wallet Vaulting (Phase 2)
  */
 interface VaultingData {
-  // "Save During Purchase" flow - save card for future use
+  // Payment method type being vaulted
+  // Defaults to "card" for backward compatibility with Phase 1
+  paymentMethodType?: VaultingPaymentMethodType;
+  // "Save During Purchase" flow - save payment method for future use
   savePaymentMethod?: boolean;
-  // "Return Buyer" flow - use previously saved card
+  // "Return Buyer" flow - use previously saved payment method
   vaultId?: string;
   // Saleor user ID (required for vaulting - logged-in users only)
   saleorUserId?: string;
@@ -69,7 +81,17 @@ function parseVaultingData(eventData: unknown): VaultingData {
 
   const data = eventData as Record<string, unknown>;
 
+  // Parse payment method type with validation
+  let paymentMethodType: VaultingPaymentMethodType | undefined;
+  if (typeof data.paymentMethodType === "string") {
+    const validTypes: VaultingPaymentMethodType[] = ["card", "paypal", "venmo", "apple_pay"];
+    if (validTypes.includes(data.paymentMethodType as VaultingPaymentMethodType)) {
+      paymentMethodType = data.paymentMethodType as VaultingPaymentMethodType;
+    }
+  }
+
   return {
+    paymentMethodType,
     savePaymentMethod: typeof data.savePaymentMethod === "boolean" ? data.savePaymentMethod : undefined,
     vaultId: typeof data.vaultId === "string" ? data.vaultId : undefined,
     saleorUserId: typeof data.saleorUserId === "string" ? data.saleorUserId : undefined,
@@ -79,10 +101,12 @@ function parseVaultingData(eventData: unknown): VaultingData {
 
 /**
  * Helper function to extract and map line items from Saleor to PayPal format
+ * IWT Requirement: Digital goods should use DIGITAL_GOODS category
  */
 function extractPayPalItemsFromSource(
   sourceObject: TransactionInitializeSessionEventFragment["sourceObject"],
-  currency: string
+  currency: string,
+  isDigital: boolean = false
 ): PayPalOrderItem[] {
   const items: PayPalOrderItem[] = [];
 
@@ -106,7 +130,7 @@ function extractPayPalItemsFromSource(
         }),
         sku: line.variant.sku || undefined,
         image_url: line.variant.product?.thumbnail?.url || undefined,
-        category: "PHYSICAL_GOODS",
+        category: isDigital ? "DIGITAL_GOODS" : "PHYSICAL_GOODS",
       });
     }
   } else if (sourceObject.__typename === "Order" && sourceObject.lines) {
@@ -129,7 +153,7 @@ function extractPayPalItemsFromSource(
         }),
         sku: line.productSku || undefined,
         image_url: line.thumbnail?.url || undefined,
-        category: "PHYSICAL_GOODS",
+        category: isDigital ? "DIGITAL_GOODS" : "PHYSICAL_GOODS",
       });
     }
   }
@@ -249,6 +273,46 @@ function extractShippingAddress(
     email_address: email,
     phone_number: normalizedPhone ? { national_number: normalizedPhone } : undefined,
   };
+}
+
+/**
+ * Helper function to detect if the order contains only digital goods (no shipping required)
+ * IWT Requirement: Digital goods should specify NO_SHIPPING
+ *
+ * Detection logic:
+ * 1. Check if Checkout has isShippingRequired = false (if available)
+ * 2. Or if there's no shipping address AND shipping price is 0/undefined
+ */
+function isDigitalGoodsOnly(
+  sourceObject: TransactionInitializeSessionEventFragment["sourceObject"]
+): boolean {
+  if (sourceObject.__typename === "Checkout") {
+    // Primary check: Saleor's isShippingRequired flag (most reliable, if available in fragment)
+    const checkoutAny = sourceObject as Record<string, unknown>;
+    if ("isShippingRequired" in checkoutAny && checkoutAny.isShippingRequired === false) {
+      return true;
+    }
+
+    // Fallback: Check if no shipping address and no shipping price
+    const hasShippingAddress = !!sourceObject.shippingAddress;
+    const shippingPrice = sourceObject.shippingPrice?.gross?.amount ?? 0;
+
+    // If no shipping address and no shipping cost, likely digital goods
+    if (!hasShippingAddress && shippingPrice === 0) {
+      return true;
+    }
+  } else if (sourceObject.__typename === "Order") {
+    // For orders, check if shipping address is null and shipping price is 0
+    const hasShippingAddress = !!sourceObject.shippingAddress;
+    const shippingPrice = sourceObject.shippingPrice?.gross?.amount ?? 0;
+
+    // If no shipping address and no shipping cost, likely digital goods
+    if (!hasShippingAddress && shippingPrice === 0) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -474,8 +538,11 @@ export class TransactionInitializeSessionUseCase {
       sourceObject: JSON.stringify(event.sourceObject, null, 2),
     });
 
+    // IWT Requirement: Detect digital goods for item categorization
+    const digitalGoodsOnly = isDigitalGoodsOnly(event.sourceObject);
+
     // Extract line items from source object (Checkout or Order)
-    const paypalItems = extractPayPalItemsFromSource(event.sourceObject, event.action.currency);
+    const paypalItems = extractPayPalItemsFromSource(event.sourceObject, event.action.currency, digitalGoodsOnly);
 
     // Extract amount breakdown (subtotal, shipping)
     const breakdown = extractAmountBreakdown(event.sourceObject);
@@ -570,12 +637,24 @@ export class TransactionInitializeSessionUseCase {
       });
     }
 
+    // IWT Requirement: Detect digital goods and set appropriate shipping preference
+    this.logger.debug("Digital goods detection", {
+      digitalGoodsOnly,
+      hasShippingAddress: !!shipping,
+      sourceType: event.sourceObject.__typename,
+    });
+
     // Build experience context for PayPal checkout flow
     // This controls the PayPal checkout experience (branding, return URLs, etc.)
+    // IWT Requirement: Digital goods should specify NO_SHIPPING
     const experienceContext = {
       brand_name: env.APP_NAME || "Store",
       user_action: "PAY_NOW" as const, // Show "Pay Now" instead of "Continue"
-      shipping_preference: shipping ? ("SET_PROVIDED_ADDRESS" as const) : ("GET_FROM_FILE" as const),
+      shipping_preference: digitalGoodsOnly
+        ? ("NO_SHIPPING" as const)
+        : shipping
+          ? ("SET_PROVIDED_ADDRESS" as const)
+          : ("GET_FROM_FILE" as const),
     };
 
     // Build payment source configuration
@@ -584,7 +663,16 @@ export class TransactionInitializeSessionUseCase {
     let paymentSource: {
       paypal?: {
         experience_context?: any;
+        // PayPal Wallet Vaulting - "Return Buyer" flow (Phase 2)
         vault_id?: string;
+        // PayPal Wallet Vaulting - "Save During Purchase" flow (Phase 2)
+        attributes?: {
+          vault?: {
+            store_in_vault: "ON_SUCCESS";
+            usage_type?: "MERCHANT" | "PLATFORM";
+          };
+          customer?: { id: string };
+        };
       };
       card?: {
         vault_id?: string;
@@ -594,6 +682,40 @@ export class TransactionInitializeSessionUseCase {
           verification?: { method: "SCA_WHEN_REQUIRED" | "SCA_ALWAYS" };
         };
         // MIT (Merchant-Initiated Transaction) - stored credential for "Buyer Not Present" flow
+        stored_credential?: {
+          payment_initiator: "CUSTOMER" | "MERCHANT";
+          payment_type: "ONE_TIME" | "RECURRING" | "UNSCHEDULED";
+          usage: "FIRST" | "SUBSEQUENT" | "DERIVED";
+        };
+      };
+      venmo?: {
+        experience_context?: {
+          brand_name?: string;
+          shipping_preference?: "GET_FROM_FILE" | "NO_SHIPPING" | "SET_PROVIDED_ADDRESS";
+        };
+        // Venmo Vaulting - "Return Buyer" flow (Phase 2)
+        vault_id?: string;
+        // Venmo Vaulting - "Save During Purchase" flow (Phase 2)
+        attributes?: {
+          vault?: {
+            store_in_vault: "ON_SUCCESS";
+            usage_type?: "MERCHANT" | "PLATFORM";
+          };
+          customer?: { id: string };
+        };
+      };
+      apple_pay?: {
+        // Apple Pay Vaulting - "Return Buyer" flow (Phase 2)
+        vault_id?: string;
+        // Apple Pay Vaulting - "Save During Purchase" flow (Phase 2)
+        attributes?: {
+          vault?: {
+            store_in_vault: "ON_SUCCESS";
+            usage_type?: "MERCHANT" | "PLATFORM";
+          };
+          customer?: { id: string };
+        };
+        // Apple Pay MIT - stored credential for recurring/unscheduled payments
         stored_credential?: {
           payment_initiator: "CUSTOMER" | "MERCHANT";
           payment_type: "ONE_TIME" | "RECURRING" | "UNSCHEDULED";
@@ -631,63 +753,138 @@ export class TransactionInitializeSessionUseCase {
         };
 
     // ========================================
-    // ACDC Card Vaulting (Phase 1)
+    // Payment Method Vaulting
+    // Phase 1: Card (ACDC)
+    // Phase 2: PayPal Wallet, Venmo, Apple Pay
     // ========================================
     // Parse vaulting data from event.data (passed by frontend)
     const vaultingData = parseVaultingData((event as any).data);
     let vaultCustomerId: string | undefined;
 
+    // Default to "card" for backward compatibility with Phase 1
+    const paymentMethodType = vaultingData.paymentMethodType || "card";
+
     this.logger.debug("Vaulting data from event", {
+      paymentMethodType,
       savePaymentMethod: vaultingData.savePaymentMethod,
       hasVaultId: !!vaultingData.vaultId,
       hasSaleorUserId: !!vaultingData.saleorUserId,
       merchantInitiated: vaultingData.merchantInitiated,
     });
 
-    // "Return Buyer" flow - use previously saved card
+    // "Return Buyer" flow - use previously saved payment method
     if (vaultingData.vaultId) {
       const isMIT = vaultingData.merchantInitiated === true;
 
-      this.logger.info("Return Buyer flow - using vaulted card", {
+      this.logger.info("Return Buyer flow - using vaulted payment method", {
+        paymentMethodType,
         vaultId: vaultingData.vaultId,
         merchantInitiated: isMIT,
         flow: isMIT ? "Buyer Not Present (MIT)" : "Buyer Present",
       });
 
-      // Add vault_id to payment_source.card for using saved card
       if (!paymentSource) {
         paymentSource = {};
       }
 
-      // Build card payment source with vault_id
-      paymentSource.card = {
-        vault_id: vaultingData.vaultId,
-      };
-
-      // MIT (Merchant-Initiated Transaction) - add stored_credential for "Buyer Not Present" flow
-      // This is required when charging a saved card without buyer interaction
-      // (e.g., subscriptions, delayed charges, reorders)
-      if (isMIT) {
-        paymentSource.card = {
-          ...paymentSource.card,
-          stored_credential: {
-            payment_initiator: "MERCHANT" as const,
-            payment_type: "UNSCHEDULED" as const,
-            usage: "SUBSEQUENT" as const,
-          },
+      if (paymentMethodType === "paypal") {
+        // PayPal Wallet Vaulting - "Return Buyer" flow (Phase 2)
+        // Use vault_id in payment_source.paypal
+        paymentSource.paypal = {
+          ...paymentSource.paypal,
+          vault_id: vaultingData.vaultId,
         };
 
-        this.logger.info("MIT stored_credential added to payment source", {
-          payment_initiator: "MERCHANT",
-          payment_type: "UNSCHEDULED",
-          usage: "SUBSEQUENT",
+        this.logger.info("PayPal wallet vault_id added to payment source", {
+          vaultId: vaultingData.vaultId,
         });
+
+        // Note: MIT for PayPal wallets is handled differently than cards
+        // PayPal wallet doesn't use stored_credential, the vault_id itself implies consent
+        if (isMIT) {
+          this.logger.info("PayPal Wallet MIT - vault_id used for merchant-initiated transaction", {
+            vaultId: vaultingData.vaultId,
+          });
+        }
+      } else if (paymentMethodType === "venmo") {
+        // Venmo Vaulting - "Return Buyer" flow (Phase 2)
+        // Use vault_id in payment_source.venmo
+        paymentSource.venmo = {
+          vault_id: vaultingData.vaultId,
+        };
+
+        this.logger.info("Venmo vault_id added to payment source", {
+          vaultId: vaultingData.vaultId,
+        });
+
+        // Note: MIT for Venmo is similar to PayPal wallets
+        // The vault_id itself implies consent for merchant-initiated transactions
+        if (isMIT) {
+          this.logger.info("Venmo MIT - vault_id used for merchant-initiated transaction", {
+            vaultId: vaultingData.vaultId,
+          });
+        }
+      } else if (paymentMethodType === "apple_pay") {
+        // Apple Pay Vaulting - "Return Buyer" flow (Phase 2)
+        // Use vault_id in payment_source.apple_pay
+        paymentSource.apple_pay = {
+          vault_id: vaultingData.vaultId,
+        };
+
+        this.logger.info("Apple Pay vault_id added to payment source", {
+          vaultId: vaultingData.vaultId,
+        });
+
+        // MIT for Apple Pay requires stored_credential similar to cards
+        if (isMIT) {
+          paymentSource.apple_pay = {
+            ...paymentSource.apple_pay,
+            stored_credential: {
+              payment_initiator: "MERCHANT" as const,
+              payment_type: "UNSCHEDULED" as const,
+              usage: "SUBSEQUENT" as const,
+            },
+          };
+
+          this.logger.info("MIT stored_credential added to Apple Pay payment source", {
+            payment_initiator: "MERCHANT",
+            payment_type: "UNSCHEDULED",
+            usage: "SUBSEQUENT",
+          });
+        }
+      } else {
+        // ACDC Card Vaulting - "Return Buyer" flow (Phase 1)
+        // Use vault_id in payment_source.card
+        paymentSource.card = {
+          vault_id: vaultingData.vaultId,
+        };
+
+        // MIT (Merchant-Initiated Transaction) - add stored_credential for "Buyer Not Present" flow
+        // This is required when charging a saved card without buyer interaction
+        // (e.g., subscriptions, delayed charges, reorders)
+        if (isMIT) {
+          paymentSource.card = {
+            ...paymentSource.card,
+            stored_credential: {
+              payment_initiator: "MERCHANT" as const,
+              payment_type: "UNSCHEDULED" as const,
+              usage: "SUBSEQUENT" as const,
+            },
+          };
+
+          this.logger.info("MIT stored_credential added to card payment source", {
+            payment_initiator: "MERCHANT",
+            payment_type: "UNSCHEDULED",
+            usage: "SUBSEQUENT",
+          });
+        }
       }
     }
 
-    // "Save During Purchase" flow - save card for future use
+    // "Save During Purchase" flow - save payment method for future use
     if (vaultingData.savePaymentMethod && vaultingData.saleorUserId) {
-      this.logger.info("Save During Purchase flow - will vault card on success", {
+      this.logger.info("Save During Purchase flow - will vault payment method on success", {
+        paymentMethodType,
         saleorUserId: vaultingData.saleorUserId,
       });
 
@@ -705,6 +902,96 @@ export class TransactionInitializeSessionUseCase {
             saleorUserId: vaultingData.saleorUserId,
             paypalCustomerId: vaultCustomerId,
           });
+
+          // For PayPal wallet vaulting, add attributes to payment_source.paypal
+          if (paymentMethodType === "paypal" && vaultCustomerId) {
+            if (!paymentSource) {
+              paymentSource = {};
+            }
+            if (!paymentSource.paypal) {
+              paymentSource.paypal = {};
+            }
+
+            // Add vault attributes for PayPal wallet vaulting (Phase 2)
+            paymentSource.paypal.attributes = {
+              vault: {
+                store_in_vault: "ON_SUCCESS" as const,
+                usage_type: "MERCHANT" as const,
+              },
+              customer: {
+                id: vaultCustomerId,
+              },
+            };
+
+            this.logger.info("PayPal wallet vault attributes added to payment source", {
+              customerId: vaultCustomerId,
+              storeInVault: "ON_SUCCESS",
+              usageType: "MERCHANT",
+            });
+
+            // Clear vaultCustomerId to prevent duplicate handling in createOrder
+            // (PayPal wallet vaulting is handled via paymentSource.paypal.attributes,
+            // not via the vaultCustomerId parameter which is for card vaulting)
+            vaultCustomerId = undefined;
+          }
+
+          // For Venmo vaulting, add attributes to payment_source.venmo
+          if (paymentMethodType === "venmo" && vaultCustomerId) {
+            if (!paymentSource) {
+              paymentSource = {};
+            }
+
+            // Add vault attributes for Venmo vaulting (Phase 2)
+            paymentSource.venmo = {
+              attributes: {
+                vault: {
+                  store_in_vault: "ON_SUCCESS" as const,
+                  usage_type: "MERCHANT" as const,
+                },
+                customer: {
+                  id: vaultCustomerId,
+                },
+              },
+            };
+
+            this.logger.info("Venmo vault attributes added to payment source", {
+              customerId: vaultCustomerId,
+              storeInVault: "ON_SUCCESS",
+              usageType: "MERCHANT",
+            });
+
+            // Clear vaultCustomerId to prevent duplicate handling in createOrder
+            vaultCustomerId = undefined;
+          }
+
+          // For Apple Pay vaulting, add attributes to payment_source.apple_pay
+          if (paymentMethodType === "apple_pay" && vaultCustomerId) {
+            if (!paymentSource) {
+              paymentSource = {};
+            }
+
+            // Add vault attributes for Apple Pay vaulting (Phase 2)
+            paymentSource.apple_pay = {
+              attributes: {
+                vault: {
+                  store_in_vault: "ON_SUCCESS" as const,
+                  usage_type: "MERCHANT" as const,
+                },
+                customer: {
+                  id: vaultCustomerId,
+                },
+              },
+            };
+
+            this.logger.info("Apple Pay vault attributes added to payment source", {
+              customerId: vaultCustomerId,
+              storeInVault: "ON_SUCCESS",
+              usageType: "MERCHANT",
+            });
+
+            // Clear vaultCustomerId to prevent duplicate handling in createOrder
+            vaultCustomerId = undefined;
+          }
         } else {
           this.logger.warn("Failed to get/create customer vault mapping, proceeding without vaulting", {
             error: customerVaultResult.error,

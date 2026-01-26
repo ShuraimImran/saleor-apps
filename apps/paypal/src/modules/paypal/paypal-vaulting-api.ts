@@ -47,7 +47,10 @@ export interface PayPalPaymentToken {
     paypal?: {
       email_address?: string;
       account_id?: string;
-      name?: any;
+      name?: {
+        given_name?: string;
+        surname?: string;
+      };
       phone?: any;
       address?: any;
     };
@@ -55,9 +58,25 @@ export interface PayPalPaymentToken {
       email_address?: string;
       account_id?: string;
       user_name?: string;
-      name?: any;
+      name?: {
+        given_name?: string;
+        surname?: string;
+      };
       phone?: any;
       address?: any;
+    };
+    apple_pay?: {
+      card?: {
+        brand?: string;
+        last_digits?: string;
+        expiry?: string;
+        type?: string; // CREDIT, DEBIT, etc.
+      };
+      email_address?: string;
+      name?: {
+        given_name?: string;
+        surname?: string;
+      };
     };
   };
   links?: Array<{
