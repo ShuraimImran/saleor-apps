@@ -69,6 +69,9 @@ interface VaultingData {
   // When true, the transaction is initiated by the merchant without buyer interaction
   // Used for: subscriptions, delayed charges, reorders, etc.
   merchantInitiated?: boolean;
+  // Idempotency key - prevents duplicate transactions on retry
+  // Frontend should generate a unique key per checkout attempt (e.g., "checkout-{id}-{timestamp}")
+  idempotencyKey?: string;
 }
 
 /**
@@ -96,6 +99,7 @@ function parseVaultingData(eventData: unknown): VaultingData {
     vaultId: typeof data.vaultId === "string" ? data.vaultId : undefined,
     saleorUserId: typeof data.saleorUserId === "string" ? data.saleorUserId : undefined,
     merchantInitiated: typeof data.merchantInitiated === "boolean" ? data.merchantInitiated : undefined,
+    idempotencyKey: typeof data.idempotencyKey === "string" ? data.idempotencyKey : undefined,
   };
 }
 
@@ -770,6 +774,7 @@ export class TransactionInitializeSessionUseCase {
       hasVaultId: !!vaultingData.vaultId,
       hasSaleorUserId: !!vaultingData.saleorUserId,
       merchantInitiated: vaultingData.merchantInitiated,
+      hasIdempotencyKey: !!vaultingData.idempotencyKey,
     });
 
     // "Return Buyer" flow - use previously saved payment method
@@ -1032,6 +1037,8 @@ export class TransactionInitializeSessionUseCase {
       paymentSource,
       // ACDC Card Vaulting - customer ID for "Save During Purchase" flow
       vaultCustomerId,
+      // Idempotency key - prevents duplicate transactions on network retry
+      requestId: vaultingData.idempotencyKey,
     });
     const createOrderTime = Date.now() - createOrderStart;
     const totalUseCaseTime = Date.now() - useCaseStartTime;

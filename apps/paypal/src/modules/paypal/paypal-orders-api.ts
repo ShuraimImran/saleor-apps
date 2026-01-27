@@ -196,6 +196,8 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
     };
     // ACDC Card Vaulting - customer ID for vault association
     vaultCustomerId?: string;
+    // Idempotency key - prevents duplicate transactions on network retry
+    requestId?: string;
   }): Promise<Result<PayPalOrder, unknown>> {
     // Build amount object with breakdown if items are provided
     // PayPal requires: amount.value = breakdown.item_total + breakdown.shipping + breakdown.tax_total
@@ -314,6 +316,7 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
         path: "/v2/checkout/orders",
         body: requestBody,
         includeBnCode: true, // Per PDF Page 4: BN code required in "create order" requests
+        requestId: args.requestId, // Idempotency key - prevents duplicate transactions
       }),
       (error) => error,
     );

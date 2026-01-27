@@ -223,6 +223,8 @@ export interface IPayPalOrdersApi {
     };
     // ACDC Card Vaulting - customer ID for vault association
     vaultCustomerId?: string;
+    // Idempotency key - prevents duplicate transactions on network retry
+    requestId?: string;
   }): Promise<Result<PayPalOrder, unknown>>;
 
   captureOrder(args: { orderId: PayPalOrderId }): Promise<Result<PayPalOrder, unknown>>;
