@@ -64,6 +64,12 @@ const handler = paymentGatewayInitializeSessionWebhookDefinition.createHandler(
       const payloadData = (ctx.payload as any).data;
       const saleorUserId = typeof payloadData?.saleorUserId === "string" ? payloadData.saleorUserId : undefined;
 
+      logger.info("Received payload data for vaulting", {
+        hasSaleorUserId: !!saleorUserId,
+        saleorUserId: saleorUserId || "NOT_PROVIDED",
+        payloadDataKeys: payloadData ? Object.keys(payloadData) : [],
+      });
+
       const result = await useCase.execute({
         channelId: ctx.payload.sourceObject.channel.id,
         authData: ctx.authData,
