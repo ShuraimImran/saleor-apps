@@ -3,6 +3,8 @@ fragment PaymentGatewayInitializeSessionEvent on PaymentGatewayInitializeSession
   sourceObject {
     ...SourceObject
   }
+  data
+  amount
 }
 
 subscription PaymentGatewayInitializeSession {

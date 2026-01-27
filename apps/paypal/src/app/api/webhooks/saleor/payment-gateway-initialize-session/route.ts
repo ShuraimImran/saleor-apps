@@ -61,7 +61,8 @@ const handler = paymentGatewayInitializeSessionWebhookDefinition.createHandler(
       setObservabilitySaleorApiUrl(saleorApiUrlResult.value, ctx.payload.version);
 
       // Extract saleorUserId from payload data for vaulting support
-      const payloadData = (ctx.payload as any).data;
+      // The `data` field is now properly typed in the GraphQL subscription
+      const payloadData = ctx.payload.data as Record<string, unknown> | null | undefined;
       const saleorUserId = typeof payloadData?.saleorUserId === "string" ? payloadData.saleorUserId : undefined;
 
       logger.info("Received payload data for vaulting", {
