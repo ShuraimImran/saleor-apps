@@ -1011,6 +1011,28 @@ export class TransactionInitializeSessionUseCase {
       this.logger.warn("savePaymentMethod requested but no saleorUserId provided - vaulting requires logged-in user");
     }
 
+    // PayPal only allows ONE payment_source type per request
+    // Remove other payment sources based on the payment method type
+    // Otherwise PayPal returns INVALID_REQUEST error
+    if (paymentSource) {
+      if (paymentMethodType === "card" && (vaultCustomerId || paymentSource.card)) {
+        delete paymentSource.paypal;
+        delete paymentSource.venmo;
+        delete paymentSource.apple_pay;
+        this.logger.debug("Cleaned payment_source for card payment");
+      } else if (paymentMethodType === "venmo" && paymentSource.venmo) {
+        delete paymentSource.paypal;
+        delete paymentSource.card;
+        delete paymentSource.apple_pay;
+        this.logger.debug("Cleaned payment_source for venmo payment");
+      } else if (paymentMethodType === "apple_pay" && paymentSource.apple_pay) {
+        delete paymentSource.paypal;
+        delete paymentSource.card;
+        delete paymentSource.venmo;
+        this.logger.debug("Cleaned payment_source for apple_pay payment");
+      }
+    }
+
     // Create PayPal order
     const createOrderStart = Date.now();
     const createOrderResult = await paypalOrdersApi.createOrder({
