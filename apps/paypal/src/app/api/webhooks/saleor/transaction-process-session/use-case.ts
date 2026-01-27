@@ -185,6 +185,22 @@ export class TransactionProcessSessionUseCase {
       actionType: event.action.actionType,
     });
 
+    // Log vault info if present (for debugging vaulting issues)
+    const vaultInfo = paypalOrder.payment_source?.card?.attributes?.vault;
+    if (vaultInfo) {
+      this.logger.info("Card vaulting result from capture", {
+        vaultId: vaultInfo.id,
+        vaultStatus: vaultInfo.status,
+        customerId: vaultInfo.customer?.id,
+      });
+    } else {
+      this.logger.debug("No vault info in capture response", {
+        hasPaymentSource: !!paypalOrder.payment_source,
+        hasCard: !!paypalOrder.payment_source?.card,
+        hasAttributes: !!paypalOrder.payment_source?.card?.attributes,
+      });
+    }
+
     // Resolve Saleor money from PayPal order
     const saleorMoneyResult = resolveSaleorMoneyFromPayPalOrder(paypalOrder);
 
