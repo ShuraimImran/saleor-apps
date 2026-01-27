@@ -427,20 +427,44 @@ export class PayPalPartnerReferralsApi implements IPayPalPartnerReferralsApi {
         );
 
         if (vaultingCapability?.status === "ACTIVE") {
-          // Also check for required scopes
+          // Check for required scopes in oauth_integrations (not in capabilities)
+          // Scopes are returned in: oauth_integrations[].oauth_third_party[].scopes
+          const oauthScopes: string[] = [];
+          for (const integration of status.oauth_integrations || []) {
+            for (const thirdParty of integration.oauth_third_party || []) {
+              if (thirdParty.scopes) {
+                oauthScopes.push(...thirdParty.scopes);
+              }
+            }
+          }
+
           const hasRequiredScopes =
-            vaultingCapability.scopes?.includes(
-              "https://uri.paypal.com/services/billing-agreements"
-            ) &&
-            vaultingCapability.scopes?.includes(
-              "https://uri.paypal.com/services/vault/payment-tokens/read"
-            ) &&
-            vaultingCapability.scopes?.includes(
-              "https://uri.paypal.com/services/vault/payment-tokens/readwrite"
-            );
+            oauthScopes.includes("https://uri.paypal.com/services/billing-agreements") &&
+            oauthScopes.includes("https://uri.paypal.com/services/vault/payment-tokens/read") &&
+            oauthScopes.includes("https://uri.paypal.com/services/vault/payment-tokens/readwrite");
+
+          logger.debug("Vaulting scopes check", {
+            merchant_id: merchantId,
+            oauth_scopes_found: oauthScopes.length,
+            has_billing_agreements: oauthScopes.includes("https://uri.paypal.com/services/billing-agreements"),
+            has_tokens_read: oauthScopes.includes("https://uri.paypal.com/services/vault/payment-tokens/read"),
+            has_tokens_readwrite: oauthScopes.includes("https://uri.paypal.com/services/vault/payment-tokens/readwrite"),
+            has_required_scopes: hasRequiredScopes,
+          });
 
           if (hasRequiredScopes) {
             readiness.vaulting = true;
+            logger.info("✓ Vaulting is ENABLED for merchant", { merchant_id: merchantId });
+          } else {
+            logger.warn("✗ Vaulting is DISABLED - missing required OAuth scopes", {
+              merchant_id: merchantId,
+              required_scopes: [
+                "https://uri.paypal.com/services/billing-agreements",
+                "https://uri.paypal.com/services/vault/payment-tokens/read",
+                "https://uri.paypal.com/services/vault/payment-tokens/readwrite",
+              ],
+              available_scopes: oauthScopes,
+            });
           }
         }
       }
