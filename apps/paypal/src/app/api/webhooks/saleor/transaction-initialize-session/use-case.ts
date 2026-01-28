@@ -1011,24 +1011,43 @@ export class TransactionInitializeSessionUseCase {
       this.logger.warn("savePaymentMethod requested but no saleorUserId provided - vaulting requires logged-in user");
     }
 
-    // PayPal only allows ONE payment_source type per request
-    // Remove other payment sources based on the payment method type
-    // Otherwise PayPal returns INVALID_REQUEST error
+    // PayPal only allows ONE payment_source type per request.
+    // For ACDC CardFields, the SDK handles card data client-side,
+    // so we must NOT send payment_source.paypal for card payments.
+    // Otherwise PayPal returns INVALID_REQUEST error.
     if (paymentSource) {
-      if (paymentMethodType === "card" && (vaultCustomerId || paymentSource.card)) {
+      if (paymentMethodType === "card") {
+        // ACDC CardFields: remove all non-card payment sources.
+        // The CardFields SDK submits card data directly to PayPal.
+        // Backend only needs payment_source.card when vaulting (attributes).
         delete paymentSource.paypal;
         delete paymentSource.venmo;
         delete paymentSource.apple_pay;
-        this.logger.debug("Cleaned payment_source for card payment");
-      } else if (paymentMethodType === "venmo" && paymentSource.venmo) {
+        // If nothing remains, clear paymentSource entirely so
+        // PayPal creates a plain order (CardFields will attach card later)
+        if (Object.keys(paymentSource).length === 0) {
+          paymentSource = undefined;
+        }
+        this.logger.debug("Cleaned payment_source for card (ACDC) payment", {
+          hasPaymentSource: !!paymentSource,
+          hasCardSource: !!paymentSource?.card,
+          hasVaultCustomerId: !!vaultCustomerId,
+        });
+      } else if (paymentMethodType === "venmo") {
         delete paymentSource.paypal;
         delete paymentSource.card;
         delete paymentSource.apple_pay;
+        if (Object.keys(paymentSource).length === 0) {
+          paymentSource = undefined;
+        }
         this.logger.debug("Cleaned payment_source for venmo payment");
-      } else if (paymentMethodType === "apple_pay" && paymentSource.apple_pay) {
+      } else if (paymentMethodType === "apple_pay") {
         delete paymentSource.paypal;
         delete paymentSource.card;
         delete paymentSource.venmo;
+        if (Object.keys(paymentSource).length === 0) {
+          paymentSource = undefined;
+        }
         this.logger.debug("Cleaned payment_source for apple_pay payment");
       }
     }

@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PayPal ACDC Checkout with Vaulting</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 500px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    h2 { margin-top: 0; color: #333; }
+    .field-container {
+      margin-bottom: 16px;
+    }
+    .field-container label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 500;
+      color: #555;
+    }
+    .card-field {
+      height: 44px;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fafafa;
+    }
+    .card-field.invalid { border-color: #e74c3c; }
+    .card-field.valid { border-color: #27ae60; }
+    .row { display: flex; gap: 12px; }
+    .row > div { flex: 1; }
+    .checkbox-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 16px 0;
+    }
+    .checkbox-container input { width: 18px; height: 18px; }
+    button {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      background: #0070ba;
+      color: white;
+    }
+    .btn-primary:hover:not(:disabled) { background: #005ea6; }
+    .btn-secondary {
+      background: #eee;
+      color: #333;
+    }
+    .btn-secondary:hover:not(:disabled) { background: #ddd; }
+    .saved-card {
+      display: flex;
+      align-items: center;
+      padding: 12px;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .saved-card:hover { border-color: #0070ba; }
+    .saved-card.selected {
+      border-color: #0070ba;
+      background: #f0f7ff;
+    }
+    .saved-card-icon {
+      width: 40px;
+      height: 28px;
+      background: #ddd;
+      border-radius: 4px;
+      margin-right: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .saved-card-details { flex: 1; }
+    .saved-card-number { font-weight: 500; }
+    .saved-card-expiry { font-size: 12px; color: #666; }
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      margin-top: 16px;
+      font-size: 14px;
+    }
+    .status.info { background: #e3f2fd; color: #1565c0; }
+    .status.success { background: #e8f5e9; color: #2e7d32; }
+    .status.error { background: #ffebee; color: #c62828; }
+    .divider {
+      display: flex;
+      align-items: center;
+      margin: 20px 0;
+      color: #999;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #ddd;
+    }
+    .divider span { padding: 0 12px; font-size: 14px; }
+    .hidden { display: none; }
+    .loader {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #fff;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #config-section input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 12px;
+      border-radius: 6px;
+      overflow: auto;
+      font-size: 12px;
+      max-height: 400px;
+    }
+  </style>
+</head>
+<body>
+
+  
+
+  <!-- ==================== SAVED CARDS ==================== -->
+  <div class="card hidden" id="saved-cards-section">
+    <h2>Saved Cards</h2>
+    <div id="saved-cards-list"></div>
+    <button class="btn-primary hidden" id="useVaultedBtn" onclick="payWithVaultedCard()">
+      Pay with Selected Card
+    </button>
+    <div class="divider"><span>or enter new card</span></div>
+  </div>
+
+  <!-- ==================== NEW CARD FORM ==================== -->
+  <div class="card hidden" id="card-form-section">
+    <h2>Enter Card Details</h2>
+
+    <div class="field-container">
+      <label>Card Number</label>
+      <div id="card-number" class="card-field"></div>
+    </div>
+
+    <div class="row">
+      <div class="field-container">
+        <label>Expiry Date</label>
+        <div id="card-expiry" class="card-field"></div>
+      </div>
+      <div class="field-container">
+        <label>CVV</label>
+        <div id="card-cvv" class="card-field"></div>
+      </div>
+    </div>
+
+    <div class="field-container">
+      <label>Cardholder Name</label>
+      <div id="card-name" class="card-field"></div>
+    </div>
+
+    <div class="checkbox-container">
+      <input type="checkbox" id="saveCard" checked>
+      <label for="saveCard">Save this card for future purchases</label>
+    </div>
+
+    <button class="btn-primary" id="payBtn" onclick="submitPayment()" disabled>
+      Pay Now
+    </button>
+
+    <div id="paymentStatus"></div>
+  </div>
+
+  <!-- ==================== RESULT ==================== -->
+  <div class="card hidden" id="result-section">
+    <h2>Payment Result</h2>
+    <pre id="resultJson"></pre>
+  </div>
+
+  <script>
+    // ============================================
+    // STATE
+    // ============================================
+    let paypalConfig = null;
+    let cardFields = null;
+    let selectedVaultId = null;
+    let transactionId = null;
+
+    // ============================================
+    // GRAPHQL MUTATIONS
+    // ============================================
+    const PAYMENT_GATEWAY_INITIALIZE = `
+      mutation PaymentGatewayInitialize($checkoutId: ID!, $amount: PositiveDecimal!, $saleorUserId: String) {
+        paymentGatewayInitialize(
+          id: $checkoutId
+          amount: $amount
+          paymentGateways: [{
+            id: "saleor.app.payment.paypal"
+            data: { saleorUserId: $saleorUserId }
+          }]
+        ) {
+          gatewayConfigs {
+            id
+            data
+            errors { field message }
+          }
+          errors { field message }
+        }
+      }
+    `;
+
+    const TRANSACTION_INITIALIZE = `
+      mutation TransactionInitialize($checkoutId: ID!, $amount: PositiveDecimal!, $data: JSON!) {
+        transactionInitialize(
+          id: $checkoutId
+          amount: $amount
+          paymentGateway: {
+            id: "saleor.app.payment.paypal"
+            data: $data
+          }
+        ) {
+          transactionEvent {
+            type
+            message
+          }
+          transaction {
+            id
+            pspReference
+          }
+          data
+          errors { field message code }
+        }
+      }
+    `;
+
+    const TRANSACTION_PROCESS = `
+      mutation TransactionProcess($transactionId: ID!, $data: JSON) {
+        transactionProcess(
+          id: $transactionId
+          data: $data
+        ) {
+          transactionEvent {
+            type
+            message
+          }
+          transaction {
+            id
+            pspReference
+            authorizedAmount { amount currency }
+            chargedAmount { amount currency }
+          }
+          data
+          errors { field message code }
+        }
+      }
+    `;
+
+    // ============================================
+    // HELPERS
+    // ============================================
+    function getConfig() {
+      return {
+        saleorApi: document.getElementById('saleorApi').value,
+        saleorToken: document.getElementById('saleorToken').value,
+        checkoutId: document.getElementById('checkoutId').value,
+        amount: parseFloat(document.getElementById('amount').value),
+        saleorUserId: document.getElementById('saleorUserId').value,
+      };
+    }
+
+    async function graphqlRequest(query, variables) {
+      const config = getConfig();
+      const res = await fetch(config.saleorApi, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.saleorToken}`,
+        },
+        body: JSON.stringify({ query, variables }),
+      });
+      return res.json();
+    }
+
+    function showStatus(elementId, message, type = 'info') {
+      const el = document.getElementById(elementId);
+      el.className = `status ${type}`;
+      el.innerHTML = message;
+      el.classList.remove('hidden');
+    }
+
+    function generateIdempotencyKey() {
+      return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    /**
+     * Safely parse a Saleor JSON scalar value.
+     * Saleor may return it as an object, a JSON string, or double-stringified JSON.
+     */
+    function parseSaleorJson(value) {
+      if (value == null) return null;
+      if (typeof value === 'object') return value;
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          // Handle double-stringified: if still a string, parse again
+          if (typeof parsed === 'string') {
+            try { return JSON.parse(parsed); } catch (_) { return parsed; }
+          }
+          return parsed;
+        } catch (_) {
+          return value;
+        }
+      }
+      return value;
+    }
+
+    /**
+     * Extract the PayPal Order ID from the TransactionInitialize response.
+     * Tries every known location where it could appear.
+     */
+    function extractPayPalOrderId(txData) {
+      const responseData = parseSaleorJson(txData.data);
+
+      console.log('[extractPayPalOrderId] txData.data raw:', txData.data);
+      console.log('[extractPayPalOrderId] txData.data parsed:', responseData);
+      console.log('[extractPayPalOrderId] txData.transaction:', txData.transaction);
+
+      // 1. data.paypal_order_id  (backend snake_case)
+      // 2. data.paypalOrderId    (camelCase variant)
+      // 3. transaction.pspReference (Saleor stores it here)
+      // 4. data.data.paypal_order_id (if Saleor returns the full webhook body)
+      // 5. data.pspReference         (if Saleor returns the full webhook body)
+      const id =
+        responseData?.paypal_order_id ||
+        responseData?.paypalOrderId ||
+        txData.transaction?.pspReference ||
+        responseData?.data?.paypal_order_id ||
+        responseData?.pspReference;
+
+      return id || null;
+    }
+
+    // ============================================
+    // STEP 1 - INITIALIZE PAYMENT GATEWAY
+    // ============================================
+    async function initializePayment() {
+      const btn = document.getElementById('initBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loader"></span>Initializing...';
+
+      try {
+        const config = getConfig();
+        showStatus('initStatus', 'Calling PaymentGatewayInitialize...', 'info');
+
+        const result = await graphqlRequest(PAYMENT_GATEWAY_INITIALIZE, {
+          checkoutId: config.checkoutId,
+          amount: config.amount,
+          saleorUserId: config.saleorUserId,
+        });
+
+        console.log('[Step 1] PaymentGatewayInitialize response:', JSON.stringify(result, null, 2));
+
+        if (result.errors || result.data?.paymentGatewayInitialize?.errors?.length) {
+          throw new Error(JSON.stringify(result.errors || result.data.paymentGatewayInitialize.errors));
+        }
+
+        const gatewayConfig = result.data.paymentGatewayInitialize.gatewayConfigs.find(
+          (g) => g.id === 'saleor.app.payment.paypal',
+        );
+
+        if (!gatewayConfig) throw new Error('PayPal gateway config not found in response');
+
+        paypalConfig = parseSaleorJson(gatewayConfig.data);
+        console.log('[Step 1] PayPal config:', paypalConfig);
+
+        showStatus(
+          'initStatus',
+          'Initialized! Client ID: ' + paypalConfig.paypalClientId.substring(0, 20) + '...',
+          'success',
+        );
+
+        await loadPayPalSDK();
+        renderSavedCards();
+      } catch (error) {
+        console.error('[Step 1] Error:', error);
+        showStatus('initStatus', 'Error: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Initialize Payment Gateway';
+      }
+    }
+
+    // ============================================
+    // STEP 2 - LOAD PAYPAL SDK + RENDER CARD FIELDS
+    // ============================================
+    function loadPayPalSDK() {
+      return new Promise((resolve, reject) => {
+        const existing = document.getElementById('paypal-sdk');
+        if (existing) existing.remove();
+
+        const script = document.createElement('script');
+        script.id = 'paypal-sdk';
+
+        const params = new URLSearchParams({
+          'client-id': paypalConfig.paypalClientId,
+          components: 'card-fields',
+          intent: 'capture',
+          currency: 'USD',
+        });
+
+        script.src = 'https://www.paypal.com/sdk/js?' + params.toString();
+
+        // Attach user-id-token for vaulting if available
+        if (paypalConfig.userIdToken) {
+          script.setAttribute('data-user-id-token', paypalConfig.userIdToken);
+          console.log('[Step 2] userIdToken attached to SDK script tag');
+        }
+
+        script.onload = () => {
+          console.log('[Step 2] PayPal SDK loaded');
+          renderCardFields();
+          resolve();
+        };
+        script.onerror = () => reject(new Error('Failed to load PayPal SDK'));
+
+        document.head.appendChild(script);
+      });
+    }
+
+    function renderCardFields() {
+      document.getElementById('card-form-section').classList.remove('hidden');
+
+      if (!window.paypal?.CardFields) {
+        showStatus(
+          'paymentStatus',
+          'CardFields not available. Ensure ACDC is enabled for your PayPal merchant account.',
+          'error',
+        );
+        return;
+      }
+
+      cardFields = window.paypal.CardFields({
+        createOrder: createPayPalOrder,
+        onApprove: onPaymentApprove,
+        onError: onPaymentError,
+        style: {
+          input: {
+            'font-size': '16px',
+            'font-family': '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif',
+            color: '#333',
+          },
+          ':focus': { color: '#333' },
+        },
+      });
+
+      if (cardFields.isEligible()) {
+        cardFields.NumberField().render('#card-number');
+        cardFields.ExpiryField().render('#card-expiry');
+        cardFields.CVVField().render('#card-cvv');
+        cardFields.NameField().render('#card-name');
+        document.getElementById('payBtn').disabled = false;
+        console.log('[Step 2] Card fields rendered');
+      } else {
+        showStatus('paymentStatus', 'Card fields not eligible for this configuration.', 'error');
+      }
+    }
+
+    // ============================================
+    // STEP 3 - RENDER SAVED CARDS
+    // ============================================
+    function renderSavedCards() {
+      const savedCards = paypalConfig.savedPaymentMethods || [];
+
+      if (savedCards.length === 0) {
+        document.getElementById('saved-cards-section').classList.add('hidden');
+        return;
+      }
+
+      document.getElementById('saved-cards-section').classList.remove('hidden');
+
+      const listEl = document.getElementById('saved-cards-list');
+      listEl.innerHTML = savedCards
+        .map((card) => {
+          const isCard = card.type === 'card';
+          const icon = isCard ? (card.brand || 'CARD') : 'PP';
+          const display = isCard ? '---- ' + (card.lastDigits || '****') : card.email || 'PayPal Account';
+          const expiry = card.expiry || '';
+          return (
+            '<div class="saved-card" data-vault-id="' + card.vaultId + '" onclick="selectSavedCard(\'' + card.vaultId + '\')">' +
+              '<div class="saved-card-icon">' + icon.substring(0, 4) + '</div>' +
+              '<div class="saved-card-details">' +
+                '<div class="saved-card-number">' + display + '</div>' +
+                (expiry ? '<div class="saved-card-expiry">Expires ' + expiry + '</div>' : '') +
+              '</div>' +
+            '</div>'
+          );
+        })
+        .join('');
+    }
+
+    function selectSavedCard(vaultId) {
+      selectedVaultId = vaultId;
+      document.querySelectorAll('.saved-card').forEach((el) => {
+        el.classList.toggle('selected', el.dataset.vaultId === vaultId);
+      });
+      document.getElementById('useVaultedBtn').classList.remove('hidden');
+    }
+
+    // ============================================
+    // STEP 4A - PAY WITH VAULTED CARD
+    // ============================================
+    async function payWithVaultedCard() {
+      if (!selectedVaultId) return alert('Please select a saved card');
+
+      const btn = document.getElementById('useVaultedBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loader"></span>Processing...';
+
+      try {
+        const config = getConfig();
+        showStatus('paymentStatus', 'Processing payment with saved card...', 'info');
+
+        const initData = {
+          paymentMethodType: 'card',
+          vaultId: selectedVaultId,
+          saleorUserId: config.saleorUserId,
+          idempotencyKey: generateIdempotencyKey(),
+        };
+
+        console.log('[Step 4A] TransactionInitialize data:', initData);
+
+        const initResult = await graphqlRequest(TRANSACTION_INITIALIZE, {
+          checkoutId: config.checkoutId,
+          amount: config.amount,
+          data: initData,
+        });
+
+        console.log('[Step 4A] TransactionInitialize response:', JSON.stringify(initResult, null, 2));
+
+        if (initResult.errors || initResult.data?.transactionInitialize?.errors?.length) {
+          throw new Error(JSON.stringify(initResult.errors || initResult.data.transactionInitialize.errors));
+        }
+
+        const txData = initResult.data.transactionInitialize;
+        transactionId = txData.transaction?.id;
+
+        await processTransaction();
+      } catch (error) {
+        console.error('[Step 4A] Error:', error);
+        showStatus('paymentStatus', 'Error: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Pay with Selected Card';
+      }
+    }
+
+    // ============================================
+    // STEP 4B - PAY WITH NEW CARD (ACDC)
+    // ============================================
+
+    /**
+     * Called by PayPal CardFields SDK.
+     * Calls TransactionInitialize and returns the PayPal Order ID to the SDK.
+     */
+    async function createPayPalOrder() {
+      const config = getConfig();
+      const saveCard = document.getElementById('saveCard').checked;
+
+      const initData = {
+        paymentMethodType: 'card',
+        saleorUserId: config.saleorUserId,
+        idempotencyKey: generateIdempotencyKey(),
+      };
+
+      if (saveCard && config.saleorUserId) {
+        initData.savePaymentMethod = true;
+      }
+
+      console.log('[Step 4B] TransactionInitialize data:', initData);
+
+      const result = await graphqlRequest(TRANSACTION_INITIALIZE, {
+        checkoutId: config.checkoutId,
+        amount: config.amount,
+        data: initData,
+      });
+
+      console.log('[Step 4B] TransactionInitialize FULL response:', JSON.stringify(result, null, 2));
+
+      if (result.errors || result.data?.transactionInitialize?.errors?.length) {
+        throw new Error(
+          JSON.stringify(result.errors || result.data.transactionInitialize.errors),
+        );
+      }
+
+      const txData = result.data.transactionInitialize;
+      transactionId = txData.transaction?.id;
+
+      const paypalOrderId = extractPayPalOrderId(txData);
+
+      if (!paypalOrderId) {
+        console.error('[Step 4B] COULD NOT FIND ORDER ID. txData:', JSON.stringify(txData, null, 2));
+        throw new Error('PayPal Order ID not found in response. Check browser console for full response.');
+      }
+
+      console.log('[Step 4B] PayPal Order ID:', paypalOrderId);
+      return paypalOrderId;
+    }
+
+    async function onPaymentApprove(data) {
+      console.log('[Step 4B] Payment approved by PayPal:', data);
+      showStatus('paymentStatus', 'Card verified. Processing payment...', 'info');
+      await processTransaction(data.orderID);
+    }
+
+    function onPaymentError(error) {
+      console.error('[Step 4B] Payment error:', error);
+      showStatus('paymentStatus', 'Payment error: ' + error.message, 'error');
+      document.getElementById('payBtn').disabled = false;
+      document.getElementById('payBtn').innerHTML = 'Pay Now';
+    }
+
+    async function submitPayment() {
+      const btn = document.getElementById('payBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loader"></span>Processing...';
+
+      try {
+        showStatus('paymentStatus', 'Submitting card details to PayPal...', 'info');
+        await cardFields.submit();
+      } catch (error) {
+        console.error('[submitPayment] Error:', error);
+        showStatus('paymentStatus', 'Error: ' + error.message, 'error');
+        btn.disabled = false;
+        btn.innerHTML = 'Pay Now';
+      }
+    }
+
+    // ============================================
+    // STEP 5 - PROCESS TRANSACTION (CAPTURE)
+    // ============================================
+    async function processTransaction(paypalOrderId) {
+      if (!transactionId) {
+        showStatus('paymentStatus', 'No transaction ID. Cannot process.', 'error');
+        return;
+      }
+
+      try {
+        showStatus('paymentStatus', 'Capturing payment...', 'info');
+
+        const processData = paypalOrderId ? { paypalOrderId: paypalOrderId } : {};
+
+        console.log('[Step 5] TransactionProcess data:', { transactionId, processData });
+
+        const result = await graphqlRequest(TRANSACTION_PROCESS, {
+          transactionId: transactionId,
+          data: processData,
+        });
+
+        console.log('[Step 5] TransactionProcess response:', JSON.stringify(result, null, 2));
+
+        if (result.errors || result.data?.transactionProcess?.errors?.length) {
+          throw new Error(
+            JSON.stringify(result.errors || result.data.transactionProcess.errors),
+          );
+        }
+
+        const txData = result.data.transactionProcess;
+        const eventType = txData.transactionEvent?.type || 'UNKNOWN';
+
+        if (eventType === 'CHARGE_SUCCESS') {
+          showStatus('paymentStatus', 'Payment successful!', 'success');
+        } else if (eventType === 'AUTHORIZATION_SUCCESS') {
+          showStatus('paymentStatus', 'Payment authorized!', 'success');
+        } else {
+          showStatus('paymentStatus', 'Status: ' + eventType, 'info');
+        }
+
+        showResult(txData);
+      } catch (error) {
+        console.error('[Step 5] Error:', error);
+        showStatus('paymentStatus', 'Capture error: ' + error.message, 'error');
+      } finally {
+        document.getElementById('payBtn').disabled = false;
+        document.getElementById('payBtn').innerHTML = 'Pay Now';
+      }
+    }
+
+    function showResult(data) {
+      document.getElementById('result-section').classList.remove('hidden');
+      document.getElementById('resultJson').textContent = JSON.stringify(data, null, 2);
+    }
+  </script>
+</body>
+</html>
