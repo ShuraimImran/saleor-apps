@@ -601,8 +601,22 @@
 
         const txData = initResult.data.transactionInitialize;
         transactionId = txData.transaction?.id;
+        const eventType = txData.transactionEvent?.type || '';
 
-        await processTransaction();
+        // For vaulted card payments, PayPal auto-captures and returns CHARGE_SUCCESS immediately
+        // No need to call TransactionProcess
+        if (eventType === 'CHARGE_SUCCESS') {
+          console.log('[Step 4A] Payment already completed (auto-captured)');
+          showStatus('paymentStatus', 'Payment successful!', 'success');
+          showResult(txData);
+        } else if (eventType === 'CHARGE_ACTION_REQUIRED') {
+          // Fallback: if action required, call TransactionProcess (shouldn't happen for vaulted cards)
+          console.log('[Step 4A] Action required, calling TransactionProcess');
+          await processTransaction();
+        } else {
+          showStatus('paymentStatus', 'Status: ' + eventType, 'info');
+          showResult(txData);
+        }
       } catch (error) {
         console.error('[Step 4A] Error:', error);
         showStatus('paymentStatus', 'Error: ' + error.message, 'error');

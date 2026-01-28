@@ -31,6 +31,7 @@ import {
   ChargeFailureResult,
   AuthorizationFailureResult,
 } from "@/modules/transaction-result/failure-result";
+import { ChargeSuccessResult } from "@/modules/transaction-result/success-result";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
 import {
   PostgresCustomerVaultRepository,
@@ -1141,7 +1142,43 @@ export class TransactionInitializeSessionUseCase {
       });
     }
 
-    // Check if order requires payer action (e.g., approval)
+    // Handle COMPLETED status - vaulted card payments are auto-captured by PayPal
+    // No need for TransactionProcess, payment is already done
+    if (paypalOrder.status === "COMPLETED") {
+      this.logger.info("PayPal order auto-completed (vaulted card payment)", {
+        paypalOrderId: paypalOrder.id,
+        captureId: paypalOrder.purchase_units?.[0]?.payments?.captures?.[0]?.id,
+      });
+
+      const saleorMoneyResult = resolveSaleorMoneyFromPayPalOrder(paypalOrder);
+
+      if (saleorMoneyResult.isErr()) {
+        this.logger.error("Failed to resolve Saleor money from completed PayPal order", {
+          error: saleorMoneyResult.error,
+        });
+
+        return err(
+          new BrokenAppResponse(
+            appContextContainer.getContextValue(),
+            saleorMoneyResult.error,
+          ),
+        );
+      }
+
+      // Return CHARGE_SUCCESS since payment is already captured
+      const successResult = new ChargeSuccessResult();
+
+      return ok(
+        new TransactionInitializeSessionUseCaseResponses.Success({
+          transactionResult: successResult,
+          paypalOrderId: createPayPalOrderId(paypalOrder.id),
+          saleorMoney: saleorMoneyResult.value,
+          appContext: appContextContainer.getContextValue(),
+        }),
+      );
+    }
+
+    // Check if order requires payer action (e.g., approval, 3DS)
     if (paypalOrder.status === "PAYER_ACTION_REQUIRED" || paypalOrder.status === "CREATED") {
       const actionRequiredResult = event.action.actionType === "CHARGE"
         ? new ChargeActionRequiredResult()
@@ -1167,7 +1204,8 @@ export class TransactionInitializeSessionUseCase {
       );
     }
 
-    // If order is already approved, we can proceed
+    // Handle APPROVED status - order approved but not yet captured
+    // This shouldn't happen often for vaulted cards but handle it gracefully
     const saleorMoneyResult = resolveSaleorMoneyFromPayPalOrder(paypalOrder);
 
     if (saleorMoneyResult.isErr()) {
@@ -1183,16 +1221,20 @@ export class TransactionInitializeSessionUseCase {
       );
     }
 
-    // Create appropriate success result
-    const successResult = event.action.actionType === "CHARGE"
+    // For APPROVED status, still need TransactionProcess to capture
+    const actionRequiredResult = event.action.actionType === "CHARGE"
       ? new ChargeActionRequiredResult()
       : new AuthorizationActionRequiredResult();
 
     return ok(
-      new TransactionInitializeSessionUseCaseResponses.Success({
-        transactionResult: successResult,
+      new TransactionInitializeSessionUseCaseResponses.ActionRequired({
+        transactionResult: actionRequiredResult,
         paypalOrderId: createPayPalOrderId(paypalOrder.id),
-        saleorMoney: saleorMoneyResult.value,
+        data: {
+          client_token: null,
+          paypal_order_id: paypalOrder.id,
+          environment: config.environment,
+        },
         appContext: appContextContainer.getContextValue(),
       }),
     );

@@ -12,14 +12,18 @@ import {
   AuthorizationFailureResult,
   ChargeFailureResult,
 } from "@/modules/transaction-result/failure-result";
+import {
+  AuthorizationSuccessResult,
+  ChargeSuccessResult,
+} from "@/modules/transaction-result/success-result";
 
 class Success extends SuccessWebhookResponse {
-  readonly transactionResult: ChargeActionRequiredResult | AuthorizationActionRequiredResult;
+  readonly transactionResult: ChargeActionRequiredResult | AuthorizationActionRequiredResult | ChargeSuccessResult | AuthorizationSuccessResult;
   readonly saleorMoney: SaleorMoney;
   readonly paypalOrderId: PayPalOrderId;
 
   constructor(args: {
-    transactionResult: ChargeActionRequiredResult | AuthorizationActionRequiredResult;
+    transactionResult: ChargeActionRequiredResult | AuthorizationActionRequiredResult | ChargeSuccessResult | AuthorizationSuccessResult;
     saleorMoney: SaleorMoney;
     paypalOrderId: PayPalOrderId;
     appContext: AppContext;
