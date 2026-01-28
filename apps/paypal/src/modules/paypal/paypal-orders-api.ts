@@ -1,6 +1,9 @@
 import { Result, ResultAsync } from "neverthrow";
 
+import { createLogger } from "@/lib/logger";
 import { PayPalClient } from "./paypal-client";
+
+const logger = createLogger("PayPalOrdersApi");
 import { PayPalClientId } from "./paypal-client-id";
 import { PayPalClientSecret } from "./paypal-client-secret";
 import { PayPalMerchantId } from "./paypal-merchant-id";
@@ -201,32 +204,54 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
   }): Promise<Result<PayPalOrder, unknown>> {
     // Build amount object with breakdown if items are provided
     // PayPal requires: amount.value = breakdown.item_total + breakdown.shipping + breakdown.tax_total
-    const amountObject: any = args.items && args.items.length > 0 && args.amountBreakdown
-      ? {
+    // If the breakdown doesn't sum to the total, skip it to avoid 422 UNPROCESSABLE_ENTITY
+    let amountObject: any = args.amount;
+
+    if (args.items && args.items.length > 0 && args.amountBreakdown) {
+      const itemTotal = args.amountBreakdown.itemTotal ?? 0;
+      const shipping = args.amountBreakdown.shipping ?? 0;
+      const taxTotal = args.amountBreakdown.taxTotal ?? 0;
+      const breakdownSum = itemTotal + shipping + taxTotal;
+      const orderTotal = parseFloat(args.amount.value);
+
+      // Only include breakdown if it sums to the order total (within rounding tolerance)
+      if (Math.abs(breakdownSum - orderTotal) < 0.02) {
+        amountObject = {
           currency_code: args.amount.currency_code,
           value: args.amount.value,
           breakdown: {
-            ...(args.amountBreakdown.itemTotal !== undefined && {
+            ...(itemTotal > 0 && {
               item_total: {
                 currency_code: args.amount.currency_code,
-                value: args.amountBreakdown.itemTotal.toFixed(2),
+                value: itemTotal.toFixed(2),
               },
             }),
-            ...(args.amountBreakdown.shipping !== undefined && args.amountBreakdown.shipping > 0 && {
+            ...(shipping > 0 && {
               shipping: {
                 currency_code: args.amount.currency_code,
-                value: args.amountBreakdown.shipping.toFixed(2),
+                value: shipping.toFixed(2),
               },
             }),
-            ...(args.amountBreakdown.taxTotal !== undefined && args.amountBreakdown.taxTotal > 0 && {
+            ...(taxTotal > 0 && {
               tax_total: {
                 currency_code: args.amount.currency_code,
-                value: args.amountBreakdown.taxTotal.toFixed(2),
+                value: taxTotal.toFixed(2),
               },
             }),
           },
-        }
-      : args.amount;
+        };
+      } else {
+        logger.warn("Amount breakdown does not sum to order total, skipping breakdown and items", {
+          orderTotal,
+          breakdownSum: parseFloat(breakdownSum.toFixed(2)),
+          itemTotal,
+          shipping,
+          taxTotal,
+        });
+        // Clear items too since they reference the breakdown
+        args.items = undefined;
+      }
+    }
 
     // Build purchase unit with optional platform fees and items
     const purchaseUnit: any = {

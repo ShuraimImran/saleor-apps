@@ -157,7 +157,24 @@
 </head>
 <body>
 
-  
+  <!-- ==================== CONFIG ==================== -->
+  <div class="card" id="config-section">
+    <h2>Configuration</h2>
+    <label>Saleor API URL</label>
+    <input type="text" id="saleorApi" value="https://api-aeroexhaust.wsm-dev.com/graphql/">
+    <label>Saleor Token</label>
+    <input type="text" id="saleorToken" value="gZqzNH8WH2RbNcGrgu4dPGNxZsn46k">
+    <label>Checkout ID</label>
+    <input type="text" id="checkoutId" value="Q2hlY2tvdXQ6MzMwZmU0ZTQtNjZiMC00N2ZhLWI3OWItYTA5MDUyMGE1MTNl">
+    <label>Amount (must match checkout total)</label>
+    <input type="number" id="amount" value="103.69" step="0.01">
+    <label>Saleor User ID (for vaulting)</label>
+    <input type="text" id="saleorUserId" value="VXNlcjoxOTY0NjUy">
+    <button class="btn-primary" id="initBtn" onclick="initializePayment()">
+      Initialize Payment Gateway
+    </button>
+    <div id="initStatus"></div>
+  </div>
 
   <!-- ==================== SAVED CARDS ==================== -->
   <div class="card hidden" id="saved-cards-section">

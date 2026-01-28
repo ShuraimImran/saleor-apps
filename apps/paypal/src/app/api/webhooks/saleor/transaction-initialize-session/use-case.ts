@@ -997,6 +997,21 @@ export class TransactionInitializeSessionUseCase {
             // Clear vaultCustomerId to prevent duplicate handling in createOrder
             vaultCustomerId = undefined;
           }
+
+          // For ACDC Card (hosted CardFields), vaulting is handled entirely
+          // by the PayPal JS SDK via the data-user-id-token attribute.
+          // Do NOT pass vaultCustomerId to createOrder — that would add
+          // payment_source.card.attributes (vault/customer/verification)
+          // which is only valid for server-side card submission where
+          // the card number and expiry are included in the request body.
+          // The customer vault mapping is still needed so that
+          // PaymentGatewayInitialize can generate a userIdToken.
+          if (paymentMethodType === "card" && vaultCustomerId) {
+            this.logger.info("ACDC hosted fields: vault handled by SDK via data-user-id-token, clearing vaultCustomerId", {
+              paypalCustomerId: vaultCustomerId,
+            });
+            vaultCustomerId = undefined;
+          }
         } else {
           this.logger.warn("Failed to get/create customer vault mapping, proceeding without vaulting", {
             error: customerVaultResult.error,

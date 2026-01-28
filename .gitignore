@@ -44,3 +44,5 @@ yarn-error.log*
 .saleor-app-auth.json
 .DS_Store
 *.pem
+
+apps/paypal/index.html
