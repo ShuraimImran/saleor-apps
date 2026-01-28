@@ -242,13 +242,13 @@
     // GRAPHQL MUTATIONS
     // ============================================
     const PAYMENT_GATEWAY_INITIALIZE = `
-      mutation PaymentGatewayInitialize($checkoutId: ID!, $amount: PositiveDecimal!, $saleorUserId: String) {
+      mutation PaymentGatewayInitialize($checkoutId: ID!, $amount: PositiveDecimal!, $data: JSON) {
         paymentGatewayInitialize(
           id: $checkoutId
           amount: $amount
           paymentGateways: [{
             id: "saleor.app.payment.paypal"
-            data: { saleorUserId: $saleorUserId }
+            data: $data
           }]
         ) {
           gatewayConfigs {
@@ -404,10 +404,14 @@
         const config = getConfig();
         showStatus('initStatus', 'Calling PaymentGatewayInitialize...', 'info');
 
+        // Debug: log saleorUserId being sent
+        console.log('[Step 1] Sending PaymentGatewayInitialize with saleorUserId:', config.saleorUserId);
+
+        // Pass data as a complete JSON object (Saleor JSON scalar doesn't interpolate inline object fields)
         const result = await graphqlRequest(PAYMENT_GATEWAY_INITIALIZE, {
           checkoutId: config.checkoutId,
           amount: config.amount,
-          saleorUserId: config.saleorUserId,
+          data: { saleorUserId: config.saleorUserId },
         });
 
         console.log('[Step 1] PaymentGatewayInitialize response:', JSON.stringify(result, null, 2));
