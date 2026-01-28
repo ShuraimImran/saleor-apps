@@ -229,6 +229,47 @@
     <pre id="resultJson"></pre>
   </div>
 
+  <!-- ==================== VAULT WITHOUT PURCHASE ==================== -->
+  <div class="card" id="vault-section">
+    <h2>Vault Without Purchase</h2>
+    <p style="color: #666; font-size: 14px; margin-bottom: 16px;">
+      Add a card to your wallet without making a payment.<br>
+      <strong>Note:</strong> This flow requires Saleor App Bridge JWT auth.
+      In production, use the Next.js app. For testing, the tRPC calls may fail auth.
+    </p>
+    <label>tRPC Base URL</label>
+    <input type="text" id="trpcBaseUrl" value="http://localhost:3000/api/trpc" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:6px; margin-bottom:10px;">
+    <button class="btn-secondary" id="startVaultBtn" onclick="startVaultWithoutPurchase()">
+      Add Card to Wallet
+    </button>
+    <div id="vaultStatus"></div>
+
+    <!-- Card fields for vault flow (hidden until started) -->
+    <div id="vault-card-fields" class="hidden" style="margin-top: 16px;">
+      <div class="field-container">
+        <label>Card Number</label>
+        <div id="vault-card-number" class="card-field"></div>
+      </div>
+      <div class="row">
+        <div class="field-container">
+          <label>Expiry Date</label>
+          <div id="vault-card-expiry" class="card-field"></div>
+        </div>
+        <div class="field-container">
+          <label>CVV</label>
+          <div id="vault-card-cvv" class="card-field"></div>
+        </div>
+      </div>
+      <div class="field-container">
+        <label>Cardholder Name</label>
+        <div id="vault-card-name" class="card-field"></div>
+      </div>
+      <button class="btn-primary" id="saveCardBtn" onclick="submitVaultCard()" disabled style="margin-top: 16px;">
+        Save Card
+      </button>
+    </div>
+  </div>
+
   <script>
     // ============================================
     // STATE
@@ -760,6 +801,260 @@
     function showResult(data) {
       document.getElementById('result-section').classList.remove('hidden');
       document.getElementById('resultJson').textContent = JSON.stringify(data, null, 2);
+    }
+
+    // ============================================
+    // VAULT WITHOUT PURCHASE FLOW
+    // ============================================
+    let vaultCardFields = null;
+    let currentSetupTokenId = null;
+
+    /**
+     * Make a tRPC request
+     * tRPC uses a specific format for HTTP requests
+     */
+    async function trpcRequest(procedure, input) {
+      const config = getConfig();
+      const baseUrl = document.getElementById('trpcBaseUrl').value;
+
+      // tRPC mutation format: POST with input in body
+      const url = `${baseUrl}/${procedure}`;
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'saleor-api-url': document.getElementById('saleorApi').value,
+          'authorization-bearer': document.getElementById('saleorToken').value,
+        },
+        body: JSON.stringify(input),
+      });
+
+      const data = await res.json();
+
+      // tRPC wraps response in { result: { data: ... } } or { error: ... }
+      if (data.error) {
+        throw new Error(data.error.message || JSON.stringify(data.error));
+      }
+
+      return data.result?.data || data;
+    }
+
+    /**
+     * Start vault-without-purchase flow
+     * 1. Call createSetupToken
+     * 2. Load PayPal SDK (if not already loaded)
+     * 3. Render card fields for vault
+     */
+    async function startVaultWithoutPurchase() {
+      const btn = document.getElementById('startVaultBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loader"></span>Starting...';
+
+      try {
+        const config = getConfig();
+
+        if (!config.saleorUserId) {
+          throw new Error('Saleor User ID is required for vaulting');
+        }
+
+        showStatus('vaultStatus', 'Creating setup token...', 'info');
+
+        console.log('[Vault] Calling createSetupToken...');
+
+        // Step 1: Create setup token via tRPC
+        const setupResult = await trpcRequest('customerVault.createSetupToken', {
+          saleorUserId: config.saleorUserId,
+          paymentMethodType: 'card',
+          verificationMethod: 'SCA_WHEN_REQUIRED',
+        });
+
+        console.log('[Vault] Setup token created:', setupResult);
+
+        currentSetupTokenId = setupResult.setupTokenId;
+
+        showStatus('vaultStatus', 'Setup token created. Enter card details below.', 'success');
+
+        // Step 2: Load PayPal SDK if needed
+        if (!paypalConfig) {
+          // Need to initialize payment gateway first to get client ID
+          showStatus('vaultStatus', 'Initializing PayPal SDK...', 'info');
+
+          const gwResult = await graphqlRequest(PAYMENT_GATEWAY_INITIALIZE, {
+            checkoutId: config.checkoutId,
+            amount: config.amount,
+            data: { saleorUserId: config.saleorUserId },
+          });
+
+          const gatewayConfig = gwResult.data?.paymentGatewayInitialize?.gatewayConfigs?.find(
+            (g) => g.id === 'saleor.app.payment.paypal',
+          );
+
+          if (gatewayConfig) {
+            paypalConfig = parseSaleorJson(gatewayConfig.data);
+          } else {
+            throw new Error('Could not get PayPal config');
+          }
+        }
+
+        // Step 3: Load SDK and render vault card fields
+        await loadPayPalSDKForVault();
+
+      } catch (error) {
+        console.error('[Vault] Error:', error);
+        showStatus('vaultStatus', 'Error: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Add Card to Wallet';
+      }
+    }
+
+    /**
+     * Load PayPal SDK for vault flow (no user-id-token needed for setup tokens)
+     */
+    function loadPayPalSDKForVault() {
+      return new Promise((resolve, reject) => {
+        // Check if SDK already loaded
+        if (window.paypal?.CardFields) {
+          renderVaultCardFields();
+          resolve();
+          return;
+        }
+
+        const existing = document.getElementById('paypal-sdk');
+        if (existing) existing.remove();
+
+        const script = document.createElement('script');
+        script.id = 'paypal-sdk';
+
+        const params = new URLSearchParams({
+          'client-id': paypalConfig.paypalClientId,
+          components: 'card-fields',
+          intent: 'capture',
+          currency: 'USD',
+        });
+
+        script.src = 'https://www.paypal.com/sdk/js?' + params.toString();
+
+        script.onload = () => {
+          console.log('[Vault] PayPal SDK loaded');
+          renderVaultCardFields();
+          resolve();
+        };
+        script.onerror = () => reject(new Error('Failed to load PayPal SDK'));
+
+        document.head.appendChild(script);
+      });
+    }
+
+    /**
+     * Render card fields for vault-without-purchase
+     */
+    function renderVaultCardFields() {
+      document.getElementById('vault-card-fields').classList.remove('hidden');
+
+      if (!window.paypal?.CardFields) {
+        showStatus('vaultStatus', 'CardFields not available.', 'error');
+        return;
+      }
+
+      // CardFields for setup token flow
+      vaultCardFields = window.paypal.CardFields({
+        createVaultSetupToken: async () => {
+          // Return the setup token we already created
+          console.log('[Vault] Returning setup token:', currentSetupTokenId);
+          return currentSetupTokenId;
+        },
+        onApprove: async (data) => {
+          console.log('[Vault] Card approved:', data);
+          await completeVaultFlow();
+        },
+        onError: (error) => {
+          console.error('[Vault] CardFields error:', error);
+          showStatus('vaultStatus', 'Error: ' + error.message, 'error');
+        },
+        style: {
+          input: {
+            'font-size': '16px',
+            'font-family': '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif',
+            color: '#333',
+          },
+        },
+      });
+
+      if (vaultCardFields.isEligible()) {
+        vaultCardFields.NumberField().render('#vault-card-number');
+        vaultCardFields.ExpiryField().render('#vault-card-expiry');
+        vaultCardFields.CVVField().render('#vault-card-cvv');
+        vaultCardFields.NameField().render('#vault-card-name');
+        document.getElementById('saveCardBtn').disabled = false;
+        console.log('[Vault] Card fields rendered');
+      } else {
+        showStatus('vaultStatus', 'Card fields not eligible.', 'error');
+      }
+    }
+
+    /**
+     * Submit card for vaulting
+     */
+    async function submitVaultCard() {
+      const btn = document.getElementById('saveCardBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loader"></span>Saving...';
+
+      try {
+        showStatus('vaultStatus', 'Validating card with PayPal...', 'info');
+        await vaultCardFields.submit();
+        // onApprove callback will handle the rest
+      } catch (error) {
+        console.error('[Vault] Submit error:', error);
+        showStatus('vaultStatus', 'Error: ' + error.message, 'error');
+        btn.disabled = false;
+        btn.innerHTML = 'Save Card';
+      }
+    }
+
+    /**
+     * Complete vault flow - convert setup token to payment token
+     */
+    async function completeVaultFlow() {
+      try {
+        const config = getConfig();
+        showStatus('vaultStatus', 'Finalizing vault...', 'info');
+
+        console.log('[Vault] Converting setup token to payment token...');
+
+        const result = await trpcRequest('customerVault.createPaymentTokenFromSetupToken', {
+          saleorUserId: config.saleorUserId,
+          setupTokenId: currentSetupTokenId,
+        });
+
+        console.log('[Vault] Payment token created:', result);
+
+        showStatus(
+          'vaultStatus',
+          'Card saved successfully! ' + (result.card?.brand || '') + ' ****' + (result.card?.lastDigits || ''),
+          'success'
+        );
+
+        // Show result
+        showResult({
+          flow: 'Vault Without Purchase',
+          paymentTokenId: result.paymentTokenId,
+          card: result.card,
+        });
+
+        // Reset UI
+        document.getElementById('vault-card-fields').classList.add('hidden');
+        currentSetupTokenId = null;
+
+      } catch (error) {
+        console.error('[Vault] Complete flow error:', error);
+        showStatus('vaultStatus', 'Error: ' + error.message, 'error');
+      } finally {
+        document.getElementById('saveCardBtn').disabled = false;
+        document.getElementById('saveCardBtn').innerHTML = 'Save Card';
+      }
     }
   </script>
 </body>
