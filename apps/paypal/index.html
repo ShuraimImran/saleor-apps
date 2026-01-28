@@ -536,13 +536,15 @@
 
       const listEl = document.getElementById('saved-cards-list');
       listEl.innerHTML = savedCards
-        .map((card) => {
-          const isCard = card.type === 'card';
-          const icon = isCard ? (card.brand || 'CARD') : 'PP';
-          const display = isCard ? '---- ' + (card.lastDigits || '****') : card.email || 'PayPal Account';
-          const expiry = card.expiry || '';
+        .map((pm) => {
+          // pm structure: { id: "vaultId", type: "card", card: { brand, lastDigits, expiry } }
+          const vaultId = pm.id;  // The vault ID is in 'id', not 'vaultId'
+          const isCard = pm.type === 'card';
+          const icon = isCard ? (pm.card?.brand || 'CARD') : 'PP';
+          const display = isCard ? '---- ' + (pm.card?.lastDigits || '****') : pm.email || 'PayPal Account';
+          const expiry = pm.card?.expiry || '';
           return (
-            '<div class="saved-card" data-vault-id="' + card.vaultId + '" onclick="selectSavedCard(\'' + card.vaultId + '\')">' +
+            '<div class="saved-card" data-vault-id="' + vaultId + '" onclick="selectSavedCard(\'' + vaultId + '\')">' +
               '<div class="saved-card-icon">' + icon.substring(0, 4) + '</div>' +
               '<div class="saved-card-details">' +
                 '<div class="saved-card-number">' + display + '</div>' +

@@ -860,29 +860,30 @@ export class TransactionInitializeSessionUseCase {
       } else {
         // ACDC Card Vaulting - "Return Buyer" flow (Phase 1)
         // Use vault_id in payment_source.card
+        // stored_credential is REQUIRED for vaulted card payments per PayPal API
+
+        // Determine payment initiator:
+        // - MIT (Merchant-Initiated Transaction): "Buyer Not Present" - subscriptions, delayed charges, reorders
+        // - CIT (Customer-Initiated Transaction): "Buyer Present" - buyer clicking "pay" with saved card
+        const paymentInitiator = isMIT ? "MERCHANT" : "CUSTOMER";
+        const paymentType = isMIT ? "UNSCHEDULED" : "ONE_TIME";
+
         paymentSource.card = {
           vault_id: vaultingData.vaultId,
+          stored_credential: {
+            payment_initiator: paymentInitiator as "CUSTOMER" | "MERCHANT",
+            payment_type: paymentType as "ONE_TIME" | "RECURRING" | "UNSCHEDULED",
+            usage: "SUBSEQUENT" as const,
+          },
         };
 
-        // MIT (Merchant-Initiated Transaction) - add stored_credential for "Buyer Not Present" flow
-        // This is required when charging a saved card without buyer interaction
-        // (e.g., subscriptions, delayed charges, reorders)
-        if (isMIT) {
-          paymentSource.card = {
-            ...paymentSource.card,
-            stored_credential: {
-              payment_initiator: "MERCHANT" as const,
-              payment_type: "UNSCHEDULED" as const,
-              usage: "SUBSEQUENT" as const,
-            },
-          };
-
-          this.logger.info("MIT stored_credential added to card payment source", {
-            payment_initiator: "MERCHANT",
-            payment_type: "UNSCHEDULED",
-            usage: "SUBSEQUENT",
-          });
-        }
+        this.logger.info("Card vault_id and stored_credential added to payment source", {
+          vaultId: vaultingData.vaultId,
+          payment_initiator: paymentInitiator,
+          payment_type: paymentType,
+          usage: "SUBSEQUENT",
+          flow: isMIT ? "MIT (Buyer Not Present)" : "CIT (Buyer Present)",
+        });
       }
     }
 
