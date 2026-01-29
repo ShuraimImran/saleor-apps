@@ -31,14 +31,10 @@
       color: #555;
     }
     .card-field {
-      height: 44px;
-      padding: 12px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      background: #fafafa;
+      /* Container for PayPal iframe - no visible styling */
+      /* PayPal's iframe handles its own input styling */
+      min-height: 44px;
     }
-    .card-field.invalid { border-color: #e74c3c; }
-    .card-field.valid { border-color: #27ae60; }
     .row { display: flex; gap: 12px; }
     .row > div { flex: 1; }
     .checkbox-container {
@@ -171,7 +167,10 @@
     <label>Saleor User ID (for vaulting)</label>
     <input type="text" id="saleorUserId" value="VXNlcjoxOTY0NjUy">
     <button class="btn-primary" id="initBtn" onclick="initializePayment()">
-      Initialize Payment Gateway
+      Initialize Checkout
+    </button>
+    <button class="btn-secondary" id="vaultModeBtn" style="margin-top: 10px;" onclick="toggleVaultMode()">
+      Switch to: Save Card Without Purchase
     </button>
     <div id="initStatus"></div>
   </div>
@@ -230,7 +229,7 @@
   </div>
 
   <!-- ==================== VAULT WITHOUT PURCHASE ==================== -->
-  <div class="card" id="vault-section">
+  <div class="card hidden" id="vault-section">
     <h2>Vault Without Purchase</h2>
     <p style="color: #666; font-size: 14px; margin-bottom: 16px;">
       Add a card to your wallet without making a payment.<br>
@@ -385,6 +384,39 @@
       return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     }
 
+    // Track current mode
+    let isVaultMode = false;
+
+    /**
+     * Toggle between Checkout and Vault Without Purchase modes
+     */
+    function toggleVaultMode() {
+      isVaultMode = !isVaultMode;
+      const btn = document.getElementById('vaultModeBtn');
+      const initBtn = document.getElementById('initBtn');
+
+      // Hide result section when switching modes for clean state
+      document.getElementById('result-section').classList.add('hidden');
+
+      if (isVaultMode) {
+        btn.textContent = 'Switch to: Checkout Flow';
+        initBtn.textContent = 'Start Save Card Flow';
+        initBtn.onclick = startVaultWithoutPurchase;
+        // Hide checkout sections
+        document.getElementById('saved-cards-section').classList.add('hidden');
+        document.getElementById('card-form-section').classList.add('hidden');
+        // Show vault section
+        document.getElementById('vault-section').classList.remove('hidden');
+      } else {
+        btn.textContent = 'Switch to: Save Card Without Purchase';
+        initBtn.textContent = 'Initialize Checkout';
+        initBtn.onclick = initializePayment;
+        // Hide vault section
+        document.getElementById('vault-section').classList.add('hidden');
+        document.getElementById('vault-card-fields').classList.add('hidden');
+      }
+    }
+
     /**
      * Safely parse a Saleor JSON scalar value.
      * Saleor may return it as an object, a JSON string, or double-stringified JSON.
@@ -441,6 +473,10 @@
       btn.disabled = true;
       btn.innerHTML = '<span class="loader"></span>Initializing...';
 
+      // Hide vault section when starting checkout flow
+      document.getElementById('vault-section').classList.add('hidden');
+      document.getElementById('vault-card-fields').classList.add('hidden');
+
       try {
         const config = getConfig();
         showStatus('initStatus', 'Calling PaymentGatewayInitialize...', 'info');
@@ -483,7 +519,7 @@
         showStatus('initStatus', 'Error: ' + error.message, 'error');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = 'Initialize Payment Gateway';
+        btn.innerHTML = 'Initialize Checkout';
       }
     }
 
