@@ -971,32 +971,19 @@ export class TransactionInitializeSessionUseCase {
             vaultCustomerId = undefined;
           }
 
-          // For Apple Pay vaulting, add attributes to payment_source.apple_pay
+          // Apple Pay vaulting (save-during-purchase):
+          // Apple Pay orders are created WITHOUT payment_source — the token is
+          // attached later by the frontend via paypal.Applepay().confirmOrder().
+          // Vault attributes cannot be included at order creation time.
+          // NOTE: PayPal currently supports Apple Pay one-time payments with payer present only.
+          // Apple Pay save-during-purchase vaulting may require Setup Tokens API in the future.
           if (paymentMethodType === "apple_pay" && vaultCustomerId) {
-            if (!paymentSource) {
-              paymentSource = {};
-            }
-
-            // Add vault attributes for Apple Pay vaulting (Phase 2)
-            paymentSource.apple_pay = {
-              attributes: {
-                vault: {
-                  store_in_vault: "ON_SUCCESS" as const,
-                  usage_type: "MERCHANT" as const,
-                },
-                customer: {
-                  id: vaultCustomerId,
-                },
-              },
-            };
-
-            this.logger.info("Apple Pay vault attributes added to payment source", {
+            this.logger.info("Apple Pay save-during-purchase requested — skipping payment_source (token comes from confirmOrder)", {
               customerId: vaultCustomerId,
-              storeInVault: "ON_SUCCESS",
-              usageType: "MERCHANT",
+              note: "Apple Pay does not support payment_source at order creation. Vault attributes not included.",
             });
 
-            // Clear vaultCustomerId to prevent duplicate handling in createOrder
+            // Clear vaultCustomerId — Apple Pay order creation doesn't use it
             vaultCustomerId = undefined;
           }
 
@@ -1050,13 +1037,28 @@ export class TransactionInitializeSessionUseCase {
         }
         this.logger.debug("Cleaned payment_source for venmo payment");
       } else if (paymentMethodType === "apple_pay") {
-        delete paymentSource.paypal;
-        delete paymentSource.card;
-        delete paymentSource.venmo;
-        if (Object.keys(paymentSource).length === 0) {
+        if (!vaultingData.vaultId) {
+          // Apple Pay new payment (one-time or save-during-purchase):
+          // Do NOT include payment_source in order creation.
+          // The Apple Pay token doesn't exist until the user authorizes on the Apple Pay sheet.
+          // Frontend attaches the token via paypal.Applepay().confirmOrder() after order creation.
+          // See: https://developer.paypal.com/docs/multiparty/checkout/apm/apple-pay/
           paymentSource = undefined;
+          this.logger.debug("Cleared payment_source for new Apple Pay payment — token comes from confirmOrder()");
+        } else {
+          // Apple Pay Return Buyer — server-side payment using vaulted token.
+          // payment_source.apple_pay.vault_id is required (no Apple Pay sheet shown).
+          delete paymentSource.paypal;
+          delete paymentSource.card;
+          delete paymentSource.venmo;
+          if (Object.keys(paymentSource).length === 0) {
+            paymentSource = undefined;
+          }
+          this.logger.debug("Cleaned payment_source for Apple Pay Return Buyer", {
+            hasApplePaySource: !!paymentSource?.apple_pay,
+            hasVaultId: !!vaultingData.vaultId,
+          });
         }
-        this.logger.debug("Cleaned payment_source for apple_pay payment");
       }
     }
 
