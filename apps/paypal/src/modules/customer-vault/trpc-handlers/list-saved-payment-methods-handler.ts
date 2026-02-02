@@ -94,13 +94,15 @@ export class ListSavedPaymentMethodsHandler {
         });
 
         if (paymentTokensResult.isErr()) {
-          logger.warn("Failed to fetch payment tokens from PayPal", {
+          // PayPal may not recognize the customer (e.g., stale mapping, credential change).
+          // Return empty results instead of failing so the UI stays functional.
+          logger.warn("Failed to fetch payment tokens from PayPal, returning empty list", {
+            paypalCustomerId,
             error: paymentTokensResult.error,
           });
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to fetch saved payment methods from PayPal",
-          });
+          return {
+            savedPaymentMethods: [],
+          };
         }
 
         const tokens = paymentTokensResult.value.payment_tokens || [];

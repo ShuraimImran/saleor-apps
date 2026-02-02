@@ -18,7 +18,11 @@ for future use.
 └──────┬───────┘         └────────┬─────────┘         └────┬────┘
        │                          │                        │
        │  1. createSetupToken     │                        │
-       │ ────────────────────────>│  POST /v3/vault/       │
+       │     (JWT in header)      │                        │
+       │ ────────────────────────>│  Verify user via       │
+       │                          │  Saleor `me` query     │
+       │                          │                        │
+       │                          │  POST /v3/vault/       │
        │                          │  setup-tokens          │
        │                          │ ──────────────────────>│
        │                          │                        │
@@ -38,8 +42,8 @@ for future use.
        │                          │                        │
        │  4. createPaymentToken   │                        │
        │     FromSetupToken       │  POST /v3/vault/       │
-       │ ────────────────────────>│  payment-tokens        │
-       │                          │ ──────────────────────>│
+       │     (JWT in header)      │  payment-tokens        │
+       │ ────────────────────────>│ ──────────────────────>│
        │                          │                        │
        │  { paymentTokenId,       │  { id, customer,       │
        │    card.brand,           │    payment_source }    │
@@ -56,6 +60,32 @@ from the PayPal-hosted card fields to PayPal's servers (PCI compliant).
 
 ---
 
+## Authentication
+
+All vault tRPC endpoints use **storefront token authentication**. This is
+different from the App Bridge JWT used by Dashboard-embedded apps.
+
+**How it works:**
+
+1. The buyer logs into your storefront (via Saleor's `tokenCreate` mutation).
+2. Your storefront sends the buyer's JWT in every tRPC request.
+3. The Payment App calls Saleor's `me` query with that JWT to verify the user.
+4. The verified `user_id` from the `me` response is used for all vault
+   operations. **You do not send `saleorUserId` in the request body.**
+
+**Required headers on every tRPC call:**
+
+| Header | Value |
+|---|---|
+| `authorization-bearer` | The buyer's Saleor JWT (from `tokenCreate`) |
+| `saleor-api-url` | Your Saleor GraphQL URL (e.g., `https://your-store.saleor.cloud/graphql/`) |
+| `Content-Type` | `application/json` (for POST mutations only) |
+
+This means the buyer can only access their own vault. There is no way to pass
+a different user's ID to access someone else's saved cards.
+
+---
+
 ## Prerequisites
 
 Before starting, make sure:
@@ -65,8 +95,8 @@ Before starting, make sure:
 2. **Advanced Vaulting** is enabled on your PayPal merchant account (confirm
    under REST API Apps > App Feature Options > Vault in the PayPal Developer
    Dashboard).
-3. **The buyer is authenticated** on your storefront. You need their
-   `saleorUserId` (the Saleor User ID). This flow requires a logged-in user.
+3. **The buyer is authenticated** on your storefront. You need their Saleor JWT
+   token. This flow requires a logged-in user.
 
 ---
 
@@ -80,12 +110,31 @@ You will need the following on your "Saved Payment Methods" or "Add Card" page:
 | **Card field containers** | Three empty `<div>` elements with IDs/selectors for: card number, expiry date, and CVV. These will host PayPal's secure iframes. |
 | **A "Save Card" button** | Triggers the submit flow. This is your own UI element. |
 | **Loading / error / success states** | Handle the three possible outcomes from `session.submit()`: `succeeded`, `canceled`, `failed`. |
-| **tRPC client** | Your storefront needs to call the Payment App's tRPC API. You can use `@trpc/client` or plain `fetch` calls to `{PAYMENT_APP_URL}/api/trpc/customerVault.createSetupToken` and `customerVault.createPaymentTokenFromSetupToken`. |
+| **tRPC client or fetch** | Your storefront needs to call the Payment App's tRPC API. Use `@trpc/client`, or plain `fetch` with the correct headers and HTTP method (GET for queries, POST for mutations). |
 
 > **Note:** If you already have CardFields rendering for your checkout page,
 > the vault-without-purchase uses a **different** session type. You **cannot**
 > reuse a payment session for vaulting. The SDK provides a dedicated method
 > called `createCardFieldsSavePaymentSession()` specifically for this.
+
+---
+
+## tRPC HTTP Format
+
+The Payment App uses tRPC v10. The HTTP conventions are:
+
+- **Queries** use `GET` with input as a URL query parameter:
+  ```
+  GET /api/trpc/customerVault.listSavedPaymentMethods?input={}
+  ```
+- **Mutations** use `POST` with input as the JSON body:
+  ```
+  POST /api/trpc/customerVault.createSetupToken
+  Body: { "paymentMethodType": "card" }
+  ```
+
+If you use `@trpc/client`, this is handled automatically. If you use plain
+`fetch`, see the examples below.
 
 ---
 
@@ -96,13 +145,12 @@ You will need the following on your "Saved Payment Methods" or "Add Card" page:
 This is the first call your storefront makes. It tells PayPal: "a buyer wants to
 save a card".
 
-**tRPC endpoint:** `customerVault.createSetupToken` (mutation)
+**tRPC endpoint:** `customerVault.createSetupToken` (mutation - POST)
 
 **Input:**
 
 ```json
 {
-  "saleorUserId": "VXNlcjoxOTY0NjUy",
   "paymentMethodType": "card",
   "verificationMethod": "SCA_WHEN_REQUIRED",
   "returnUrl": "https://your-store.com/account/payment-methods",
@@ -112,12 +160,37 @@ save a card".
 
 | Field | Required | Description |
 |---|---|---|
-| `saleorUserId` | Yes | The logged-in buyer's Saleor User ID. |
-| `paymentMethodType` | No | Defaults to `"card"`. |
+| `paymentMethodType` | No | Defaults to `"card"`. Also supports `"paypal"` and `"venmo"`. |
 | `verificationMethod` | No | `"SCA_WHEN_REQUIRED"` (default) or `"SCA_ALWAYS"`. Controls 3D Secure behavior. |
 | `returnUrl` | No | Where to redirect after 3DS challenge completes. Recommended. |
 | `cancelUrl` | No | Where to redirect if buyer cancels 3DS challenge. Recommended. |
 | `brandName` | No | Your brand name shown during 3DS verification. |
+
+> **Note:** `saleorUserId` is **not** in the input. It is extracted from the
+> JWT token on the server side.
+
+**Example (plain fetch):**
+
+```javascript
+const response = await fetch(
+  `${PAYMENT_APP_URL}/api/trpc/customerVault.createSetupToken`,
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "saleor-api-url": "https://your-store.saleor.cloud/graphql/",
+      "authorization-bearer": userJwtToken,
+    },
+    body: JSON.stringify({
+      paymentMethodType: "card",
+      verificationMethod: "SCA_WHEN_REQUIRED",
+    }),
+  }
+);
+
+const { result } = await response.json();
+const { setupTokenId } = result.data;
+```
 
 **Response:**
 
@@ -126,7 +199,7 @@ save a card".
   "setupTokenId": "7TY13832WC756832Y",
   "status": "PAYER_ACTION_REQUIRED",
   "approvalUrl": null,
-  "customerId": "VXNlcjoxOTY0NjUy",
+  "customerId": "VXNlcjoy",
   "paymentMethodType": "card"
 }
 ```
@@ -181,28 +254,51 @@ When the buyer fills in the card fields and clicks your "Save Card" button:
 After `state === "succeeded"`, finalize the vaulting by converting the setup
 token into a permanent payment token.
 
-**tRPC endpoint:** `customerVault.createPaymentTokenFromSetupToken` (mutation)
+**tRPC endpoint:** `customerVault.createPaymentTokenFromSetupToken` (mutation - POST)
 
 **Input:**
 
 ```json
 {
-  "saleorUserId": "VXNlcjoxOTY0NjUy",
   "setupTokenId": "7TY13832WC756832Y"
 }
 ```
 
 | Field | Required | Description |
 |---|---|---|
-| `saleorUserId` | Yes | Same Saleor User ID from Step 1. |
 | `setupTokenId` | Yes | The `setupTokenId` from Step 1 (or `data.vaultSetupToken` from Step 3). |
+
+> **Note:** `saleorUserId` is **not** in the input. It is extracted from the
+> JWT token on the server side.
+
+**Example (plain fetch):**
+
+```javascript
+const response = await fetch(
+  `${PAYMENT_APP_URL}/api/trpc/customerVault.createPaymentTokenFromSetupToken`,
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "saleor-api-url": "https://your-store.saleor.cloud/graphql/",
+      "authorization-bearer": userJwtToken,
+    },
+    body: JSON.stringify({
+      setupTokenId: "7TY13832WC756832Y",
+    }),
+  }
+);
+
+const { result } = await response.json();
+const { paymentTokenId, card } = result.data;
+```
 
 **Response:**
 
 ```json
 {
   "paymentTokenId": "8kk8451t",
-  "customerId": "VXNlcjoxOTY0NjUy",
+  "customerId": "VXNlcjoy",
   "paymentMethodType": "card",
   "card": {
     "brand": "VISA",
@@ -225,14 +321,26 @@ Once cards are saved, you can list and delete them.
 
 ### List Saved Payment Methods
 
-**tRPC endpoint:** `customerVault.listSavedPaymentMethods` (query)
+**tRPC endpoint:** `customerVault.listSavedPaymentMethods` (query - GET)
 
-**Input:**
+**Input:** None required. The user is identified from the JWT.
 
-```json
-{
-  "saleorUserId": "VXNlcjoxOTY0NjUy"
-}
+**Example (plain fetch):**
+
+```javascript
+const response = await fetch(
+  `${PAYMENT_APP_URL}/api/trpc/customerVault.listSavedPaymentMethods?input={}`,
+  {
+    method: "GET",
+    headers: {
+      "saleor-api-url": "https://your-store.saleor.cloud/graphql/",
+      "authorization-bearer": userJwtToken,
+    },
+  }
+);
+
+const { result } = await response.json();
+const { savedPaymentMethods } = result.data;
 ```
 
 **Response:**
@@ -266,15 +374,33 @@ Use this to render saved cards on the "My Payment Methods" page or at checkout.
 
 ### Delete a Saved Payment Method
 
-**tRPC endpoint:** `customerVault.deleteSavedPaymentMethod` (mutation)
+**tRPC endpoint:** `customerVault.deleteSavedPaymentMethod` (mutation - POST)
 
 **Input:**
 
 ```json
 {
-  "saleorUserId": "VXNlcjoxOTY0NjUy",
   "paymentTokenId": "8kk8451t"
 }
+```
+
+**Example (plain fetch):**
+
+```javascript
+const response = await fetch(
+  `${PAYMENT_APP_URL}/api/trpc/customerVault.deleteSavedPaymentMethod`,
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "saleor-api-url": "https://your-store.saleor.cloud/graphql/",
+      "authorization-bearer": userJwtToken,
+    },
+    body: JSON.stringify({
+      paymentTokenId: "8kk8451t",
+    }),
+  }
+);
 ```
 
 **Response:**
@@ -293,12 +419,12 @@ Use this to render saved cards on the "My Payment Methods" page or at checkout.
 ```
 Page Load (Saved Payment Methods page)
 │
-├─ 1. listSavedPaymentMethods({ saleorUserId })
+├─ 1. GET  listSavedPaymentMethods  (no input, user from JWT)
 │     → Display existing saved cards
 │
 │  Buyer clicks "Add New Card"
 │
-├─ 2. createSetupToken({ saleorUserId, paymentMethodType: "card" })
+├─ 2. POST createSetupToken({ paymentMethodType: "card" })
 │     → Receive setupTokenId
 │
 ├─ 3. Load PayPal SDK v6
@@ -312,7 +438,7 @@ Page Load (Saved Payment Methods page)
 │     → PayPal validates card, runs 3DS if needed
 │     → Returns { state: "succeeded", data: { vaultSetupToken } }
 │
-├─ 5. createPaymentTokenFromSetupToken({ saleorUserId, setupTokenId })
+├─ 5. POST createPaymentTokenFromSetupToken({ setupTokenId })
 │     → Card is permanently vaulted
 │     → Receive { paymentTokenId, card: { brand, lastDigits } }
 │
@@ -323,17 +449,26 @@ Page Load (Saved Payment Methods page)
 
 ## Important Notes
 
+- **Authentication:** All tRPC calls require a valid Saleor user JWT
+  (`authorization-bearer` header) and the `saleor-api-url` header. The server
+  verifies the user by calling Saleor's `me` query. You do **not** pass
+  `saleorUserId` in the request body.
+- **Security:** The user ID is derived server-side from the verified JWT. A
+  buyer can only access their own vault. There is no way to impersonate
+  another user.
 - **Security:** Never expose `paymentTokenId` values directly in client-side
   URLs or logs. The PayPal docs recommend creating your own internal IDs and
   mapping them server-side.
 - **One session type per page:** `createCardFieldsSavePaymentSession()` (vault)
   and `createCardFieldsPaymentSession()` (checkout) cannot coexist on the same
   page. Use separate pages for "save a card" and "pay with a card".
-- **Authentication:** All tRPC calls require a valid Saleor JWT token and the
-  `saleorApiUrl` header. Your tRPC client must be configured to send these.
+- **tRPC HTTP methods:** Queries use GET, mutations use POST. If using
+  `@trpc/client`, this is handled automatically.
+- **CORS:** The Payment App includes CORS headers for cross-origin requests.
+  If your storefront runs on a different domain, requests will work.
 - **3DS handling:** If you provide `returnUrl` and `cancelUrl` in Step 1, the
   SDK will handle 3DS challenges via redirect. If omitted, it may use a popup.
   Providing URLs is recommended.
 - **First-time vs returning buyers:** The Payment App automatically handles
-  creating or reusing a PayPal customer ID for the given `saleorUserId`. You
+  creating or reusing a PayPal customer ID for the authenticated user. You
   don't need to manage this mapping yourself.

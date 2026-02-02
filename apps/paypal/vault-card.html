@@ -690,6 +690,8 @@
         const setupResult = await trpcMutation('customerVault.createSetupToken', {
           paymentMethodType: 'card',
           verificationMethod: 'SCA_WHEN_REQUIRED',
+          returnUrl: window.location.href,
+          cancelUrl: window.location.href,
         });
 
         console.log('[Vault] Setup token created:', setupResult);

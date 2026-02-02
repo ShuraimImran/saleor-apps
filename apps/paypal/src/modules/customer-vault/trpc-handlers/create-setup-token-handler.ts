@@ -116,27 +116,29 @@ export class CreateSetupTokenHandler {
 
         const config = configResult.value;
 
-        // Get or create customer vault mapping
+        // Check if customer vault mapping already exists
         const pool = getPool();
         const customerVaultRepo = PostgresCustomerVaultRepository.create(pool);
-        const customerVaultResult = await customerVaultRepo.getOrCreate(
+        const existingMapping = await customerVaultRepo.getBySaleorUserId(
           saleorApiUrl.value,
           saleorUserId
         );
 
-        if (customerVaultResult.isErr()) {
-          captureException(customerVaultResult.error);
+        if (existingMapping.isErr()) {
+          captureException(existingMapping.error);
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to get/create customer vault mapping",
+            message: "Failed to check customer vault mapping",
           });
         }
 
-        const paypalCustomerId = customerVaultResult.value.paypalCustomerId;
+        // Use existing PayPal customer ID or derive one for a new customer
+        const paypalCustomerId = existingMapping.value?.paypalCustomerId ?? saleorUserId;
 
         logger.info("Creating setup token for vault-without-purchase", {
           saleorUserId: saleorUserId,
           paypalCustomerId,
+          isNewCustomer: !existingMapping.value,
           paymentMethodType: input.paymentMethodType,
         });
 
@@ -211,6 +213,30 @@ export class CreateSetupTokenHandler {
         }
 
         const setupToken = setupTokenResult.value;
+
+        // PayPal confirmed the customer -- now persist the mapping
+        if (!existingMapping.value) {
+          const createResult = await customerVaultRepo.create({
+            saleorApiUrl: saleorApiUrl.value,
+            saleorUserId,
+            paypalCustomerId,
+          });
+
+          if (createResult.isErr()) {
+            // Log but don't fail -- the setup token was created successfully.
+            // The mapping will be created on the next attempt.
+            logger.warn("Failed to persist customer vault mapping after PayPal confirmation", {
+              saleorUserId,
+              paypalCustomerId,
+              error: createResult.error,
+            });
+          } else {
+            logger.info("Customer vault mapping created after PayPal confirmation", {
+              saleorUserId,
+              paypalCustomerId,
+            });
+          }
+        }
 
         logger.info("Setup token created successfully", {
           saleorUserId: saleorUserId,
