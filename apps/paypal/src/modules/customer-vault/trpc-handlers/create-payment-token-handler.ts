@@ -9,13 +9,12 @@ import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
 import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
-import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
+import { protectedStorefrontProcedure } from "@/modules/trpc/protected-storefront-procedure";
 import { PostgresCustomerVaultRepository } from "../customer-vault-repository";
 
 const logger = createLogger("CreatePaymentTokenHandler");
 
 const inputSchema = z.object({
-  saleorUserId: z.string().min(1, "saleorUserId is required"),
   /**
    * The setup token ID returned from createSetupToken
    * Must be in APPROVED status before calling this endpoint
@@ -42,10 +41,11 @@ const inputSchema = z.object({
  * @see https://developer.paypal.com/docs/api/payment-tokens/v3/#payment-tokens_create
  */
 export class CreatePaymentTokenHandler {
-  baseProcedure = protectedClientProcedure;
+  baseProcedure = protectedStorefrontProcedure;
 
   getTrpcProcedure() {
     return this.baseProcedure.input(inputSchema).mutation(async ({ ctx, input }) => {
+      const saleorUserId = ctx.saleorUserId as string;
       if (!ctx.saleorApiUrl) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -83,7 +83,7 @@ export class CreatePaymentTokenHandler {
         const customerVaultRepo = PostgresCustomerVaultRepository.create(pool);
         const customerVaultResult = await customerVaultRepo.getBySaleorUserId(
           saleorApiUrl.value,
-          input.saleorUserId
+          saleorUserId
         );
 
         if (customerVaultResult.isErr()) {
@@ -102,7 +102,7 @@ export class CreatePaymentTokenHandler {
         }
 
         logger.info("Converting setup token to payment token", {
-          saleorUserId: input.saleorUserId,
+          saleorUserId: saleorUserId,
           setupTokenId: input.setupTokenId,
         });
 
@@ -135,7 +135,7 @@ export class CreatePaymentTokenHandler {
           }
 
           logger.error("Failed to create payment token from setup token", {
-            saleorUserId: input.saleorUserId,
+            saleorUserId: saleorUserId,
             setupTokenId: input.setupTokenId,
             error,
           });
@@ -157,7 +157,7 @@ export class CreatePaymentTokenHandler {
         }
 
         logger.info("Payment token created successfully", {
-          saleorUserId: input.saleorUserId,
+          saleorUserId: saleorUserId,
           paymentTokenId: paymentToken.id,
           paymentMethodType,
           cardBrand: paymentSource?.card?.brand,
@@ -205,7 +205,7 @@ export class CreatePaymentTokenHandler {
 
         captureException(error);
         logger.error("Unexpected error creating payment token", {
-          saleorUserId: input.saleorUserId,
+          saleorUserId: saleorUserId,
           setupTokenId: input.setupTokenId,
           error: error instanceof Error ? error.message : String(error),
         });

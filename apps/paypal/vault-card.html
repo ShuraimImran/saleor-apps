@@ -323,11 +323,11 @@
         </div>
         <div class="form-group">
           <label>Saleor Token</label>
-          <input type="text" id="saleorToken" value="eyJhbGciOiJSUzI1NiIsImtpZCI6IlNrTnFYX3JBZzRNRGFlSk5ZLVlrSmc0QTFGNnZYTU1kbWxheTA2ekdCNWsiLCJ0eXAiOiJKV1QifQ.eyJpYXQiOjE3NzAwNDQ0MTcsIm93bmVyIjoic2FsZW9yIiwiaXNzIjoiaHR0cHM6Ly9hcGktYWVyb2V4aGF1c3Qud3NtLWRldi5jb20vZ3JhcGhxbC8iLCJleHAiOjE3NzAwNDYyMTcsInRva2VuIjoiVTBLMUF3U3R1a2RLIiwiZW1haWwiOiJyZWhtYW4uYWxwaGFzcXVhZEBnbWFpbC5jb20iLCJ0eXBlIjoiYWNjZXNzIiwidXNlcl9pZCI6IlZYTmxjam94T1RZME5qVXkiLCJpc19zdGFmZiI6ZmFsc2V9.BKypvG03T-r637D0o_yq1QqCA1Zsqm7MEi6Qw4gjuLhOO9mKYb9sMGFRWzmmHY5SGnQoVAPUygX7tBMQT-bXRKfBkB89g9x-Id0oaxtTLTL9h4SkrOI4xCvQSL7vMbKCiYN9aT6YHj5rjRUASRkdzzhssjrfI3k8FELppurl_pceOsTAyi0F5a_kfXIdCgVhfgbcFfTxDZbMXZgAvpAkkbaQHCX8-PbqDKSG0dSI-3HDonjZeXdD79iEedNRrK8Is98URoQPCiKvj9Jtp7_YVOs-BY3cyMv4YX4Clu39RTFtgp7aW3a2Fh42J3uISazRd2QLAu3fQ-ejbkSYNj3iwQ">
+          <input type="text" id="saleorToken" value="eyJhbGciOiJSUzI1NiIsImtpZCI6IlNrTnFYX3JBZzRNRGFlSk5ZLVlrSmc0QTFGNnZYTU1kbWxheTA2ekdCNWsiLCJ0eXAiOiJKV1QifQ.eyJpYXQiOjE3NzAwNDcxNzIsIm93bmVyIjoic2FsZW9yIiwiaXNzIjoiaHR0cHM6Ly9hcGktYWVyb2V4aGF1c3Qud3NtLWRldi5jb20vZ3JhcGhxbC8iLCJleHAiOjE3NzAwNDg5NzIsInRva2VuIjoiRFU0OFRTb0FLNkl0IiwiZW1haWwiOiJhYmR1bGxhaGFsdGFmLmFscGhhc3F1YWRAZ21haWwuY29tIiwidHlwZSI6ImFjY2VzcyIsInVzZXJfaWQiOiJWWE5sY2pveSIsImlzX3N0YWZmIjpmYWxzZX0.d6w69EwzVtqIjMVMF_pORHu5JxuEYENcuOCmGlFlqiocXsxVWXJ9t0-yH_tM93tANik34A8bP3hg7PGXc_nKy6qZeuU6ekOqEaThi89A99y8U9MWAY09xCrsLguyBD9ei_xqXo-v7hAkUjQyl_kHKgxV6gfZ9wrgLrmL_EOi8BNc6ATzeHKF6gouufnigSXLNVwH4cl8zlCo3CFxL-xYZfHb0EeTLzCtaRjSf3BE0NzK2mB5-nWhdojrZpu531EWhQPn2CNFqKM8v6Gz4KJAPFovHCbTMk03M1Cf3wtFyw5FRWIk_GS0PmheZQsSrcMPYArj2wt6y_-Z0_8OaSQEIA">
         </div>
         <div class="form-group">
           <label>Saleor User ID</label>
-          <input type="text" id="saleorUserId" value="VXNlcjoxOTY0NjUy">
+          <input type="text" id="saleorUserId" value="VXNlcjoy">
         </div>
         <div class="form-group">
           <label>PayPal App tRPC URL</label>
@@ -517,12 +517,40 @@
 
     // =============================================
     // tRPC REQUEST
+    // In tRPC v10: GET = query, POST = mutation
     // =============================================
-    async function trpcRequest(procedure, input) {
+    async function trpcQuery(procedure, input) {
+      const config = getConfig();
+      const encodedInput = encodeURIComponent(JSON.stringify(input));
+      const url = `${config.trpcBaseUrl}/${procedure}?input=${encodedInput}`;
+
+      console.log(`[tRPC GET] ${procedure}`, input);
+
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'saleor-api-url': config.saleorApi,
+          'authorization-bearer': config.saleorToken,
+        },
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        const msg = data.error?.json?.message
+          || data.error?.message
+          || JSON.stringify(data.error);
+        throw new Error(msg);
+      }
+
+      return data.result?.data || data;
+    }
+
+    async function trpcMutation(procedure, input) {
       const config = getConfig();
       const url = `${config.trpcBaseUrl}/${procedure}`;
 
-      console.log(`[tRPC] ${procedure}`, input);
+      console.log(`[tRPC POST] ${procedure}`, input);
 
       const res = await fetch(url, {
         method: 'POST',
@@ -550,7 +578,7 @@
     // LOAD SAVED CARDS
     // =============================================
     async function loadSavedCards() {
-      const check = validateConfig(['saleorApi', 'saleorToken', 'saleorUserId', 'trpcBaseUrl']);
+      const check = validateConfig(['saleorApi', 'saleorToken', 'trpcBaseUrl']);
       if (!check.valid) {
         showStatus('listStatus', check.error, 'error');
         return;
@@ -562,11 +590,8 @@
       hideStatus('listStatus');
 
       try {
-        const config = getConfig();
-
-        const result = await trpcRequest('customerVault.listSavedPaymentMethods', {
-          saleorUserId: config.saleorUserId,
-        });
+        // No input needed - saleorUserId is extracted from the JWT on the server
+        const result = await trpcQuery('customerVault.listSavedPaymentMethods', {});
 
         console.log('[List] Saved payment methods:', result);
 
@@ -625,8 +650,7 @@
 
         showStatus('listStatus', 'Removing card...', 'info');
 
-        await trpcRequest('customerVault.deleteSavedPaymentMethod', {
-          saleorUserId: config.saleorUserId,
+        await trpcMutation('customerVault.deleteSavedPaymentMethod', {
           paymentTokenId: paymentTokenId,
         });
 
@@ -644,7 +668,7 @@
     // VAULT FLOW - STEP 1: CREATE SETUP TOKEN
     // =============================================
     async function startVaultFlow() {
-      const check = validateConfig(['saleorApi', 'saleorToken', 'saleorUserId', 'trpcBaseUrl', 'paypalClientId']);
+      const check = validateConfig(['saleorApi', 'saleorToken', 'trpcBaseUrl', 'paypalClientId']);
       if (!check.valid) {
         showStatus('vaultStatus', check.error, 'error');
         return;
@@ -662,8 +686,8 @@
         showStatus('vaultStatus', 'Creating setup token...', 'info');
 
         // Step 1: Create setup token via tRPC
-        const setupResult = await trpcRequest('customerVault.createSetupToken', {
-          saleorUserId: config.saleorUserId,
+        // saleorUserId is extracted from the JWT on the server
+        const setupResult = await trpcMutation('customerVault.createSetupToken', {
           paymentMethodType: 'card',
           verificationMethod: 'SCA_WHEN_REQUIRED',
         });
@@ -815,8 +839,7 @@
         showStatus('vaultStatus', 'Saving card to your wallet...', 'info');
         setStep(3);
 
-        const result = await trpcRequest('customerVault.createPaymentTokenFromSetupToken', {
-          saleorUserId: config.saleorUserId,
+        const result = await trpcMutation('customerVault.createPaymentTokenFromSetupToken', {
           setupTokenId: currentSetupTokenId,
         });
 

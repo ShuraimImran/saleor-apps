@@ -9,7 +9,7 @@ import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
 import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
-import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
+import { protectedStorefrontProcedure } from "@/modules/trpc/protected-storefront-procedure";
 import { PostgresCustomerVaultRepository } from "../customer-vault-repository";
 
 const logger = createLogger("CreateSetupTokenHandler");
@@ -21,7 +21,6 @@ const logger = createLogger("CreateSetupTokenHandler");
 const paymentMethodTypeSchema = z.enum(["card", "paypal", "venmo"]).default("card");
 
 const inputSchema = z.object({
-  saleorUserId: z.string().min(1, "saleorUserId is required"),
   /**
    * Payment method type to vault
    * - card: ACDC card vaulting
@@ -80,10 +79,11 @@ const inputSchema = z.object({
  * @see https://developer.paypal.com/docs/checkout/save-payment-methods/
  */
 export class CreateSetupTokenHandler {
-  baseProcedure = protectedClientProcedure;
+  baseProcedure = protectedStorefrontProcedure;
 
   getTrpcProcedure() {
     return this.baseProcedure.input(inputSchema).mutation(async ({ ctx, input }) => {
+      const saleorUserId = ctx.saleorUserId as string;
       if (!ctx.saleorApiUrl) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -121,7 +121,7 @@ export class CreateSetupTokenHandler {
         const customerVaultRepo = PostgresCustomerVaultRepository.create(pool);
         const customerVaultResult = await customerVaultRepo.getOrCreate(
           saleorApiUrl.value,
-          input.saleorUserId
+          saleorUserId
         );
 
         if (customerVaultResult.isErr()) {
@@ -135,7 +135,7 @@ export class CreateSetupTokenHandler {
         const paypalCustomerId = customerVaultResult.value.paypalCustomerId;
 
         logger.info("Creating setup token for vault-without-purchase", {
-          saleorUserId: input.saleorUserId,
+          saleorUserId: saleorUserId,
           paypalCustomerId,
           paymentMethodType: input.paymentMethodType,
         });
@@ -201,7 +201,7 @@ export class CreateSetupTokenHandler {
 
         if (setupTokenResult.isErr()) {
           logger.error("Failed to create setup token", {
-            saleorUserId: input.saleorUserId,
+            saleorUserId: saleorUserId,
             error: setupTokenResult.error,
           });
           throw new TRPCError({
@@ -213,7 +213,7 @@ export class CreateSetupTokenHandler {
         const setupToken = setupTokenResult.value;
 
         logger.info("Setup token created successfully", {
-          saleorUserId: input.saleorUserId,
+          saleorUserId: saleorUserId,
           setupTokenId: setupToken.id,
           status: setupToken.status,
         });
@@ -235,7 +235,7 @@ export class CreateSetupTokenHandler {
 
         captureException(error);
         logger.error("Unexpected error creating setup token", {
-          saleorUserId: input.saleorUserId,
+          saleorUserId: saleorUserId,
           error: error instanceof Error ? error.message : String(error),
         });
         throw new TRPCError({

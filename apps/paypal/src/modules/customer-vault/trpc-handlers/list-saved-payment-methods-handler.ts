@@ -1,6 +1,5 @@
 import { captureException } from "@sentry/nextjs";
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 
 import { getPool } from "@/lib/database";
 import { createLogger } from "@/lib/logger";
@@ -9,23 +8,20 @@ import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
 import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
-import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
+import { protectedStorefrontProcedure } from "@/modules/trpc/protected-storefront-procedure";
 import { PostgresCustomerVaultRepository } from "../customer-vault-repository";
 
 const logger = createLogger("ListSavedPaymentMethodsHandler");
-
-const inputSchema = z.object({
-  saleorUserId: z.string().min(1, "saleorUserId is required"),
-});
 
 /**
  * tRPC Handler for listing saved payment methods (ACDC Card Vaulting - Phase 1)
  */
 export class ListSavedPaymentMethodsHandler {
-  baseProcedure = protectedClientProcedure;
+  baseProcedure = protectedStorefrontProcedure;
 
   getTrpcProcedure() {
-    return this.baseProcedure.input(inputSchema).query(async ({ ctx, input }) => {
+    return this.baseProcedure.query(async ({ ctx }) => {
+      const saleorUserId = ctx.saleorUserId as string;
       if (!ctx.saleorApiUrl) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -64,7 +60,7 @@ export class ListSavedPaymentMethodsHandler {
         const customerVaultRepo = PostgresCustomerVaultRepository.create(pool);
         const customerVaultResult = await customerVaultRepo.getBySaleorUserId(
           saleorApiUrl.value,
-          input.saleorUserId
+          saleorUserId
         );
 
         if (customerVaultResult.isErr()) {
@@ -123,7 +119,7 @@ export class ListSavedPaymentMethodsHandler {
           }));
 
         logger.info("Listed saved payment methods", {
-          saleorUserId: input.saleorUserId,
+          saleorUserId: saleorUserId,
           count: savedPaymentMethods.length,
         });
 

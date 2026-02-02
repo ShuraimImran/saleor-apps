@@ -9,13 +9,12 @@ import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
 import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
-import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
+import { protectedStorefrontProcedure } from "@/modules/trpc/protected-storefront-procedure";
 import { PostgresCustomerVaultRepository } from "../customer-vault-repository";
 
 const logger = createLogger("DeleteSavedPaymentMethodHandler");
 
 const inputSchema = z.object({
-  saleorUserId: z.string().min(1, "saleorUserId is required"),
   paymentTokenId: z.string().min(1, "paymentTokenId is required"),
 });
 
@@ -23,10 +22,11 @@ const inputSchema = z.object({
  * tRPC Handler for deleting a saved payment method (ACDC Card Vaulting - Phase 1)
  */
 export class DeleteSavedPaymentMethodHandler {
-  baseProcedure = protectedClientProcedure;
+  baseProcedure = protectedStorefrontProcedure;
 
   getTrpcProcedure() {
     return this.baseProcedure.input(inputSchema).mutation(async ({ ctx, input }) => {
+      const saleorUserId = ctx.saleorUserId as string;
       if (!ctx.saleorApiUrl) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -65,7 +65,7 @@ export class DeleteSavedPaymentMethodHandler {
         const customerVaultRepo = PostgresCustomerVaultRepository.create(pool);
         const customerVaultResult = await customerVaultRepo.getBySaleorUserId(
           saleorApiUrl.value,
-          input.saleorUserId
+          saleorUserId
         );
 
         if (customerVaultResult.isErr()) {
@@ -108,7 +108,7 @@ export class DeleteSavedPaymentMethodHandler {
         }
 
         logger.info("Deleted saved payment method", {
-          saleorUserId: input.saleorUserId,
+          saleorUserId: saleorUserId,
           paymentTokenId: input.paymentTokenId,
         });
 
