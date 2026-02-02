@@ -9,8 +9,15 @@ import { trpcRouter } from "@/modules/trpc/trpc-router";
 
 const logger = createLogger("trpcHandler");
 
-const handler = (request: Request) => {
-  return fetchRequestHandler({
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Content-Type, saleor-api-url, authorization-bearer",
+};
+
+const handler = async (request: Request) => {
+  const response = await fetchRequestHandler({
     endpoint: "/api/trpc",
     req: request,
     router: trpcRouter,
@@ -24,8 +31,18 @@ const handler = (request: Request) => {
       logger.debug(`${path} returned error:`, error);
     },
   });
+
+  Object.entries(corsHeaders).forEach(([key, value]) => {
+    response.headers.set(key, value);
+  });
+
+  return response;
 };
 
 const wrappedHandler = compose(withLoggerContext, withSpanAttributesAppRouter)(handler);
+
+export function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders });
+}
 
 export { wrappedHandler as GET, wrappedHandler as POST };
