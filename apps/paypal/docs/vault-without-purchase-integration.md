@@ -125,7 +125,7 @@ The Payment App uses tRPC v10. The HTTP conventions are:
 
 - **Queries** use `GET` with input as a URL query parameter:
   ```
-  GET /api/trpc/customerVault.listSavedPaymentMethods?input={}
+  GET /api/trpc/customerVault.listSavedPaymentMethods
   ```
 - **Mutations** use `POST` with input as the JSON body:
   ```
@@ -162,8 +162,8 @@ save a card".
 |---|---|---|
 | `paymentMethodType` | No | Defaults to `"card"`. Also supports `"paypal"` and `"venmo"`. |
 | `verificationMethod` | No | `"SCA_WHEN_REQUIRED"` (default) or `"SCA_ALWAYS"`. Controls 3D Secure behavior. |
-| `returnUrl` | No | Where to redirect after 3DS challenge completes. Recommended. |
-| `cancelUrl` | No | Where to redirect if buyer cancels 3DS challenge. Recommended. |
+| `returnUrl` | Recommended | Where to redirect after 3DS challenge completes. Required for 3DS to work via redirect. |
+| `cancelUrl` | Recommended | Where to redirect if buyer cancels 3DS challenge. Required for 3DS to work via redirect. |
 | `brandName` | No | Your brand name shown during 3DS verification. |
 
 > **Note:** `saleorUserId` is **not** in the input. It is extracted from the
@@ -329,7 +329,7 @@ Once cards are saved, you can list and delete them.
 
 ```javascript
 const response = await fetch(
-  `${PAYMENT_APP_URL}/api/trpc/customerVault.listSavedPaymentMethods?input={}`,
+  `${PAYMENT_APP_URL}/api/trpc/customerVault.listSavedPaymentMethods`,
   {
     method: "GET",
     headers: {
@@ -428,7 +428,7 @@ Page Load (Saved Payment Methods page)
 │     → Receive setupTokenId
 │
 ├─ 3. Load PayPal SDK v6
-│     → paypal.createInstance({ clientToken, components: ["card-fields"] })
+│     → paypal.createInstance({ clientId, components: ["card-fields"] })
 │     → sdk.createCardFieldsSavePaymentSession()
 │     → session.render({ fields: { number, cvv, expirationDate } })
 │

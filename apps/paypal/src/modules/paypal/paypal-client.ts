@@ -248,6 +248,76 @@ export class PayPalClient {
   }
 
   /**
+   * Generate a Client Token for the PayPal JS SDK v6.
+   * This token is used in `paypal.createInstance({ clientToken })` to initialize
+   * the SDK on the frontend. The clientId stays server-side (not exposed to the browser).
+   *
+   * The token is domain-bound and short-lived (~15 min).
+   *
+   * @param domains - Optional list of domains where the token can be used
+   * @returns The client token (access_token) for the v6 SDK
+   */
+  async generateClientToken(domains?: string[]): Promise<string> {
+    logger.info("Generating PayPal Client Token for SDK v6", {
+      env: this.env,
+    });
+
+    const tokenGenerationStart = Date.now();
+    const auth = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64");
+
+    const bodyParams = new URLSearchParams({
+      grant_type: "client_credentials",
+      response_type: "client_token",
+    });
+
+    if (domains && domains.length > 0) {
+      bodyParams.set("domains[]", domains.join(","));
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${auth}`,
+    };
+
+    const authAssertion = this.generateAuthAssertion();
+    if (authAssertion) {
+      headers["PayPal-Auth-Assertion"] = authAssertion;
+    }
+
+    const response = await fetch(`${this.baseUrl}/v1/oauth2/token`, {
+      method: "POST",
+      headers,
+      body: bodyParams.toString(),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error("PayPal Client Token generation failed", {
+        env: this.env,
+        status: response.status,
+        error: errorText,
+        generation_time_ms: Date.now() - tokenGenerationStart,
+      });
+      throw new Error(`PayPal Client Token generation failed: ${response.status} - ${errorText}`);
+    }
+
+    const data = (await response.json()) as {
+      access_token: string;
+      expires_in: number;
+    };
+
+    const generationTime = Date.now() - tokenGenerationStart;
+
+    logger.info("PayPal Client Token generated successfully", {
+      env: this.env,
+      expires_in_seconds: data.expires_in,
+      generation_time_ms: generationTime,
+    });
+
+    return data.access_token;
+  }
+
+  /**
    * Generate a User ID Token for the PayPal JS SDK vaulting functionality.
    * This token is used in the `data-user-id-token` attribute of PayPal buttons
    * to enable saved payment methods for returning buyers.

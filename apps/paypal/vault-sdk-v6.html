@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Save Card to Wallet</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      color: #1a1a2e;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+    }
+
+    /* --- Cards (UI panels) --- */
+    .panel {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+    }
+
+    .panel-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-title .icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    /* --- Config form --- */
+    .config-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 12px 0;
+      border-bottom: 1px solid #eee;
+      margin-bottom: 12px;
+      user-select: none;
+    }
+
+    .config-toggle:hover { color: #0070ba; }
+
+    .config-toggle .arrow {
+      transition: transform 0.2s;
+      font-size: 12px;
+      color: #999;
+    }
+
+    .config-toggle .arrow.open { transform: rotate(180deg); }
+
+    .config-fields { display: none; }
+    .config-fields.open { display: block; }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #555;
+      margin-bottom: 5px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+      outline: none;
+    }
+
+    .form-group input:focus {
+      border-color: #0070ba;
+      box-shadow: 0 0 0 3px rgba(0,112,186,0.1);
+    }
+
+    /* --- Saved cards list --- */
+    .saved-card {
+      display: flex;
+      align-items: center;
+      padding: 14px;
+      border: 1px solid #e8e8e8;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      transition: all 0.15s;
+    }
+
+    .saved-card:hover {
+      border-color: #ccc;
+      background: #fafafa;
+    }
+
+    .card-brand-icon {
+      width: 44px;
+      height: 30px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: #fff;
+      margin-right: 14px;
+      text-transform: uppercase;
+    }
+
+    .brand-visa { background: #1a1f71; }
+    .brand-mastercard { background: #eb001b; }
+    .brand-amex { background: #006fcf; }
+    .brand-discover { background: #ff6000; }
+    .brand-default { background: #888; }
+
+    .card-info { flex: 1; }
+    .card-number { font-weight: 500; font-size: 14px; }
+    .card-expiry { font-size: 12px; color: #888; margin-top: 2px; }
+
+    .delete-btn {
+      background: none;
+      border: none;
+      color: #ccc;
+      cursor: pointer;
+      font-size: 18px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: all 0.15s;
+      width: auto;
+    }
+
+    .delete-btn:hover {
+      color: #e53935;
+      background: #ffebee;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 24px;
+      color: #999;
+      font-size: 14px;
+    }
+
+    /* --- Card input fields (PayPal iframes) --- */
+    .card-field {
+      min-height: 44px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 2px;
+      transition: border-color 0.2s;
+    }
+
+    .card-field:focus-within {
+      border-color: #0070ba;
+      box-shadow: 0 0 0 3px rgba(0,112,186,0.1);
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .row > .form-group { flex: 1; }
+
+    /* --- Buttons --- */
+    button {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: #0070ba;
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) { background: #005ea6; }
+
+    .btn-outline {
+      background: transparent;
+      color: #0070ba;
+      border: 2px solid #0070ba;
+    }
+
+    .btn-outline:hover:not(:disabled) {
+      background: #f0f7ff;
+    }
+
+    /* --- Status messages --- */
+    .status {
+      padding: 12px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-top: 14px;
+      line-height: 1.4;
+      display: none;
+    }
+
+    .status.visible { display: block; }
+    .status.info { background: #e3f2fd; color: #1565c0; }
+    .status.success { background: #e8f5e9; color: #2e7d32; }
+    .status.error { background: #ffebee; color: #c62828; }
+
+    /* --- Loader --- */
+    .loader {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* --- Result JSON --- */
+    pre {
+      background: #f5f5f5;
+      padding: 14px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 12px;
+      max-height: 300px;
+      line-height: 1.5;
+    }
+
+    .hidden { display: none !important; }
+
+    /* --- Steps indicator --- */
+    .steps {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 28px;
+    }
+
+    .step {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ddd;
+      transition: all 0.3s;
+    }
+
+    .step.active { background: #0070ba; transform: scale(1.2); }
+    .step.done { background: #4caf50; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>My Payment Methods</h1>
+    <p class="subtitle">Save a card to your wallet for faster checkout</p>
+
+    <!-- Step indicators -->
+    <div class="steps">
+      <div class="step" id="step1"></div>
+      <div class="step" id="step2"></div>
+      <div class="step" id="step3"></div>
+    </div>
+
+    <!-- ==================== CONFIGURATION ==================== -->
+    <div class="panel" id="config-panel">
+      <div class="config-toggle" onclick="toggleConfig()">
+        <span style="font-weight: 600; font-size: 14px;">Configuration</span>
+        <span class="arrow" id="config-arrow">&#9660;</span>
+      </div>
+      <div class="config-fields" id="config-fields">
+        <div class="form-group">
+          <label>Saleor API URL</label>
+          <input type="text" id="saleorApi" value="https://api-aeroexhaust.wsm-dev.com/graphql/">
+        </div>
+        <div class="form-group">
+          <label>Saleor Token</label>
+          <input type="text" id="saleorToken" value="eyJhbGciOiJSUzI1NiIsImtpZCI6IlNrTnFYX3JBZzRNRGFlSk5ZLVlrSmc0QTFGNnZYTU1kbWxheTA2ekdCNWsiLCJ0eXAiOiJKV1QifQ.eyJpYXQiOjE3NzAwNDcxNzIsIm93bmVyIjoic2FsZW9yIiwiaXNzIjoiaHR0cHM6Ly9hcGktYWVyb2V4aGF1c3Qud3NtLWRldi5jb20vZ3JhcGhxbC8iLCJleHAiOjE3NzAwNDg5NzIsInRva2VuIjoiRFU0OFRTb0FLNkl0IiwiZW1haWwiOiJhYmR1bGxhaGFsdGFmLmFscGhhc3F1YWRAZ21haWwuY29tIiwidHlwZSI6ImFjY2VzcyIsInVzZXJfaWQiOiJWWE5sY2pveSIsImlzX3N0YWZmIjpmYWxzZX0.d6w69EwzVtqIjMVMF_pORHu5JxuEYENcuOCmGlFlqiocXsxVWXJ9t0-yH_tM93tANik34A8bP3hg7PGXc_nKy6qZeuU6ekOqEaThi89A99y8U9MWAY09xCrsLguyBD9ei_xqXo-v7hAkUjQyl_kHKgxV6gfZ9wrgLrmL_EOi8BNc6ATzeHKF6gouufnigSXLNVwH4cl8zlCo3CFxL-xYZfHb0EeTLzCtaRjSf3BE0NzK2mB5-nWhdojrZpu531EWhQPn2CNFqKM8v6Gz4KJAPFovHCbTMk03M1Cf3wtFyw5FRWIk_GS0PmheZQsSrcMPYArj2wt6y_-Z0_8OaSQEIA">
+        </div>
+        <div class="form-group">
+          <label>PayPal App tRPC URL</label>
+          <input type="text" id="trpcBaseUrl" value="https://entire-moderator-karl-models.trycloudflare.com/api/trpc">
+        </div>
+        <p style="font-size: 12px; color: #999; margin-top: 8px;">
+          PayPal Client ID is no longer needed here — the v6 SDK uses a server-generated
+          client token fetched from the <code>generateClientToken</code> endpoint.
+        </p>
+      </div>
+    </div>
+
+    <!-- ==================== SAVED CARDS ==================== -->
+    <div class="panel" id="saved-cards-panel">
+      <div class="panel-title">
+        <span class="icon" style="background: #e8f5e9; color: #2e7d32;">&#128179;</span>
+        Saved Cards
+      </div>
+      <div id="saved-cards-list">
+        <div class="empty-state">Enter your configuration above and click "Load Saved Cards"</div>
+      </div>
+      <button class="btn-outline" id="loadCardsBtn" onclick="loadSavedCards()" style="margin-top: 12px;">
+        Load Saved Cards
+      </button>
+      <div class="status" id="listStatus"></div>
+    </div>
+
+    <!-- ==================== ADD NEW CARD ==================== -->
+    <div class="panel" id="add-card-panel">
+      <div class="panel-title">
+        <span class="icon" style="background: #e3f2fd; color: #1565c0;">+</span>
+        Add New Card
+      </div>
+
+      <!-- Before card fields are loaded -->
+      <div id="pre-vault-section">
+        <p style="font-size: 14px; color: #666; margin-bottom: 16px;">
+          Save a card to your wallet without making a purchase. Your card details are handled securely by PayPal.
+        </p>
+        <button class="btn-primary" id="startVaultBtn" onclick="startVaultFlow()">
+          Add a Card
+        </button>
+      </div>
+
+      <!-- Card fields (shown after setup token is created) -->
+      <div id="card-fields-section" class="hidden">
+        <div class="form-group">
+          <label>Card Number</label>
+          <div id="card-number" class="card-field"></div>
+        </div>
+        <div class="row">
+          <div class="form-group">
+            <label>Expiry</label>
+            <div id="card-expiry" class="card-field"></div>
+          </div>
+          <div class="form-group">
+            <label>CVV</label>
+            <div id="card-cvv" class="card-field"></div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Cardholder Name</label>
+          <div id="card-name" class="card-field"></div>
+        </div>
+
+        <button class="btn-primary" id="saveCardBtn" onclick="submitCard()" disabled style="margin-top: 16px;">
+          Save Card
+        </button>
+
+        <button class="btn-outline" onclick="cancelVault()" style="margin-top: 10px;">
+          Cancel
+        </button>
+      </div>
+
+      <div class="status" id="vaultStatus"></div>
+    </div>
+
+    <!-- ==================== RESULT ==================== -->
+    <div class="panel hidden" id="result-panel">
+      <div class="panel-title">
+        <span class="icon" style="background: #fff3e0; color: #e65100;">{ }</span>
+        Response Details
+      </div>
+      <pre id="resultJson"></pre>
+    </div>
+  </div>
+
+  <script>
+    // =============================================
+    // STATE
+    // =============================================
+    let paypalSdkInstance = null;
+    let vaultSession = null;
+    let currentSetupTokenId = null;
+
+    // =============================================
+    // CONFIG TOGGLE
+    // =============================================
+    function toggleConfig() {
+      const fields = document.getElementById('config-fields');
+      const arrow = document.getElementById('config-arrow');
+      const isOpen = fields.classList.contains('open');
+      fields.classList.toggle('open');
+      arrow.classList.toggle('open');
+    }
+
+    // Open config by default on load
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('config-fields').classList.add('open');
+      document.getElementById('config-arrow').classList.add('open');
+    });
+
+    // =============================================
+    // HELPERS
+    // =============================================
+    function getConfig() {
+      return {
+        saleorApi: document.getElementById('saleorApi').value.trim(),
+        saleorToken: document.getElementById('saleorToken').value.trim(),
+        trpcBaseUrl: document.getElementById('trpcBaseUrl').value.trim(),
+      };
+    }
+
+    function showStatus(elementId, message, type) {
+      const el = document.getElementById(elementId);
+      el.className = `status visible ${type}`;
+      el.innerHTML = message;
+    }
+
+    function hideStatus(elementId) {
+      const el = document.getElementById(elementId);
+      el.className = 'status';
+      el.innerHTML = '';
+    }
+
+    function setStep(stepNum) {
+      for (let i = 1; i <= 3; i++) {
+        const el = document.getElementById(`step${i}`);
+        el.className = 'step';
+        if (i < stepNum) el.classList.add('done');
+        if (i === stepNum) el.classList.add('active');
+      }
+    }
+
+    function showResult(data) {
+      document.getElementById('result-panel').classList.remove('hidden');
+      document.getElementById('resultJson').textContent = JSON.stringify(data, null, 2);
+    }
+
+    function hideResult() {
+      document.getElementById('result-panel').classList.add('hidden');
+    }
+
+    function getBrandClass(brand) {
+      if (!brand) return 'brand-default';
+      const b = brand.toUpperCase();
+      if (b.includes('VISA')) return 'brand-visa';
+      if (b.includes('MASTER')) return 'brand-mastercard';
+      if (b.includes('AMEX') || b.includes('AMERICAN')) return 'brand-amex';
+      if (b.includes('DISCOVER')) return 'brand-discover';
+      return 'brand-default';
+    }
+
+    function validateConfig(fields) {
+      const config = getConfig();
+      const missing = fields.filter(f => !config[f]);
+
+      if (missing.length > 0) {
+        const labels = {
+          saleorApi: 'Saleor API URL',
+          saleorToken: 'Saleor Token',
+          trpcBaseUrl: 'tRPC URL',
+        };
+        const names = missing.map(f => labels[f]).join(', ');
+        return { valid: false, error: `Missing required fields: ${names}` };
+      }
+
+      return { valid: true };
+    }
+
+    // =============================================
+    // tRPC REQUEST
+    // In tRPC v10: GET = query, POST = mutation
+    // =============================================
+    async function trpcQuery(procedure, input) {
+      const config = getConfig();
+      const encodedInput = encodeURIComponent(JSON.stringify(input));
+      const url = `${config.trpcBaseUrl}/${procedure}?input=${encodedInput}`;
+
+      console.log(`[tRPC GET] ${procedure}`, input);
+
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'saleor-api-url': config.saleorApi,
+          'authorization-bearer': config.saleorToken,
+        },
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        const msg = data.error?.json?.message
+          || data.error?.message
+          || JSON.stringify(data.error);
+        throw new Error(msg);
+      }
+
+      return data.result?.data || data;
+    }
+
+    async function trpcMutation(procedure, input) {
+      const config = getConfig();
+      const url = `${config.trpcBaseUrl}/${procedure}`;
+
+      console.log(`[tRPC POST] ${procedure}`, input);
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'saleor-api-url': config.saleorApi,
+          'authorization-bearer': config.saleorToken,
+        },
+        body: JSON.stringify(input),
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        const msg = data.error?.json?.message
+          || data.error?.message
+          || JSON.stringify(data.error);
+        throw new Error(msg);
+      }
+
+      return data.result?.data || data;
+    }
+
+    // =============================================
+    // LOAD SAVED CARDS
+    // =============================================
+    async function loadSavedCards() {
+      const check = validateConfig(['saleorApi', 'saleorToken', 'trpcBaseUrl']);
+      if (!check.valid) {
+        showStatus('listStatus', check.error, 'error');
+        return;
+      }
+
+      const btn = document.getElementById('loadCardsBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loader"></span>Loading...';
+      hideStatus('listStatus');
+
+      try {
+        // No input needed - saleorUserId is extracted from the JWT on the server
+        const result = await trpcQuery('customerVault.listSavedPaymentMethods', {});
+
+        console.log('[List] Saved payment methods:', result);
+
+        const cards = result.savedPaymentMethods || [];
+        renderSavedCards(cards);
+
+        if (cards.length === 0) {
+          showStatus('listStatus', 'No saved cards found. Add one below.', 'info');
+        } else {
+          showStatus('listStatus', `Found ${cards.length} saved card${cards.length > 1 ? 's' : ''}.`, 'success');
+        }
+      } catch (error) {
+        console.error('[List] Error:', error);
+        showStatus('listStatus', 'Error loading cards: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Load Saved Cards';
+      }
+    }
+
+    function renderSavedCards(cards) {
+      const listEl = document.getElementById('saved-cards-list');
+
+      if (cards.length === 0) {
+        listEl.innerHTML = '<div class="empty-state">No cards saved yet</div>';
+        return;
+      }
+
+      listEl.innerHTML = cards.map(pm => {
+        const brand = pm.card?.brand || 'CARD';
+        const lastDigits = pm.card?.lastDigits || '****';
+        const expiry = pm.card?.expiry || '';
+        const brandClass = getBrandClass(brand);
+
+        return `
+          <div class="saved-card" data-id="${pm.id}">
+            <div class="card-brand-icon ${brandClass}">${brand.substring(0, 4)}</div>
+            <div class="card-info">
+              <div class="card-number">•••• •••• •••• ${lastDigits}</div>
+              ${expiry ? `<div class="card-expiry">Expires ${expiry}</div>` : ''}
+            </div>
+            <button class="delete-btn" onclick="deleteSavedCard('${pm.id}')" title="Remove card">&#10005;</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // =============================================
+    // DELETE SAVED CARD
+    // =============================================
+    async function deleteSavedCard(paymentTokenId) {
+      if (!confirm('Remove this card from your wallet?')) return;
+
+      try {
+        const config = getConfig();
+
+        showStatus('listStatus', 'Removing card...', 'info');
+
+        await trpcMutation('customerVault.deleteSavedPaymentMethod', {
+          paymentTokenId: paymentTokenId,
+        });
+
+        showStatus('listStatus', 'Card removed.', 'success');
+
+        // Refresh the list
+        await loadSavedCards();
+      } catch (error) {
+        console.error('[Delete] Error:', error);
+        showStatus('listStatus', 'Error removing card: ' + error.message, 'error');
+      }
+    }
+
+    // =============================================
+    // VAULT FLOW - STEP 1: CREATE SETUP TOKEN
+    // =============================================
+    async function startVaultFlow() {
+      const check = validateConfig(['saleorApi', 'saleorToken', 'trpcBaseUrl']);
+      if (!check.valid) {
+        showStatus('vaultStatus', check.error, 'error');
+        return;
+      }
+
+      const btn = document.getElementById('startVaultBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loader"></span>Preparing...';
+      hideResult();
+      setStep(1);
+
+      try {
+        showStatus('vaultStatus', 'Creating setup token...', 'info');
+
+        // Step 1a: Create setup token via tRPC
+        const setupResult = await trpcMutation('customerVault.createSetupToken', {
+          paymentMethodType: 'card',
+          verificationMethod: 'SCA_WHEN_REQUIRED',
+          returnUrl: window.location.href,
+          cancelUrl: window.location.href,
+        });
+
+        console.log('[Vault] Setup token created:', setupResult);
+        currentSetupTokenId = setupResult.setupTokenId;
+
+        // Step 1b: Get client token for SDK v6 (server-generated, clientId stays server-side)
+        showStatus('vaultStatus', 'Fetching client token for SDK...', 'info');
+        const tokenResult = await trpcQuery('customerVault.generateClientToken', {});
+        console.log('[Vault] Client token received');
+
+        showStatus('vaultStatus', 'Loading card form...', 'info');
+        setStep(2);
+
+        // Step 2: Load PayPal SDK v6 and create vault session
+        await initPayPalSDK(tokenResult.clientToken);
+        await createVaultSession();
+
+        // Show card fields, hide the start button
+        document.getElementById('pre-vault-section').classList.add('hidden');
+        document.getElementById('card-fields-section').classList.remove('hidden');
+
+        showStatus('vaultStatus', 'Enter your card details below.', 'info');
+
+      } catch (error) {
+        console.error('[Vault] Error:', error);
+        showStatus('vaultStatus', 'Error: ' + error.message, 'error');
+        setStep(0);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Add a Card';
+      }
+    }
+
+    // =============================================
+    // VAULT FLOW - STEP 2: LOAD PAYPAL SDK v6
+    // =============================================
+    function loadPayPalSDKScript() {
+      return new Promise((resolve, reject) => {
+        // If SDK script already loaded, reuse it
+        if (window.paypal?.createInstance) {
+          console.log('[SDK] PayPal SDK v6 script already loaded');
+          resolve();
+          return;
+        }
+
+        const existing = document.getElementById('paypal-sdk');
+        if (existing) existing.remove();
+
+        const script = document.createElement('script');
+        script.id = 'paypal-sdk';
+        // v6 SDK: no query params — config is passed to createInstance()
+        script.src = 'https://www.sandbox.paypal.com/web-sdk/v6/core';
+
+        script.onload = () => {
+          console.log('[SDK] PayPal SDK v6 script loaded');
+          resolve();
+        };
+
+        script.onerror = () => reject(new Error('Failed to load PayPal SDK v6.'));
+        document.head.appendChild(script);
+      });
+    }
+
+    async function initPayPalSDK(clientToken) {
+      await loadPayPalSDKScript();
+
+      // Client token is short-lived, so always create a fresh instance
+      console.log('[SDK] Creating PayPal SDK v6 instance with clientToken');
+      paypalSdkInstance = await window.paypal.createInstance({
+        clientToken: clientToken,
+        components: ['card-fields'],
+      });
+      console.log('[SDK] PayPal SDK v6 instance created');
+    }
+
+    // =============================================
+    // VAULT FLOW - STEP 3: CREATE VAULT SESSION & RENDER CARD FIELDS (v6)
+    // =============================================
+    async function createVaultSession() {
+      if (!paypalSdkInstance) {
+        showStatus('vaultStatus', 'PayPal SDK not initialized.', 'error');
+        return;
+      }
+
+      // Clean up previous card fields if any
+      ['card-number', 'card-expiry', 'card-cvv', 'card-name'].forEach(id => {
+        document.getElementById(id).innerHTML = '';
+      });
+
+      // v6: createCardFieldsSavePaymentSession() for vault-without-purchase
+      vaultSession = paypalSdkInstance.createCardFieldsSavePaymentSession();
+      console.log('[Vault] v6 save payment session created');
+
+      // Render card fields into containers
+      await vaultSession.render({
+        fields: {
+          number: { selector: '#card-number' },
+          expirationDate: { selector: '#card-expiry' },
+          cvv: { selector: '#card-cvv' },
+          name: { selector: '#card-name' },
+        },
+      });
+
+      document.getElementById('saveCardBtn').disabled = false;
+      console.log('[Vault] v6 card fields rendered');
+    }
+
+    // =============================================
+    // VAULT FLOW - STEP 4: SUBMIT CARD (v6)
+    // =============================================
+    async function submitCard() {
+      const btn = document.getElementById('saveCardBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loader"></span>Saving...';
+
+      try {
+        showStatus('vaultStatus', 'Validating card with PayPal...', 'info');
+
+        // v6: submit(setupTokenId) returns { state, data }
+        const result = await vaultSession.submit(currentSetupTokenId);
+        console.log('[Vault] v6 submit result:', result);
+
+        switch (result.state) {
+          case 'succeeded':
+            console.log('[Vault] Card approved, vaultSetupToken:', result.data?.vaultSetupToken);
+            await completeVaultFlow();
+            break;
+
+          case 'canceled':
+            showStatus('vaultStatus', 'Card save was canceled.', 'info');
+            btn.disabled = false;
+            btn.innerHTML = 'Save Card';
+            break;
+
+          case 'failed':
+            console.error('[Vault] Submit failed:', result.data);
+            showStatus('vaultStatus', 'Card validation failed: ' + (result.data?.message || 'Unknown error'), 'error');
+            btn.disabled = false;
+            btn.innerHTML = 'Save Card';
+            break;
+
+          default:
+            console.warn('[Vault] Unknown state:', result.state);
+            showStatus('vaultStatus', 'Unexpected result: ' + result.state, 'error');
+            btn.disabled = false;
+            btn.innerHTML = 'Save Card';
+        }
+      } catch (error) {
+        console.error('[Vault] Submit error:', error);
+        showStatus('vaultStatus', 'Error: ' + (error.message || 'Card validation failed'), 'error');
+        btn.disabled = false;
+        btn.innerHTML = 'Save Card';
+      }
+    }
+
+    // =============================================
+    // VAULT FLOW - STEP 5: COMPLETE (CONVERT SETUP TOKEN -> PAYMENT TOKEN)
+    // =============================================
+    async function completeVaultFlow() {
+      try {
+        const config = getConfig();
+
+        showStatus('vaultStatus', 'Saving card to your wallet...', 'info');
+        setStep(3);
+
+        const result = await trpcMutation('customerVault.createPaymentTokenFromSetupToken', {
+          setupTokenId: currentSetupTokenId,
+        });
+
+        console.log('[Vault] Payment token created:', result);
+
+        const cardInfo = result.card
+          ? `${result.card.brand || 'Card'} ending in ${result.card.lastDigits || '****'}`
+          : 'Card';
+
+        showStatus(
+          'vaultStatus',
+          `<strong>${cardInfo}</strong> saved to your wallet.`,
+          'success'
+        );
+
+        showResult({
+          flow: 'Vault Without Purchase',
+          paymentTokenId: result.paymentTokenId,
+          customerId: result.customerId,
+          card: result.card,
+        });
+
+        // Reset the form
+        resetVaultUI();
+
+        // Refresh the saved cards list
+        await loadSavedCards();
+
+      } catch (error) {
+        console.error('[Vault] Complete error:', error);
+        showStatus('vaultStatus', 'Error saving card: ' + error.message, 'error');
+      } finally {
+        document.getElementById('saveCardBtn').disabled = false;
+        document.getElementById('saveCardBtn').innerHTML = 'Save Card';
+      }
+    }
+
+    // =============================================
+    // CANCEL / RESET
+    // =============================================
+    function cancelVault() {
+      resetVaultUI();
+      hideStatus('vaultStatus');
+      hideResult();
+      setStep(0);
+    }
+
+    function resetVaultUI() {
+      document.getElementById('card-fields-section').classList.add('hidden');
+      document.getElementById('pre-vault-section').classList.remove('hidden');
+
+      // Clear card field containers
+      ['card-number', 'card-expiry', 'card-cvv', 'card-name'].forEach(id => {
+        document.getElementById(id).innerHTML = '';
+      });
+
+      currentSetupTokenId = null;
+      vaultSession = null;
+    }
+  </script>
+</body>
+</html>

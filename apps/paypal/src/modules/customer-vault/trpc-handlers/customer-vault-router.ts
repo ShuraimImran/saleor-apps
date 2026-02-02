@@ -4,12 +4,19 @@ import { ListSavedPaymentMethodsHandler } from "./list-saved-payment-methods-han
 import { DeleteSavedPaymentMethodHandler } from "./delete-saved-payment-method-handler";
 import { CreateSetupTokenHandler } from "./create-setup-token-handler";
 import { CreatePaymentTokenHandler } from "./create-payment-token-handler";
+import { GenerateClientTokenHandler } from "./generate-client-token-handler";
 
 /**
  * Customer Vault Router
  * Handles ACDC Card Vaulting operations (Phase 1)
  */
 export const customerVaultRouter = router({
+  /**
+   * Generate a PayPal Client Token for JS SDK v6
+   * Must be called before initializing the SDK on the frontend
+   */
+  generateClientToken: new GenerateClientTokenHandler().getTrpcProcedure(),
+
   /**
    * List saved payment methods for a customer
    * Used for "Return Buyer" flow - display saved cards at checkout
@@ -28,10 +35,11 @@ export const customerVaultRouter = router({
    * (e.g., "My Account" > "Payment Methods" > "Add Card")
    *
    * Flow:
-   * 1. Frontend calls createSetupToken
-   * 2. Render PayPal Card Fields with the setup token
-   * 3. Buyer enters card details
-   * 4. Call createPaymentTokenFromSetupToken to complete vaulting
+   * 1. Frontend calls generateClientToken (for SDK v6 init)
+   * 2. Frontend calls createSetupToken
+   * 3. Render PayPal Card Fields with the setup token
+   * 4. Buyer enters card details
+   * 5. Call createPaymentTokenFromSetupToken to complete vaulting
    */
   createSetupToken: new CreateSetupTokenHandler().getTrpcProcedure(),
 
