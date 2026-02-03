@@ -4,6 +4,7 @@ import { PayPalMerchantId } from "./paypal-merchant-id";
 import { getPayPalApiUrl, PayPalEnv } from "./paypal-env";
 import { createLogger } from "@/lib/logger";
 import { paypalOAuthTokenCache } from "./paypal-oauth-token-cache";
+import { env } from "@/lib/env";
 
 const logger = createLogger("PayPalClient");
 
@@ -138,6 +139,9 @@ export class PayPalClient {
   }): Promise<T> {
     const token = await this.getAccessToken();
 
+    // Check if IWT debug logging is enabled
+    const iwtDebugLogging = env.PAYPAL_DEBUG_LOGGING === true;
+
     logger.debug("Making PayPal API request", {
       method: args.method,
       path: args.path,
@@ -146,6 +150,7 @@ export class PayPalClient {
       has_merchant_id: !!this.merchantId,
       has_merchant_email: !!this.merchantEmail,
       has_bn_code: !!this.bnCode,
+      iwt_debug_enabled: iwtDebugLogging,
     });
 
     const headers: Record<string, string> = {
@@ -188,6 +193,37 @@ export class PayPalClient {
     // Track response time
     const startTime = Date.now();
 
+    // IWT Debug Logging - Log full request for PayPal IWT submission
+    if (iwtDebugLogging) {
+      const sanitizedHeaders = { ...headers };
+      // Mask sensitive auth header for logging (keep first/last 10 chars)
+      if (sanitizedHeaders.Authorization) {
+        const auth = sanitizedHeaders.Authorization;
+        if (auth.length > 30) {
+          sanitizedHeaders.Authorization = `${auth.substring(0, 17)}...${auth.substring(auth.length - 10)}`;
+        }
+      }
+
+      logger.info("=== IWT DEBUG: PayPal API Request ===", {
+        iwt_request: {
+          timestamp: new Date().toISOString(),
+          method: args.method,
+          url: fullUrl,
+          headers: sanitizedHeaders,
+          body: args.body || null,
+        },
+      });
+
+      // Also log raw JSON for easy copy-paste
+      console.log("\n========== IWT REQUEST ==========");
+      console.log(`${args.method} ${fullUrl}`);
+      console.log("Headers:", JSON.stringify(sanitizedHeaders, null, 2));
+      if (args.body) {
+        console.log("Body:", JSON.stringify(args.body, null, 2));
+      }
+      console.log("=================================\n");
+    }
+
     const response = await fetch(fullUrl, {
       method: args.method,
       headers,
@@ -205,6 +241,30 @@ export class PayPalClient {
 
       // Extract debug_id from body and headers (they should match)
       const debugId = errorData.debug_id || paypalDebugIdHeader || correlationIdHeader || null;
+
+      // IWT Debug Logging - Log full error response
+      if (iwtDebugLogging) {
+        logger.info("=== IWT DEBUG: PayPal API Error Response ===", {
+          iwt_response: {
+            timestamp: new Date().toISOString(),
+            status: response.status,
+            statusText: response.statusText,
+            headers: {
+              "paypal-debug-id": paypalDebugIdHeader,
+              "correlation-id": correlationIdHeader,
+            },
+            body: errorData,
+            response_time_ms: responseTime,
+          },
+        });
+
+        console.log("\n========== IWT ERROR RESPONSE ==========");
+        console.log(`Status: ${response.status} ${response.statusText}`);
+        console.log(`PayPal-Debug-Id: ${paypalDebugIdHeader}`);
+        console.log(`Response Time: ${responseTime}ms`);
+        console.log("Body:", JSON.stringify(errorData, null, 2));
+        console.log("=========================================\n");
+      }
 
       logger.error("PayPal API request failed", {
         method: args.method,
@@ -227,6 +287,33 @@ export class PayPalClient {
       };
     }
 
+    // Parse response body for logging
+    const responseBody = await response.json() as T;
+
+    // IWT Debug Logging - Log full success response
+    if (iwtDebugLogging) {
+      logger.info("=== IWT DEBUG: PayPal API Success Response ===", {
+        iwt_response: {
+          timestamp: new Date().toISOString(),
+          status: response.status,
+          statusText: response.statusText,
+          headers: {
+            "paypal-debug-id": paypalDebugIdHeader,
+            "correlation-id": correlationIdHeader,
+          },
+          body: responseBody,
+          response_time_ms: responseTime,
+        },
+      });
+
+      console.log("\n========== IWT SUCCESS RESPONSE ==========");
+      console.log(`Status: ${response.status} ${response.statusText}`);
+      console.log(`PayPal-Debug-Id: ${paypalDebugIdHeader}`);
+      console.log(`Response Time: ${responseTime}ms`);
+      console.log("Body:", JSON.stringify(responseBody, null, 2));
+      console.log("==========================================\n");
+    }
+
     logger.debug("PayPal API request successful", {
       method: args.method,
       path: args.path,
@@ -236,7 +323,7 @@ export class PayPalClient {
       correlation_id: correlationIdHeader,
     });
 
-    return response.json() as Promise<T>;
+    return responseBody;
   }
 
   getEnv(): PayPalEnv {

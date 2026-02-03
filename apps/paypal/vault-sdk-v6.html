@@ -186,6 +186,14 @@
       border-radius: 8px;
       padding: 2px;
       transition: border-color 0.2s;
+      position: relative;
+    }
+
+    .card-field iframe {
+      width: 100% !important;
+      height: 44px !important;
+      border: none !important;
+      display: block !important;
     }
 
     .card-field:focus-within {
@@ -384,11 +392,6 @@
             <div id="card-cvv" class="card-field"></div>
           </div>
         </div>
-        <div class="form-group">
-          <label>Cardholder Name</label>
-          <div id="card-name" class="card-field"></div>
-        </div>
-
         <button class="btn-primary" id="saveCardBtn" onclick="submitCard()" disabled style="margin-top: 16px;">
           Save Card
         </button>
@@ -763,7 +766,7 @@
       }
 
       // Clean up previous card fields if any
-      ['card-number', 'card-expiry', 'card-cvv', 'card-name'].forEach(id => {
+      ['card-number', 'card-expiry', 'card-cvv'].forEach(id => {
         document.getElementById(id).innerHTML = '';
       });
 
@@ -771,18 +774,17 @@
       vaultSession = paypalSdkInstance.createCardFieldsSavePaymentSession();
       console.log('[Vault] v6 save payment session created');
 
-      // Render card fields into containers
-      await vaultSession.render({
-        fields: {
-          number: { selector: '#card-number' },
-          expirationDate: { selector: '#card-expiry' },
-          cvv: { selector: '#card-cvv' },
-          name: { selector: '#card-name' },
-        },
-      });
+      // v6 card fields are Web Components — append them to the DOM
+      const numberField = vaultSession.createCardFieldsComponent({ type: 'number' });
+      const expiryField = vaultSession.createCardFieldsComponent({ type: 'expiry' });
+      const cvvField = vaultSession.createCardFieldsComponent({ type: 'cvv' });
+
+      document.getElementById('card-number').appendChild(numberField);
+      document.getElementById('card-expiry').appendChild(expiryField);
+      document.getElementById('card-cvv').appendChild(cvvField);
 
       document.getElementById('saveCardBtn').disabled = false;
-      console.log('[Vault] v6 card fields rendered');
+      console.log('[Vault] v6 card fields appended to DOM');
     }
 
     // =============================================
@@ -896,7 +898,7 @@
       document.getElementById('pre-vault-section').classList.remove('hidden');
 
       // Clear card field containers
-      ['card-number', 'card-expiry', 'card-cvv', 'card-name'].forEach(id => {
+      ['card-number', 'card-expiry', 'card-cvv'].forEach(id => {
         document.getElementById(id).innerHTML = '';
       });
 
