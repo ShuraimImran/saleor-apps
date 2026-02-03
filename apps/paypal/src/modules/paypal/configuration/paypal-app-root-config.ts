@@ -29,9 +29,11 @@ export class PayPalAppRootConfig {
 
   getConfigForChannel(channelId: string): PayPalConfig | null {
     const configId = this.getConfigIdForChannel(channelId);
+
     if (!configId) {
       return null;
     }
+
     return this.paypalConfigsById[configId] || null;
   }
 

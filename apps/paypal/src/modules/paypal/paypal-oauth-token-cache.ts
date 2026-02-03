@@ -1,4 +1,5 @@
 import { createLogger } from "@/lib/logger";
+
 import { PayPalEnv } from "./paypal-env";
 
 const logger = createLogger("PayPalOAuthTokenCache");
@@ -39,10 +40,12 @@ class PayPalOAuthTokenCache {
         client_id_prefix: clientId.substring(0, 8),
         env,
       });
+
       return null;
     }
 
     const now = Date.now();
+
     if (now >= entry.expiresAt) {
       logger.debug("Token cache miss: token expired", {
         client_id_prefix: clientId.substring(0, 8),
@@ -50,10 +53,12 @@ class PayPalOAuthTokenCache {
         expired_at: new Date(entry.expiresAt).toISOString(),
       });
       this.cache.delete(key);
+
       return null;
     }
 
     const ttl = entry.expiresAt - now;
+
     logger.debug("Token cache hit: returning cached token", {
       client_id_prefix: clientId.substring(0, 8),
       env,
@@ -116,6 +121,7 @@ class PayPalOAuthTokenCache {
    */
   clear(): void {
     const size = this.cache.size;
+
     this.cache.clear();
 
     logger.debug("All token cache cleared", {

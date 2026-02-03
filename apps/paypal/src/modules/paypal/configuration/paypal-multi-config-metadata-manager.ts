@@ -1,13 +1,14 @@
 import { AuthData } from "@saleor/app-sdk/APL";
 import { SettingsManager } from "@saleor/app-sdk/settings-manager";
 import { createGraphQLClient } from "@saleor/apps-shared/create-graphql-client";
-import { Result, ok, err } from "neverthrow";
+import { err,ok, Result } from "neverthrow";
 
 import { createSettingsManager } from "@/lib/metadata-manager";
 import { PayPalConfig } from "@/modules/app-config/domain/paypal-config";
-import { PayPalAppRootConfig } from "./paypal-app-root-config";
 import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
+
+import { PayPalAppRootConfig } from "./paypal-app-root-config";
 
 export class PayPalMultiConfigMetadataManager {
   private readonly configsMetadataKey = "paypal-configs-v2";
@@ -22,18 +23,21 @@ export class PayPalMultiConfigMetadataManager {
     try {
       // Get all configurations
       const configsResult = await this.getAllConfigs();
+
       if (configsResult.isErr()) {
         return err(configsResult.error);
       }
 
       // Get channel mappings
       const mappingResult = await this.getChannelMapping();
+
       if (mappingResult.isErr()) {
         return err(mappingResult.error);
       }
 
       // Convert configs array to indexed object
       const paypalConfigsById: Record<string, PayPalConfig> = {};
+
       configsResult.value.forEach(config => {
         paypalConfigsById[config.id] = config;
       });
@@ -82,17 +86,20 @@ export class PayPalMultiConfigMetadataManager {
 
   async getConfigById(configId: string): Promise<Result<PayPalConfig | null, Error>> {
     const allConfigsResult = await this.getAllConfigs();
+
     if (allConfigsResult.isErr()) {
       return err(allConfigsResult.error);
     }
 
     const config = allConfigsResult.value.find(c => c.id === configId);
+
     return ok(config || null);
   }
 
   async saveConfig(config: PayPalConfig): Promise<Result<void, Error>> {
     try {
       const allConfigsResult = await this.getAllConfigs();
+
       if (allConfigsResult.isErr()) {
         return err(allConfigsResult.error);
       }
@@ -133,6 +140,7 @@ export class PayPalMultiConfigMetadataManager {
   async deleteConfig(configId: string): Promise<Result<void, Error>> {
     try {
       const allConfigsResult = await this.getAllConfigs();
+
       if (allConfigsResult.isErr()) {
         return err(allConfigsResult.error);
       }
@@ -157,6 +165,7 @@ export class PayPalMultiConfigMetadataManager {
 
       // Also remove any channel mappings for this config
       const mappingResult = await this.getChannelMapping();
+
       if (mappingResult.isOk()) {
         const mapping = mappingResult.value;
         const updatedMapping: Record<string, string> = {};
@@ -206,6 +215,7 @@ export class PayPalMultiConfigMetadataManager {
   async updateChannelMapping(channelId: string, configId: string | null): Promise<Result<void, Error>> {
     try {
       const mappingResult = await this.getChannelMapping();
+
       if (mappingResult.isErr()) {
         return err(mappingResult.error);
       }

@@ -7,20 +7,20 @@ import {
 } from "@/app/api/webhooks/saleor/saleor-webhook-responses";
 import { TransactionProcessSessionEventFragment } from "@/generated/graphql";
 import { appContextContainer } from "@/lib/app-context";
+import { getPool } from "@/lib/database";
 import { BaseError } from "@/lib/errors";
 import { createLogger } from "@/lib/logger";
-import { getPool } from "@/lib/database";
 import { PayPalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
 import { mapPayPalErrorToApiError } from "@/modules/paypal/paypal-api-error";
 import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
 import { IPayPalOrdersApiFactory } from "@/modules/paypal/types";
 import { resolveSaleorMoneyFromPayPalOrder } from "@/modules/saleor/resolve-saleor-money-from-paypal-order";
 import { SaleorApiUrl } from "@/modules/saleor/saleor-api-url";
-import { ChargeSuccessResult } from "@/modules/transaction-result/success-result";
 import {
   AuthorizationFailureResult,
   ChargeFailureResult,
 } from "@/modules/transaction-result/failure-result";
+import { ChargeSuccessResult } from "@/modules/transaction-result/success-result";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
 
 import {
@@ -94,6 +94,7 @@ export class TransactionProcessSessionUseCase {
 
     // Set app context early so it's available even if errors occur later
     const paypalEnv = config.environment;
+
     this.logger.debug("Setting app context", { paypalEnv });
     appContextContainer.set({
       paypalEnv,
@@ -101,12 +102,14 @@ export class TransactionProcessSessionUseCase {
 
     // Verify context was set
     const contextCheck = appContextContainer.getContextValue();
+
     this.logger.debug("App context after set", {
       paypalEnv: contextCheck.paypalEnv,
     });
 
     // Fetch BN code from global config for partner attribution
     let bnCode: string | undefined;
+
     try {
       const pool = getPool();
       const globalConfigRepository = GlobalPayPalConfigRepository.create(pool);
@@ -148,6 +151,7 @@ export class TransactionProcessSessionUseCase {
 
     // Based on action type, either capture or authorize the order
     let processResult;
+
     if (event.action.actionType === "CHARGE") {
       processResult = await paypalOrdersApi.captureOrder({ orderId: paypalOrderId });
     } else {
@@ -187,6 +191,7 @@ export class TransactionProcessSessionUseCase {
 
     // Log vault info if present (for debugging vaulting issues)
     const vaultInfo = paypalOrder.payment_source?.card?.attributes?.vault;
+
     if (vaultInfo) {
       this.logger.info("Card vaulting result from capture", {
         vaultId: vaultInfo.id,
@@ -217,8 +222,10 @@ export class TransactionProcessSessionUseCase {
       );
     }
 
-    // For process session, we typically return success result
-    // since the action has been completed
+    /*
+     * For process session, we typically return success result
+     * since the action has been completed
+     */
     const successResult = new ChargeSuccessResult();
 
     return ok(

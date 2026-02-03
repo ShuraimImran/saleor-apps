@@ -1,9 +1,11 @@
-import { ok, err, Result } from "neverthrow";
+import { err, ok, Result } from "neverthrow";
+
 import { createLogger } from "@/lib/logger";
-import { PayPalWebhooksApi, RECOMMENDED_WEBHOOK_EVENTS } from "./paypal-webhooks-api";
-import { PayPalClientId, createPayPalClientId } from "./paypal-client-id";
-import { PayPalClientSecret, createPayPalClientSecret } from "./paypal-client-secret";
+
+import { createPayPalClientId,PayPalClientId } from "./paypal-client-id";
+import { createPayPalClientSecret,PayPalClientSecret } from "./paypal-client-secret";
 import { PayPalEnv } from "./paypal-env";
+import { PayPalWebhooksApi, RECOMMENDED_WEBHOOK_EVENTS } from "./paypal-webhooks-api";
 
 const logger = createLogger("PayPalWebhookManager");
 
@@ -77,6 +79,7 @@ export class PayPalWebhookManager {
 
     if (result.isErr()) {
       const error = result.error;
+
       logger.error("Failed to register PayPal webhook", {
         url: args.url,
         error: error instanceof Error ? error.message : JSON.stringify(error),
@@ -92,6 +95,7 @@ export class PayPalWebhookManager {
 
           // Try to find existing webhook
           const existingResult = await this.findWebhookByUrl(args.url);
+
           if (existingResult.isOk() && existingResult.value) {
             return ok(existingResult.value);
           }
@@ -170,6 +174,7 @@ export class PayPalWebhookManager {
     }
 
     logger.info("PayPal webhook deleted successfully", { webhookId });
+
     return ok(undefined);
   }
 
@@ -184,8 +189,10 @@ export class PayPalWebhookManager {
     if (result.isErr()) {
       // If we get 404, webhook doesn't exist
       const error = result.error;
+
       if (typeof error === "object" && error !== null && "statusCode" in error) {
         const apiError = error as { statusCode: number };
+
         if (apiError.statusCode === 404) {
           return ok(false);
         }
@@ -256,6 +263,7 @@ export class PayPalWebhookManager {
         webhookId: existingResult.value.webhookId,
         url: existingResult.value.webhookUrl,
       });
+
       return ok(existingResult.value);
     }
 

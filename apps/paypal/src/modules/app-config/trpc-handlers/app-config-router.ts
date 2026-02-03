@@ -1,13 +1,13 @@
-import { GetSaleorChannelsTrpcHandler } from "@/modules/app-config/trpc-handlers/get-saleor-channels-trpc-handler";
 import { GetPayPalConfigsChannelsMappingTrpcHandler } from "@/modules/app-config/trpc-handlers/get-paypal-configs-channels-mapping-trpc-handler";
 import { GetPayPalConfigsListTrpcHandler } from "@/modules/app-config/trpc-handlers/get-paypal-configs-list-trpc-handler";
+import { GetSaleorChannelsTrpcHandler } from "@/modules/app-config/trpc-handlers/get-saleor-channels-trpc-handler";
+import { GetTenantConfigTrpcHandler } from "@/modules/app-config/trpc-handlers/get-tenant-config-trpc-handler";
 import { NewPayPalConfigTrpcHandler } from "@/modules/app-config/trpc-handlers/new-paypal-config-trpc-handler";
 import { RemovePayPalConfigTrpcHandler } from "@/modules/app-config/trpc-handlers/remove-paypal-config-trpc-handler";
-import { GetTenantConfigTrpcHandler } from "@/modules/app-config/trpc-handlers/get-tenant-config-trpc-handler";
 import { SetTenantConfigTrpcHandler } from "@/modules/app-config/trpc-handlers/set-tenant-config-trpc-handler";
 import { UpdateMappingTrpcHandler } from "@/modules/app-config/trpc-handlers/update-mapping-trpc-handler";
-import { ChannelsFetcher } from "@/modules/saleor/channel-fetcher";
 import { PayPalWebhookManager } from "@/modules/paypal/paypal-webhook-manager";
+import { ChannelsFetcher } from "@/modules/saleor/channel-fetcher";
 import { router } from "@/modules/trpc/trpc-server";
 
 

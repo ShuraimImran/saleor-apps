@@ -5,11 +5,12 @@ import { z } from "zod";
 import { getPool } from "@/lib/database";
 import { createLogger } from "@/lib/logger";
 import { paypalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
-import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
 import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
+import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedStorefrontProcedure } from "@/modules/trpc/protected-storefront-procedure";
+
 import { PostgresCustomerVaultRepository } from "../customer-vault-repository";
 
 const logger = createLogger("CreateSetupTokenHandler");
@@ -84,6 +85,7 @@ export class CreateSetupTokenHandler {
   getTrpcProcedure() {
     return this.baseProcedure.input(inputSchema).mutation(async ({ ctx, input }) => {
       const saleorUserId = ctx.saleorUserId as string;
+
       if (!ctx.saleorApiUrl) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -92,6 +94,7 @@ export class CreateSetupTokenHandler {
       }
 
       const saleorApiUrl = createSaleorApiUrl(ctx.saleorApiUrl);
+
       if (saleorApiUrl.isErr()) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -223,8 +226,10 @@ export class CreateSetupTokenHandler {
           });
 
           if (createResult.isErr()) {
-            // Log but don't fail -- the setup token was created successfully.
-            // The mapping will be created on the next attempt.
+            /*
+             * Log but don't fail -- the setup token was created successfully.
+             * The mapping will be created on the next attempt.
+             */
             logger.warn("Failed to persist customer vault mapping after PayPal confirmation", {
               saleorUserId,
               paypalCustomerId,

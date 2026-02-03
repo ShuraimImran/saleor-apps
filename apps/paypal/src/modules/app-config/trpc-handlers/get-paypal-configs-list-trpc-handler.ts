@@ -2,9 +2,9 @@ import { captureException } from "@sentry/nextjs";
 import { TRPCError } from "@trpc/server";
 
 import { PayPalFrontendConfig } from "@/modules/app-config/domain/paypal-config";
+import { PayPalMultiConfigMetadataManager } from "@/modules/paypal/configuration/paypal-multi-config-metadata-manager";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
-import { PayPalMultiConfigMetadataManager } from "@/modules/paypal/configuration/paypal-multi-config-metadata-manager";
 
 export class GetPayPalConfigsListTrpcHandler {
   baseProcedure = protectedClientProcedure;

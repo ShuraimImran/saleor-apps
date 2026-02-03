@@ -1,5 +1,6 @@
-import { SaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { Result } from "neverthrow";
+
+import { SaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 
 import { PayPalConfig } from "../domain/paypal-config";
 

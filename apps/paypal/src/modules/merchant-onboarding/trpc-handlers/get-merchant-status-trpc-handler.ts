@@ -1,9 +1,11 @@
 import { captureException } from "@sentry/nextjs";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+
 import { getPool } from "@/lib/database";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
+
 import { PostgresMerchantOnboardingRepository } from "../merchant-onboarding-repository";
 
 /**
@@ -28,6 +30,7 @@ export class GetMerchantStatusTrpcHandler {
         }
 
         const saleorApiUrl = createSaleorApiUrl(ctx.saleorApiUrl);
+
         if (saleorApiUrl.isErr()) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -39,8 +42,10 @@ export class GetMerchantStatusTrpcHandler {
           const pool = getPool();
           const repository = PostgresMerchantOnboardingRepository.create(pool);
 
-          // If trackingId is provided, use it for backwards compatibility
-          // Otherwise, get by saleorApiUrl only (returns the most recent record)
+          /*
+           * If trackingId is provided, use it for backwards compatibility
+           * Otherwise, get by saleorApiUrl only (returns the most recent record)
+           */
           const result = input.trackingId
             ? await repository.getByTrackingId(saleorApiUrl.value, input.trackingId)
             : await repository.getBySaleorApiUrl(saleorApiUrl.value);

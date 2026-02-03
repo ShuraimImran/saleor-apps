@@ -19,18 +19,22 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import Script from "next/script";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-// ---------------------------------------------------------------------------
-// Configuration — replace with your environment values or pull from env vars
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * Configuration — replace with your environment values or pull from env vars
+ * ---------------------------------------------------------------------------
+ */
 const PAYMENT_APP_URL = process.env.NEXT_PUBLIC_PAYMENT_APP_URL!; // e.g. "https://your-paypal-app.vercel.app"
 const SALEOR_API_URL = process.env.NEXT_PUBLIC_SALEOR_API_URL!; // e.g. "https://your-store.saleor.cloud/graphql/"
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * Types
+ * ---------------------------------------------------------------------------
+ */
 interface SavedCard {
   id: string;
   type: string;
@@ -60,9 +64,11 @@ interface PaymentTokenResponse {
   } | null;
 }
 
-// ---------------------------------------------------------------------------
-// tRPC helpers (plain fetch — no @trpc/client dependency needed)
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * tRPC helpers (plain fetch — no @trpc/client dependency needed)
+ * ---------------------------------------------------------------------------
+ */
 async function trpcQuery<T>(
   procedure: string,
   input: Record<string, unknown>,
@@ -84,6 +90,7 @@ async function trpcQuery<T>(
   if (data.error) {
     const msg =
       data.error?.json?.message || data.error?.message || JSON.stringify(data.error);
+
     throw new Error(msg);
   }
 
@@ -112,17 +119,20 @@ async function trpcMutation<T>(
   if (data.error) {
     const msg =
       data.error?.json?.message || data.error?.message || JSON.stringify(data.error);
+
     throw new Error(msg);
   }
 
   return (data.result?.data ?? data) as T;
 }
 
-// ---------------------------------------------------------------------------
-// PayPal SDK v6 loader
-// ---------------------------------------------------------------------------
-// The v6 SDK is loaded via <Script> tag. This helper waits for it + creates
-// an instance using the server-generated clientToken.
+/*
+ * ---------------------------------------------------------------------------
+ * PayPal SDK v6 loader
+ * ---------------------------------------------------------------------------
+ * The v6 SDK is loaded via <Script> tag. This helper waits for it + creates
+ * an instance using the server-generated clientToken.
+ */
 async function createPayPalSdkInstance(clientToken: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paypal = (window as any).paypal;
@@ -137,9 +147,11 @@ async function createPayPalSdkInstance(clientToken: string) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * Component
+ * ---------------------------------------------------------------------------
+ */
 export default function SavedPaymentMethodsPage({
   userToken,
 }: {
@@ -167,9 +179,11 @@ export default function SavedPaymentMethodsPage({
   // Track if SDK script is loaded
   const [sdkScriptLoaded, setSdkScriptLoaded] = useState(false);
 
-  // ----------------------------------------------------------
-  // Load saved cards on mount
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Load saved cards on mount
+   * ----------------------------------------------------------
+   */
   const loadSavedCards = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -193,9 +207,11 @@ export default function SavedPaymentMethodsPage({
     loadSavedCards();
   }, [loadSavedCards]);
 
-  // ----------------------------------------------------------
-  // Delete a saved card
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Delete a saved card
+   * ----------------------------------------------------------
+   */
   const handleDelete = async (paymentTokenId: string) => {
     if (!confirm("Remove this card from your wallet?")) return;
 
@@ -211,9 +227,11 @@ export default function SavedPaymentMethodsPage({
     }
   };
 
-  // ----------------------------------------------------------
-  // Start the "Add Card" flow
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Start the "Add Card" flow
+   * ----------------------------------------------------------
+   */
   const handleAddCard = async () => {
     setError(null);
     setSuccessMessage(null);
@@ -247,9 +265,11 @@ export default function SavedPaymentMethodsPage({
       }
 
       const sdk = await createPayPalSdkInstance(clientToken);
+
       sdkInstanceRef.current = sdk;
 
       const session = sdk.createCardFieldsSavePaymentSession();
+
       vaultSessionRef.current = session;
 
       // Show card form first so refs are in the DOM
@@ -279,9 +299,11 @@ export default function SavedPaymentMethodsPage({
     }
   };
 
-  // ----------------------------------------------------------
-  // Submit card details
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Submit card details
+   * ----------------------------------------------------------
+   */
   const handleSubmitCard = async () => {
     if (!vaultSessionRef.current || !setupTokenIdRef.current) return;
 
@@ -329,9 +351,11 @@ export default function SavedPaymentMethodsPage({
     }
   };
 
-  // ----------------------------------------------------------
-  // Cancel adding a card
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Cancel adding a card
+   * ----------------------------------------------------------
+   */
   const handleCancel = () => {
     setShowCardForm(false);
     setError(null);
@@ -339,9 +363,11 @@ export default function SavedPaymentMethodsPage({
     vaultSessionRef.current = null;
   };
 
-  // ----------------------------------------------------------
-  // Render
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Render
+   * ----------------------------------------------------------
+   */
   return (
     <div style={{ maxWidth: 480, margin: "0 auto", padding: 20 }}>
       {/* PayPal SDK v6 script — loaded once, no query params */}

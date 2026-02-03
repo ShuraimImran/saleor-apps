@@ -1,9 +1,9 @@
-import { Result, ok, err } from "neverthrow";
+import { err,ok, Result } from "neverthrow";
 import { z } from "zod";
 
-import { PayPalEnv } from "@/modules/paypal/paypal-env";
 import { createPayPalClientId, PayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret, PayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
+import { PayPalEnv } from "@/modules/paypal/paypal-env";
 
 const paypalConfigSchema = z.object({
   id: z.string().min(1),

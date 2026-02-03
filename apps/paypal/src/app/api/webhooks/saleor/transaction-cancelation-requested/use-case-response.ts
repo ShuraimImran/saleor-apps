@@ -1,9 +1,9 @@
 import { SuccessWebhookResponse } from "@/app/api/webhooks/saleor/saleor-webhook-responses";
 import { AppContext } from "@/lib/app-context";
 import { BaseError } from "@/lib/errors";
-import { SaleorMoney } from "@/modules/saleor/saleor-money";
 import { PayPalApiError } from "@/modules/paypal/paypal-api-error";
 import { PayPalOrderId } from "@/modules/paypal/paypal-order-id";
+import { SaleorMoney } from "@/modules/saleor/saleor-money";
 import {
   CancelFailureResult,
   CancelSuccessResult,

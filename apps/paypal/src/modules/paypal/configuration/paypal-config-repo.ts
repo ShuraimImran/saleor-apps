@@ -1,10 +1,11 @@
 import { AuthData } from "@saleor/app-sdk/APL";
-import { Result, ok, err } from "neverthrow";
+import { err,ok, Result } from "neverthrow";
 
+import { createLogger } from "@/lib/logger";
 import { PayPalConfig } from "@/modules/app-config/domain/paypal-config";
 import { PayPalMultiConfigMetadataManager } from "@/modules/paypal/configuration/paypal-multi-config-metadata-manager";
+
 import { paypalConfigCache } from "./paypal-config-cache";
-import { createLogger } from "@/lib/logger";
 
 const logger = createLogger("PayPalConfigRepo");
 
@@ -20,12 +21,14 @@ export class PayPalConfigRepoImpl implements PayPalConfigRepo {
 
     // Check cache first
     const cachedConfig = paypalConfigCache.get(saleorApiUrl, channelId);
+
     if (cachedConfig !== undefined) {
       logger.debug("Returning cached PayPal config", {
         saleor_api_url: saleorApiUrl,
         channel_id: channelId,
         has_config: !!cachedConfig,
       });
+
       return ok(cachedConfig);
     }
 
@@ -49,8 +52,10 @@ export class PayPalConfigRepoImpl implements PayPalConfigRepo {
       // If channel ID is provided, try to get config for that specific channel
       if (channelId) {
         const channelConfig = rootConfig.getConfigForChannel(channelId);
+
         if (channelConfig) {
           const fetchTime = Date.now() - startTime;
+
           logger.debug("PayPal config fetched from Saleor", {
             fetch_time_ms: fetchTime,
             channel_id: channelId,
@@ -58,12 +63,14 @@ export class PayPalConfigRepoImpl implements PayPalConfigRepo {
 
           // Cache the result
           paypalConfigCache.set(saleorApiUrl, channelConfig, channelId);
+
           return ok(channelConfig);
         }
       }
 
       // Fallback: Get first available config (for single-tenant setup or when no channel mapping exists)
       const allConfigsResult = await manager.getAllConfigs();
+
       if (allConfigsResult.isErr()) {
         return err(allConfigsResult.error);
       }
@@ -72,6 +79,7 @@ export class PayPalConfigRepoImpl implements PayPalConfigRepo {
       const config = configs.length > 0 ? configs[0] : null;
 
       const fetchTime = Date.now() - startTime;
+
       logger.debug("PayPal config fetched from Saleor", {
         fetch_time_ms: fetchTime,
         configs_count: configs.length,
@@ -84,10 +92,12 @@ export class PayPalConfigRepoImpl implements PayPalConfigRepo {
       return ok(config);
     } catch (error) {
       const fetchTime = Date.now() - startTime;
+
       logger.error("Failed to get PayPal config from Saleor", {
         error: error instanceof Error ? error.message : String(error),
         fetch_time_ms: fetchTime,
       });
+
       return err(error instanceof Error ? error : new Error('Failed to get PayPal config'));
     }
   }
@@ -117,6 +127,7 @@ export class PayPalConfigRepoImpl implements PayPalConfigRepo {
     }
 
     const configs = allConfigsResult.value;
+
     if (configs.length > 0) {
       const result = await manager.deleteConfig(configs[0].id);
 

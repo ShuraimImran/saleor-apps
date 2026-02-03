@@ -5,18 +5,18 @@ import {
   BrokenAppResponse,
 } from "@/app/api/webhooks/saleor/saleor-webhook-responses";
 import { appContextContainer } from "@/lib/app-context";
+import { getPool } from "@/lib/database";
 import { BaseError } from "@/lib/errors";
 import { createLogger } from "@/lib/logger";
+import { PostgresCustomerVaultRepository } from "@/modules/customer-vault/customer-vault-repository";
 import { PayPalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
-import { SaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { IPayPalPartnerReferralsApi } from "@/modules/paypal/partner-referrals/paypal-partner-referrals-api";
-import { createPayPalMerchantId } from "@/modules/paypal/paypal-merchant-id";
-import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
 import { PayPalClient } from "@/modules/paypal/paypal-client";
 import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
-import { PostgresCustomerVaultRepository } from "@/modules/customer-vault/customer-vault-repository";
-import { getPool } from "@/lib/database";
+import { createPayPalMerchantId } from "@/modules/paypal/paypal-merchant-id";
+import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
+import { SaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 
 import {
   PaymentGatewayInitializeSessionUseCaseResponses,
@@ -105,6 +105,7 @@ export class PaymentGatewayInitializeSessionUseCase {
           const globalConfigResult = await globalConfigRepo.getActiveConfig();
 
           let partnerMerchantId: string | undefined;
+
           if (globalConfigResult.isOk() && globalConfigResult.value) {
             partnerMerchantId = globalConfigResult.value.partnerMerchantId || undefined;
           }
@@ -122,6 +123,7 @@ export class PaymentGatewayInitializeSessionUseCase {
 
           if (readinessResult.isOk()) {
             const readiness = readinessResult.value;
+
             paymentMethodReadiness = {
               applePay: readiness.applePay,
               googlePay: readiness.googlePay,
@@ -152,10 +154,12 @@ export class PaymentGatewayInitializeSessionUseCase {
         }
       }
 
-      // ========================================
-      // ACDC Card Vaulting - Fetch saved payment methods (Phase 1)
-      // ========================================
-      let savedPaymentMethods: SavedPaymentMethod[] = [];
+      /*
+       * ========================================
+       * ACDC Card Vaulting - Fetch saved payment methods (Phase 1)
+       * ========================================
+       */
+      const savedPaymentMethods: SavedPaymentMethod[] = [];
 
       if (saleorUserId && paymentMethodReadiness?.vaulting) {
         this.logger.info("Fetching saved payment methods for user", {
@@ -189,8 +193,10 @@ export class PaymentGatewayInitializeSessionUseCase {
             if (paymentTokensResult.isOk()) {
               const tokens = paymentTokensResult.value.payment_tokens || [];
 
-              // Map PayPal payment tokens to SavedPaymentMethod format
-              // Supports Card (Phase 1), PayPal Wallet, Venmo, and Apple Pay (Phase 2)
+              /*
+               * Map PayPal payment tokens to SavedPaymentMethod format
+               * Supports Card (Phase 1), PayPal Wallet, Venmo, and Apple Pay (Phase 2)
+               */
               for (const token of tokens) {
                 // Card payment method (ACDC - Phase 1)
                 if (token.payment_source?.card) {
@@ -207,6 +213,7 @@ export class PaymentGatewayInitializeSessionUseCase {
                 // PayPal wallet payment method (Phase 2)
                 else if (token.payment_source?.paypal) {
                   const paypalName = token.payment_source.paypal.name;
+
                   savedPaymentMethods.push({
                     id: token.id,
                     type: "paypal",
@@ -221,6 +228,7 @@ export class PaymentGatewayInitializeSessionUseCase {
                 // Venmo payment method (Phase 2)
                 else if (token.payment_source?.venmo) {
                   const venmoName = token.payment_source.venmo.name;
+
                   savedPaymentMethods.push({
                     id: token.id,
                     type: "venmo",
@@ -236,6 +244,7 @@ export class PaymentGatewayInitializeSessionUseCase {
                 // Apple Pay payment method (Phase 2)
                 else if (token.payment_source?.apple_pay) {
                   const applePayName = token.payment_source.apple_pay.name;
+
                   savedPaymentMethods.push({
                     id: token.id,
                     type: "apple_pay",
@@ -277,11 +286,13 @@ export class PaymentGatewayInitializeSessionUseCase {
         }
       }
 
-      // ========================================
-      // User ID Token Generation (IWT Requirement)
-      // ========================================
-      // Generate user ID token for JS SDK vaulting (data-user-id-token attribute)
-      // Required for: displaying vaulted PayPal/Venmo buttons, saving new payment methods
+      /*
+       * ========================================
+       * User ID Token Generation (IWT Requirement)
+       * ========================================
+       * Generate user ID token for JS SDK vaulting (data-user-id-token attribute)
+       * Required for: displaying vaulted PayPal/Venmo buttons, saving new payment methods
+       */
       let userIdToken: string | undefined;
 
       if (saleorUserId && paymentMethodReadiness?.vaulting) {

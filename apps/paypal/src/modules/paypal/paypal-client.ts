@@ -1,10 +1,16 @@
+import { createLogger } from "@/lib/logger";
+
+import {
+  isIwtDebugEnabled,
+  logIwtErrorResponse,
+  logIwtRequest,
+  logIwtResponse,
+} from "./iwt-debug-logger";
 import { PayPalClientId } from "./paypal-client-id";
 import { PayPalClientSecret } from "./paypal-client-secret";
-import { PayPalMerchantId } from "./paypal-merchant-id";
 import { getPayPalApiUrl, PayPalEnv } from "./paypal-env";
-import { createLogger } from "@/lib/logger";
+import { PayPalMerchantId } from "./paypal-merchant-id";
 import { paypalOAuthTokenCache } from "./paypal-oauth-token-cache";
-import { env } from "@/lib/env";
 
 const logger = createLogger("PayPalClient");
 
@@ -78,6 +84,7 @@ export class PayPalClient {
   private async getAccessToken(): Promise<string> {
     // Check global cache first
     const cachedToken = paypalOAuthTokenCache.get(this.clientId, this.env);
+
     if (cachedToken) {
       return cachedToken;
     }
@@ -102,6 +109,7 @@ export class PayPalClient {
 
     if (!response.ok) {
       const errorText = await response.text();
+
       logger.error("PayPal authentication failed", {
         env: this.env,
         status: response.status,
@@ -140,7 +148,7 @@ export class PayPalClient {
     const token = await this.getAccessToken();
 
     // Check if IWT debug logging is enabled
-    const iwtDebugLogging = env.PAYPAL_DEBUG_LOGGING === true;
+    const iwtDebugLogging = isIwtDebugEnabled();
 
     logger.debug("Making PayPal API request", {
       method: args.method,
@@ -160,6 +168,7 @@ export class PayPalClient {
 
     // Add PayPal-Auth-Assertion header for partner-managed payments
     const authAssertion = this.generateAuthAssertion();
+
     if (authAssertion) {
       headers["PayPal-Auth-Assertion"] = authAssertion;
       logger.debug("Added PayPal-Auth-Assertion header for merchant context", {
@@ -175,8 +184,10 @@ export class PayPalClient {
       });
     }
 
-    // Add PayPal-Partner-Attribution-Id header (BN code) for partner attribution
-    // Required for multiparty transactions (orders, captures, refunds)
+    /*
+     * Add PayPal-Partner-Attribution-Id header (BN code) for partner attribution
+     * Required for multiparty transactions (orders, captures, refunds)
+     */
     if (this.bnCode && args.includeBnCode) {
       headers["PayPal-Partner-Attribution-Id"] = this.bnCode;
       logger.debug("Added PayPal-Partner-Attribution-Id header", { bnCode: this.bnCode });
@@ -196,32 +207,23 @@ export class PayPalClient {
     // IWT Debug Logging - Log full request for PayPal IWT submission
     if (iwtDebugLogging) {
       const sanitizedHeaders = { ...headers };
+
       // Mask sensitive auth header for logging (keep first/last 10 chars)
       if (sanitizedHeaders.Authorization) {
         const auth = sanitizedHeaders.Authorization;
+
         if (auth.length > 30) {
           sanitizedHeaders.Authorization = `${auth.substring(0, 17)}...${auth.substring(auth.length - 10)}`;
         }
       }
 
-      logger.info("=== IWT DEBUG: PayPal API Request ===", {
-        iwt_request: {
-          timestamp: new Date().toISOString(),
-          method: args.method,
-          url: fullUrl,
-          headers: sanitizedHeaders,
-          body: args.body || null,
-        },
+      logIwtRequest({
+        timestamp: new Date().toISOString(),
+        method: args.method,
+        url: fullUrl,
+        headers: sanitizedHeaders,
+        body: args.body || null,
       });
-
-      // Also log raw JSON for easy copy-paste
-      console.log("\n========== IWT REQUEST ==========");
-      console.log(`${args.method} ${fullUrl}`);
-      console.log("Headers:", JSON.stringify(sanitizedHeaders, null, 2));
-      if (args.body) {
-        console.log("Body:", JSON.stringify(args.body, null, 2));
-      }
-      console.log("=================================\n");
     }
 
     const response = await fetch(fullUrl, {
@@ -244,26 +246,17 @@ export class PayPalClient {
 
       // IWT Debug Logging - Log full error response
       if (iwtDebugLogging) {
-        logger.info("=== IWT DEBUG: PayPal API Error Response ===", {
-          iwt_response: {
-            timestamp: new Date().toISOString(),
-            status: response.status,
-            statusText: response.statusText,
-            headers: {
-              "paypal-debug-id": paypalDebugIdHeader,
-              "correlation-id": correlationIdHeader,
-            },
-            body: errorData,
-            response_time_ms: responseTime,
+        logIwtErrorResponse({
+          timestamp: new Date().toISOString(),
+          status: response.status,
+          statusText: response.statusText,
+          headers: {
+            "paypal-debug-id": paypalDebugIdHeader,
+            "correlation-id": correlationIdHeader,
           },
+          body: errorData,
+          response_time_ms: responseTime,
         });
-
-        console.log("\n========== IWT ERROR RESPONSE ==========");
-        console.log(`Status: ${response.status} ${response.statusText}`);
-        console.log(`PayPal-Debug-Id: ${paypalDebugIdHeader}`);
-        console.log(`Response Time: ${responseTime}ms`);
-        console.log("Body:", JSON.stringify(errorData, null, 2));
-        console.log("=========================================\n");
       }
 
       logger.error("PayPal API request failed", {
@@ -292,26 +285,17 @@ export class PayPalClient {
 
     // IWT Debug Logging - Log full success response
     if (iwtDebugLogging) {
-      logger.info("=== IWT DEBUG: PayPal API Success Response ===", {
-        iwt_response: {
-          timestamp: new Date().toISOString(),
-          status: response.status,
-          statusText: response.statusText,
-          headers: {
-            "paypal-debug-id": paypalDebugIdHeader,
-            "correlation-id": correlationIdHeader,
-          },
-          body: responseBody,
-          response_time_ms: responseTime,
+      logIwtResponse({
+        timestamp: new Date().toISOString(),
+        status: response.status,
+        statusText: response.statusText,
+        headers: {
+          "paypal-debug-id": paypalDebugIdHeader,
+          "correlation-id": correlationIdHeader,
         },
+        body: responseBody,
+        response_time_ms: responseTime,
       });
-
-      console.log("\n========== IWT SUCCESS RESPONSE ==========");
-      console.log(`Status: ${response.status} ${response.statusText}`);
-      console.log(`PayPal-Debug-Id: ${paypalDebugIdHeader}`);
-      console.log(`Response Time: ${responseTime}ms`);
-      console.log("Body:", JSON.stringify(responseBody, null, 2));
-      console.log("==========================================\n");
     }
 
     logger.debug("PayPal API request successful", {
@@ -367,6 +351,7 @@ export class PayPalClient {
     };
 
     const authAssertion = this.generateAuthAssertion();
+
     if (authAssertion) {
       headers["PayPal-Auth-Assertion"] = authAssertion;
     }
@@ -379,6 +364,7 @@ export class PayPalClient {
 
     if (!response.ok) {
       const errorText = await response.text();
+
       logger.error("PayPal Client Token generation failed", {
         env: this.env,
         status: response.status,
@@ -437,6 +423,7 @@ export class PayPalClient {
     };
 
     const authAssertion = this.generateAuthAssertion();
+
     if (authAssertion) {
       headers["PayPal-Auth-Assertion"] = authAssertion;
     }
@@ -449,6 +436,7 @@ export class PayPalClient {
 
     if (!response.ok) {
       const errorText = await response.text();
+
       logger.error("PayPal User ID Token generation failed", {
         env: this.env,
         status: response.status,

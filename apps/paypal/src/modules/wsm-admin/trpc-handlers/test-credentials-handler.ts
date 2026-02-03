@@ -1,9 +1,11 @@
 import { TRPCError } from "@trpc/server";
-import { publicProcedure } from "@/modules/trpc/public-procedure";
+import { z } from "zod";
+
 import { getPool } from "@/lib/database";
+import { publicProcedure } from "@/modules/trpc/public-procedure";
+
 import { GlobalPayPalConfigRepository } from "../global-paypal-config-repository";
 import { testCredentialsInputSchema } from "./wsm-admin-input-schemas";
-import { z } from "zod";
 
 /**
  * Validate WSM super admin secret key

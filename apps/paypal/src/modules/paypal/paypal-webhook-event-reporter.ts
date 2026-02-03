@@ -1,8 +1,9 @@
-import { Result, ok, err } from "neverthrow";
-import { createLogger } from "@/lib/logger";
-import { createGraphQLClient } from "@/lib/graphql-client";
+import { err,ok, Result } from "neverthrow";
+
 import { TransactionEventReportDocument, TransactionEventTypeEnum } from "@/generated/graphql";
 import { getPool } from "@/lib/database";
+import { createGraphQLClient } from "@/lib/graphql-client";
+import { createLogger } from "@/lib/logger";
 
 const logger = createLogger("PayPalWebhookEventReporter");
 
@@ -86,12 +87,15 @@ function parseSaleorMetadata(customId: string | undefined): SaleorMetadata | nul
 
   try {
     const parsed = JSON.parse(customId);
+
     if (parsed.saleor_transaction_id) {
       return parsed as SaleorMetadata;
     }
+
     return null;
   } catch {
     logger.warn("Failed to parse custom_id as JSON", { customId });
+
     return null;
   }
 }
@@ -117,6 +121,7 @@ async function getSaleorApiUrlByMerchantId(merchantId: string): Promise<string |
       merchantId,
       error: error instanceof Error ? error.message : String(error),
     });
+
     return null;
   }
 }
@@ -163,6 +168,7 @@ export async function reportTransactionEventToSaleor(args: {
         error: result.error.message,
         transactionId: args.transactionId,
       });
+
       return err(new Error(`GraphQL error: ${result.error.message}`));
     }
 
@@ -174,10 +180,12 @@ export async function reportTransactionEventToSaleor(args: {
 
     if (data.errors && data.errors.length > 0) {
       const errorMessages = data.errors.map((e: { message?: string | null }) => e.message).join(", ");
+
       logger.error("Transaction event report errors", {
         errors: data.errors,
         transactionId: args.transactionId,
       });
+
       return err(new Error(`Transaction event report errors: ${errorMessages}`));
     }
 
@@ -194,6 +202,7 @@ export async function reportTransactionEventToSaleor(args: {
       error: error instanceof Error ? error.message : String(error),
       transactionId: args.transactionId,
     });
+
     return err(error instanceof Error ? error : new Error("Failed to report transaction event"));
   }
 }
@@ -205,11 +214,12 @@ function getPayPalExternalUrl(resourceId: string, env: "SANDBOX" | "LIVE"): stri
   const baseUrl = env === "SANDBOX"
     ? "https://www.sandbox.paypal.com"
     : "https://www.paypal.com";
+
   return `${baseUrl}/activity/payment/${resourceId}`;
 }
 
 export {
-  parseSaleorMetadata,
-  getSaleorApiUrlByMerchantId,
   getPayPalExternalUrl,
+  getSaleorApiUrlByMerchantId,
+  parseSaleorMetadata,
 };

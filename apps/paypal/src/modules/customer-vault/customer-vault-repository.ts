@@ -1,5 +1,6 @@
+import { err,ok, Result } from "neverthrow";
 import { Pool } from "pg";
-import { Result, ok, err } from "neverthrow";
+
 import { BaseError } from "@/lib/errors";
 
 /**
@@ -101,6 +102,7 @@ export class PostgresCustomerVaultRepository implements ICustomerVaultRepository
       ];
 
       const result = await this.pool.query(query, values);
+
       return ok(this.mapRowToRecord(result.rows[0]));
     } catch (error: any) {
       // Handle unique constraint violation (customer already exists)
@@ -111,6 +113,7 @@ export class PostgresCustomerVaultRepository implements ICustomerVaultRepository
           })
         );
       }
+
       return err(
         new CustomerVaultRepositoryError(`Failed to create customer vault mapping: ${error.message}`, {
           cause: error,
@@ -209,6 +212,7 @@ export class PostgresCustomerVaultRepository implements ICustomerVaultRepository
       `;
 
       await this.pool.query(query, [saleorApiUrl, saleorUserId]);
+
       return ok(undefined);
     } catch (error: any) {
       return err(

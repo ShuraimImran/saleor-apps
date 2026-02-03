@@ -1,6 +1,8 @@
 import { TRPCError } from "@trpc/server";
-import { publicProcedure } from "@/modules/trpc/public-procedure";
+
 import { getPool } from "@/lib/database";
+import { publicProcedure } from "@/modules/trpc/public-procedure";
+
 import { GlobalPayPalConfigRepository } from "../global-paypal-config-repository";
 import { wsmAdminAuthSchema } from "./wsm-admin-input-schemas";
 
@@ -39,6 +41,7 @@ export class GetGlobalConfigHandler {
       const repository = GlobalPayPalConfigRepository.create(getPool());
 
       const configResult = await repository.getActiveConfig();
+
       if (configResult.isErr()) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",

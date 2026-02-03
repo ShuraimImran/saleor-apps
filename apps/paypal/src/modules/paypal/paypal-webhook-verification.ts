@@ -1,8 +1,9 @@
 import { createLogger } from "@/lib/logger";
+
 import { PayPalClient } from "./paypal-client";
 import { PayPalClientId } from "./paypal-client-id";
 import { PayPalClientSecret } from "./paypal-client-secret";
-import { PayPalEnv, getPayPalApiUrl } from "./paypal-env";
+import { getPayPalApiUrl,PayPalEnv } from "./paypal-env";
 
 const logger = createLogger("PayPalWebhookVerification");
 
@@ -58,6 +59,7 @@ export async function verifyWebhookSignature(
 
   // Check for required headers
   const missingHeaders: string[] = [];
+
   if (!headers["paypal-transmission-id"]) missingHeaders.push("paypal-transmission-id");
   if (!headers["paypal-transmission-time"]) missingHeaders.push("paypal-transmission-time");
   if (!headers["paypal-transmission-sig"]) missingHeaders.push("paypal-transmission-sig");
@@ -69,6 +71,7 @@ export async function verifyWebhookSignature(
       missingHeaders,
       webhookId,
     });
+
     return {
       verified: false,
       verificationStatus: `MISSING_HEADERS: ${missingHeaders.join(", ")}`,
@@ -91,10 +94,12 @@ export async function verifyWebhookSignature(
 
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
+
       logger.error("Failed to get access token for webhook verification", {
         status: tokenResponse.status,
         error: errorText,
       });
+
       return {
         verified: false,
         verificationStatus: "AUTH_FAILED",
@@ -125,11 +130,13 @@ export async function verifyWebhookSignature(
 
     if (!verifyResponse.ok) {
       const errorText = await verifyResponse.text();
+
       logger.error("PayPal webhook signature verification API call failed", {
         status: verifyResponse.status,
         error: errorText,
         webhookId,
       });
+
       return {
         verified: false,
         verificationStatus: `API_ERROR: ${verifyResponse.status}`,
@@ -155,6 +162,7 @@ export async function verifyWebhookSignature(
       error: error instanceof Error ? error.message : String(error),
       webhookId,
     });
+
     return {
       verified: false,
       verificationStatus: `EXCEPTION: ${error instanceof Error ? error.message : String(error)}`,

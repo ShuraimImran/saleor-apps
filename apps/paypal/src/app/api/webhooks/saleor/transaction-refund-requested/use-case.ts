@@ -11,16 +11,16 @@ import { getPool } from "@/lib/database";
 import { BaseError } from "@/lib/errors";
 import { createLogger } from "@/lib/logger";
 import { PayPalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
+import { mapPayPalErrorToApiError, PayPalApiError } from "@/modules/paypal/paypal-api-error";
+import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
+import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
+import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
+import { createPayPalRefundId } from "@/modules/paypal/paypal-refund-id";
+import { IPayPalOrdersApiFactory, IPayPalRefundsApiFactory } from "@/modules/paypal/types";
 import {
   getChannelIdFromRequestedEventPayload,
   getTransactionFromRequestedEventPayload,
 } from "@/modules/saleor/transaction-requested-event-helpers";
-import { mapPayPalErrorToApiError, PayPalApiError } from "@/modules/paypal/paypal-api-error";
-import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
-import { createPayPalRefundId } from "@/modules/paypal/paypal-refund-id";
-import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
-import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
-import { IPayPalOrdersApiFactory, IPayPalRefundsApiFactory } from "@/modules/paypal/types";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
 
 import {
@@ -94,8 +94,10 @@ export class TransactionRefundRequestedUseCase {
       paypalEnv: config.environment,
     });
 
-    // Fetch global config for partner credentials
-    // Partner credentials are required for refund API calls with merchant context
+    /*
+     * Fetch global config for partner credentials
+     * Partner credentials are required for refund API calls with merchant context
+     */
     let globalClientId = config.clientId;
     let globalClientSecret = config.clientSecret;
     let bnCode: string | undefined;
@@ -107,6 +109,7 @@ export class TransactionRefundRequestedUseCase {
 
       if (globalConfigResult.isOk() && globalConfigResult.value) {
         const globalConfig = globalConfigResult.value;
+
         globalClientId = createPayPalClientId(globalConfig.clientId);
         globalClientSecret = createPayPalClientSecret(globalConfig.clientSecret);
         bnCode = globalConfig.bnCode || undefined;
@@ -149,8 +152,10 @@ export class TransactionRefundRequestedUseCase {
       value: (event.action.amount as string | number).toString(),
     };
 
-    // Fetch the order to get the capture ID
-    // pspReference might be the order ID, not the capture ID
+    /*
+     * Fetch the order to get the capture ID
+     * pspReference might be the order ID, not the capture ID
+     */
     this.logger.debug("Fetching order to extract capture ID", {
       orderId: paypalOrderId,
     });

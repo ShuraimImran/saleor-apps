@@ -1,4 +1,5 @@
 import { router } from "@/modules/trpc/trpc-server";
+
 import { GetGlobalConfigHandler } from "./get-global-config-handler";
 import { SetGlobalConfigHandler } from "./set-global-config-handler";
 import { TestCredentialsHandler } from "./test-credentials-handler";

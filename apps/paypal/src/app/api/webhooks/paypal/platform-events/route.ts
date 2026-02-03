@@ -1,26 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createLogger } from "@/lib/logger";
+
+import { TransactionEventTypeEnum } from "@/generated/graphql";
 import { getPool } from "@/lib/database";
+import { createLogger } from "@/lib/logger";
+import { RateLimitConfigs,withRateLimit } from "@/lib/rate-limiter";
+import { saleorApp } from "@/lib/saleor-app";
+import { PayPalEnv } from "@/modules/paypal/paypal-env";
 import {
+  getPayPalExternalUrl,
+  getSaleorApiUrlByMerchantId,
   parseSaleorMetadata,
-  PayPalCaptureResource,
-  PayPalRefundResource,
   PayPalAuthorizationResource,
+  PayPalCaptureResource,
   PayPalMerchantResource,
+  PayPalRefundResource,
   PayPalVettingResource,
   reportTransactionEventToSaleor,
-  getSaleorApiUrlByMerchantId,
-  getPayPalExternalUrl,
 } from "@/modules/paypal/paypal-webhook-event-reporter";
-import { TransactionEventTypeEnum } from "@/generated/graphql";
-import { saleorApp } from "@/lib/saleor-app";
 import {
-  verifyWebhookSignature,
   extractWebhookHeaders,
+  verifyWebhookSignature,
 } from "@/modules/paypal/paypal-webhook-verification";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
-import { PayPalEnv } from "@/modules/paypal/paypal-env";
-import { withRateLimit, RateLimitConfigs } from "@/lib/rate-limiter";
 
 /**
  * PayPal Vault Token Resource
@@ -78,6 +79,7 @@ const logger = createLogger("PayPalPlatformWebhooks");
 export async function POST(request: NextRequest) {
   // Rate limiting - protect against webhook flooding attacks
   const rateLimitResponse = withRateLimit(request, RateLimitConfigs.webhook);
+
   if (rateLimitResponse) {
     return rateLimitResponse;
   }
@@ -104,6 +106,7 @@ export async function POST(request: NextRequest) {
         eventId: body.id,
         eventType: body.event_type,
       });
+
       return NextResponse.json(
         { error: "Missing webhook signature headers" },
         { status: 401 }
@@ -120,6 +123,7 @@ export async function POST(request: NextRequest) {
         error: configResult.error.message,
         eventId: body.id,
       });
+
       return NextResponse.json(
         { error: "Configuration error" },
         { status: 500 }
@@ -127,10 +131,12 @@ export async function POST(request: NextRequest) {
     }
 
     const config = configResult.value;
+
     if (!config) {
       logger.error("No active PayPal configuration found for webhook verification", {
         eventId: body.id,
       });
+
       return NextResponse.json(
         { error: "PayPal not configured" },
         { status: 500 }
@@ -141,6 +147,7 @@ export async function POST(request: NextRequest) {
       logger.error("No webhook ID configured - cannot verify webhook signature", {
         eventId: body.id,
       });
+
       return NextResponse.json(
         { error: "Webhook ID not configured" },
         { status: 500 }
@@ -164,6 +171,7 @@ export async function POST(request: NextRequest) {
         verificationStatus: verificationResult.verificationStatus,
         transmissionId: webhookHeaders["paypal-transmission-id"],
       });
+
       return NextResponse.json(
         { error: "Invalid webhook signature" },
         { status: 401 }
@@ -181,6 +189,7 @@ export async function POST(request: NextRequest) {
 
     if (!eventType || !resource) {
       logger.warn("Invalid webhook payload - missing event_type or resource");
+
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
@@ -188,62 +197,74 @@ export async function POST(request: NextRequest) {
     switch (eventType) {
       case "MERCHANT.PARTNER-CONSENT.REVOKED": {
         await handleMerchantConsentRevoked(resource as PayPalMerchantResource);
+
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
       case "CUSTOMER.MERCHANT-INTEGRATION.PRODUCT-SUBSCRIPTION-UPDATED": {
         await handleMerchantVettingUpdated(resource as PayPalVettingResource);
+
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
       case "PAYMENT.CAPTURE.COMPLETED": {
         await handleCaptureCompleted(resource as PayPalCaptureResource);
+
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
       case "PAYMENT.CAPTURE.DENIED": {
         await handleCaptureDenied(resource as PayPalCaptureResource);
+
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
       case "PAYMENT.CAPTURE.REFUNDED": {
         await handleCaptureRefunded(resource as PayPalRefundResource);
+
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
       case "PAYMENT.CAPTURE.REVERSED": {
         await handleCaptureReversed(resource as PayPalCaptureResource);
+
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
       case "PAYMENT.AUTHORIZATION.CREATED": {
         await handleAuthorizationCreated(resource as PayPalAuthorizationResource);
+
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
       case "PAYMENT.AUTHORIZATION.VOIDED": {
         await handleAuthorizationVoided(resource as PayPalAuthorizationResource);
+
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
       // Vaulting events
       case "VAULT.PAYMENT-TOKEN.CREATED": {
         await handleVaultTokenCreated(resource as PayPalVaultTokenResource);
+
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
       case "VAULT.PAYMENT-TOKEN.DELETED": {
         await handleVaultTokenDeleted(resource as PayPalVaultTokenResource);
+
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
       default:
         logger.warn("Unhandled webhook event type", { eventType });
+
         // Return 200 to acknowledge receipt even for unhandled events
         return NextResponse.json({ received: true }, { status: 200 });
     }
   } catch (error) {
     const processingTime = Date.now() - startTime;
+
     logger.error("Error processing PayPal platform webhook", {
       error: error instanceof Error ? error.message : String(error),
       processingTime,
@@ -269,6 +290,7 @@ async function handleMerchantConsentRevoked(resource: PayPalMerchantResource): P
 
   if (!merchantId) {
     logger.warn("No merchant_id in consent revoked event");
+
     return;
   }
 
@@ -321,6 +343,7 @@ async function handleMerchantVettingUpdated(resource: PayPalVettingResource): Pr
 
   if (!merchantId && !trackingId) {
     logger.warn("No merchant_id or tracking_id in vetting update event");
+
     return;
   }
 
@@ -329,10 +352,12 @@ async function handleMerchantVettingUpdated(resource: PayPalVettingResource): Pr
 
     // Determine which payment method capability to update based on product name
     let columnToUpdate: string | null = null;
-    let enableValue = vettingStatus === "SUBSCRIBED";
+    const enableValue = vettingStatus === "SUBSCRIBED";
 
-    // Map PayPal product names to our database columns
-    // Common product names: PPCP, EXPRESS_CHECKOUT, PPCP_CUSTOM, PPCP_STANDARD, etc.
+    /*
+     * Map PayPal product names to our database columns
+     * Common product names: PPCP, EXPRESS_CHECKOUT, PPCP_CUSTOM, PPCP_STANDARD, etc.
+     */
     if (productName?.includes("PPCP") || productName === "EXPRESS_CHECKOUT") {
       columnToUpdate = "paypal_buttons_enabled";
     } else if (productName === "ADVANCED_VAULTING" || productName?.includes("VAULT")) {
@@ -404,9 +429,11 @@ async function handleCaptureCompleted(resource: PayPalCaptureResource): Promise<
       saleorSourceId: metadata.saleor_source_id,
     });
 
-    // Note: The CHARGE_SUCCESS event is already reported synchronously when we capture the order.
-    // This webhook is a confirmation/backup. We could report it again but it might be marked as already processed.
-    // For now, just log that we received the confirmation.
+    /*
+     * Note: The CHARGE_SUCCESS event is already reported synchronously when we capture the order.
+     * This webhook is a confirmation/backup. We could report it again but it might be marked as already processed.
+     * For now, just log that we received the confirmation.
+     */
     logger.info("Capture confirmation received from PayPal webhook (event already reported during capture)", {
       captureId,
       saleorTransactionId: metadata.saleor_transaction_id,
@@ -445,8 +472,10 @@ async function handleCaptureDenied(resource: PayPalCaptureResource): Promise<voi
       saleorSourceId: metadata.saleor_source_id,
     });
 
-    // Note: Similar to capture completed, the failure would typically be reported synchronously.
-    // This webhook serves as confirmation.
+    /*
+     * Note: Similar to capture completed, the failure would typically be reported synchronously.
+     * This webhook serves as confirmation.
+     */
     logger.info("Capture denial confirmation received from PayPal webhook", {
       captureId,
       saleorTransactionId: metadata.saleor_transaction_id,
@@ -490,9 +519,11 @@ async function handleCaptureRefunded(resource: PayPalRefundResource): Promise<vo
       saleorSourceId: metadata.saleor_source_id,
     });
 
-    // Note: The refund is typically reported synchronously when we call refundCapture.
-    // This webhook is a confirmation that the refund completed.
-    // If the refund was initiated externally (via PayPal dashboard), we should report it.
+    /*
+     * Note: The refund is typically reported synchronously when we call refundCapture.
+     * This webhook is a confirmation that the refund completed.
+     * If the refund was initiated externally (via PayPal dashboard), we should report it.
+     */
     logger.info("Refund confirmation received from PayPal webhook", {
       refundId,
       saleorTransactionId: metadata.saleor_transaction_id,
@@ -503,11 +534,14 @@ async function handleCaptureRefunded(resource: PayPalRefundResource): Promise<vo
     // Report refund success to Saleor
     if (amount?.value && amount?.currency_code) {
       try {
-        // Get all Saleor instances from APL and try to report to each one
-        // This is a workaround since we can't directly map transaction ID to Saleor instance
+        /*
+         * Get all Saleor instances from APL and try to report to each one
+         * This is a workaround since we can't directly map transaction ID to Saleor instance
+         */
         const allAuthData = await saleorApp.apl.getAll();
         
         let reported = false;
+
         for (const authData of allAuthData) {
           try {
             const reportResult = await reportTransactionEventToSaleor({
@@ -556,8 +590,10 @@ async function handleCaptureRefunded(resource: PayPalRefundResource): Promise<vo
       }
     }
   } else {
-    // If no metadata, this might be a refund initiated externally via PayPal dashboard
-    // In this case, we can't link it back to a Saleor transaction
+    /*
+     * If no metadata, this might be a refund initiated externally via PayPal dashboard
+     * In this case, we can't link it back to a Saleor transaction
+     */
     logger.warn("No Saleor metadata found in refund - may have been initiated externally", {
       refundId,
       customId,
@@ -593,10 +629,12 @@ async function handleCaptureReversed(resource: PayPalCaptureResource): Promise<v
       amountCurrency: amount?.currency_code,
     });
 
-    // Chargebacks are critical events that should be reported to Saleor
-    // The transaction event type for chargebacks is CHARGE_BACK
-    // However, we need Saleor API credentials to report this, which we don't have in this context
-    // The proper solution would be to store app tokens per tenant and use them here
+    /*
+     * Chargebacks are critical events that should be reported to Saleor
+     * The transaction event type for chargebacks is CHARGE_BACK
+     * However, we need Saleor API credentials to report this, which we don't have in this context
+     * The proper solution would be to store app tokens per tenant and use them here
+     */
     logger.warn("Chargeback needs to be manually reviewed - cannot auto-report to Saleor without stored credentials", {
       captureId,
       saleorTransactionId: metadata.saleor_transaction_id,
@@ -635,8 +673,10 @@ async function handleAuthorizationCreated(resource: PayPalAuthorizationResource)
       saleorSourceId: metadata.saleor_source_id,
     });
 
-    // Note: Authorization success is typically reported synchronously when we authorize the order.
-    // This webhook is a confirmation.
+    /*
+     * Note: Authorization success is typically reported synchronously when we authorize the order.
+     * This webhook is a confirmation.
+     */
     logger.info("Authorization confirmation received from PayPal webhook", {
       authorizationId,
       saleorTransactionId: metadata.saleor_transaction_id,
@@ -675,8 +715,10 @@ async function handleAuthorizationVoided(resource: PayPalAuthorizationResource):
       saleorSourceId: metadata.saleor_source_id,
     });
 
-    // Note: Void success is typically reported synchronously when we void the authorization.
-    // This webhook is a confirmation.
+    /*
+     * Note: Void success is typically reported synchronously when we void the authorization.
+     * This webhook is a confirmation.
+     */
     logger.info("Authorization void confirmation received from PayPal webhook", {
       authorizationId,
       saleorTransactionId: metadata.saleor_transaction_id,
@@ -737,11 +779,13 @@ async function handleVaultTokenCreated(resource: PayPalVaultTokenResource): Prom
     timeCreated: resource.time_created,
   });
 
-  // The token is typically stored synchronously during the capture flow.
-  // This webhook serves as confirmation. We could use it to:
-  // 1. Verify our database is in sync
-  // 2. Send a confirmation email to the customer
-  // 3. Update any pending vault status
+  /*
+   * The token is typically stored synchronously during the capture flow.
+   * This webhook serves as confirmation. We could use it to:
+   * 1. Verify our database is in sync
+   * 2. Send a confirmation email to the customer
+   * 3. Update any pending vault status
+   */
 
   try {
     const pool = getPool();
@@ -760,9 +804,11 @@ async function handleVaultTokenCreated(resource: PayPalVaultTokenResource): Prom
         saleorUserId: existingToken.rows[0].saleor_user_id,
       });
     } else {
-      // Token not in our database - this could happen if:
-      // 1. Token was created outside our app (e.g., via PayPal dashboard)
-      // 2. There was a sync issue during the original vault operation
+      /*
+       * Token not in our database - this could happen if:
+       * 1. Token was created outside our app (e.g., via PayPal dashboard)
+       * 2. There was a sync issue during the original vault operation
+       */
       logger.warn("Vault token not found in database - may need manual sync", {
         tokenId,
         customerId,
@@ -811,6 +857,7 @@ async function handleVaultTokenDeleted(resource: PayPalVaultTokenResource): Prom
 
     if (result.rowCount && result.rowCount > 0) {
       const deletedToken = result.rows[0];
+
       logger.info("Vault token deleted from database via webhook", {
         tokenId,
         customerId,

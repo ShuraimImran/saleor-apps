@@ -1,5 +1,5 @@
-import { PayPalOrderId } from "./paypal-order-id";
 import { PayPalEnv } from "./paypal-env";
+import { PayPalOrderId } from "./paypal-order-id";
 
 export const generateOrderPayPalDashboardUrl = (args: {
   orderId: PayPalOrderId;

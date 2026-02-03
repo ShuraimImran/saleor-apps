@@ -16,10 +16,14 @@ This guide explains how to capture API samples and screen recordings for PayPal 
 In your PayPal app `.env` file:
 
 ```bash
+# Enable IWT debug logging
 PAYPAL_DEBUG_LOGGING=true
+
+# Optional: Log to a file (easier to capture than console)
+PAYPAL_DEBUG_LOG_FILE=/tmp/paypal-iwt.log
 ```
 
-Restart the app. You'll see full request/response JSON in the console:
+Restart the app. You'll see full request/response JSON in the console (and file if configured):
 
 ```
 ========== IWT REQUEST ==========
@@ -279,6 +283,25 @@ For 3DS testing, use PayPal sandbox test cards that trigger 3DS challenges.
 ### API calls not showing
 - Ensure StoreFront is connected to your PayPal app (not production)
 - Check network tab in browser to confirm requests are going to your app
+
+### Using file logging (recommended)
+If console logs are hard to capture (e.g., Vercel, Docker), use file logging:
+
+```bash
+PAYPAL_DEBUG_LOG_FILE=/tmp/paypal-iwt.log
+```
+
+Then view logs with:
+```bash
+# Follow logs in real-time
+tail -f /tmp/paypal-iwt.log
+
+# View full log file
+cat /tmp/paypal-iwt.log
+
+# Copy specific sections
+grep -A 50 "IWT REQUEST" /tmp/paypal-iwt.log
+```
 
 ### Screen recording tips
 - Record at 1080p or higher

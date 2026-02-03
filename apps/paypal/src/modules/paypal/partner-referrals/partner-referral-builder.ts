@@ -1,10 +1,10 @@
 import {
-  CreatePartnerReferralRequest,
-  PayPalProduct,
-  PayPalCapability,
   BusinessEntity,
+  CreatePartnerReferralRequest,
   IndividualOwner,
   PartnerConfigOverride,
+  PayPalCapability,
+  PayPalProduct,
 } from "./types";
 
 /**
@@ -41,6 +41,7 @@ export class PartnerReferralBuilder {
    */
   withTrackingId(trackingId: string): this {
     this.request.tracking_id = trackingId;
+
     return this;
   }
 
@@ -50,6 +51,7 @@ export class PartnerReferralBuilder {
    */
   withEmail(email: string): this {
     this.request.email = email;
+
     return this;
   }
 
@@ -59,6 +61,7 @@ export class PartnerReferralBuilder {
    */
   withLanguage(languageCode: string): this {
     this.request.preferred_language_code = languageCode;
+
     return this;
   }
 
@@ -68,6 +71,7 @@ export class PartnerReferralBuilder {
    */
   withCountry(countryCode: string): this {
     this.request.legal_country_code = countryCode;
+
     return this;
   }
 
@@ -82,6 +86,7 @@ export class PartnerReferralBuilder {
     if (!this.request.products.includes("PPCP")) {
       this.request.products.push("PPCP");
     }
+
     return this;
   }
 
@@ -95,6 +100,7 @@ export class PartnerReferralBuilder {
     if (!this.request.products.includes("PAYMENT_METHODS")) {
       this.request.products.push("PAYMENT_METHODS");
     }
+
     return this;
   }
 
@@ -124,11 +130,15 @@ export class PartnerReferralBuilder {
       this.request.capabilities.push("PAYPAL_WALLET_VAULTING_ADVANCED");
     }
 
-    // IWT Requirement: Add VAULT and BILLING_AGREEMENT features for vaulting
-    // These features enable the merchant to save and reuse payment methods
+    /*
+     * IWT Requirement: Add VAULT and BILLING_AGREEMENT features for vaulting
+     * These features enable the merchant to save and reuse payment methods
+     */
     const operations = this.request.operations;
+
     if (operations && operations[0]?.api_integration_preference?.rest_api_integration?.third_party_details) {
       const features = operations[0].api_integration_preference.rest_api_integration.third_party_details.features;
+
       if (features && !features.includes("VAULT")) {
         features.push("VAULT");
       }
@@ -153,6 +163,7 @@ export class PartnerReferralBuilder {
     if (!this.request.capabilities.includes("APPLE_PAY")) {
       this.request.capabilities.push("APPLE_PAY");
     }
+
     return this;
   }
 
@@ -169,6 +180,7 @@ export class PartnerReferralBuilder {
     if (!this.request.capabilities.includes("GOOGLE_PAY")) {
       this.request.capabilities.push("GOOGLE_PAY");
     }
+
     return this;
   }
 
@@ -182,6 +194,7 @@ export class PartnerReferralBuilder {
     if (!this.request.products.includes(product)) {
       this.request.products.push(product);
     }
+
     return this;
   }
 
@@ -195,6 +208,7 @@ export class PartnerReferralBuilder {
     if (!this.request.capabilities.includes(capability)) {
       this.request.capabilities.push(capability);
     }
+
     return this;
   }
 
@@ -204,6 +218,7 @@ export class PartnerReferralBuilder {
    */
   withBusinessEntity(entity: BusinessEntity): this {
     this.request.business_entity = entity;
+
     return this;
   }
 
@@ -217,11 +232,13 @@ export class PartnerReferralBuilder {
     }
 
     const primaryCount = owners.filter((o) => o.primary).length;
+
     if (primaryCount !== 1) {
       throw new Error("Exactly one owner must be marked as primary");
     }
 
     this.request.individual_owners = owners;
+
     return this;
   }
 
@@ -231,6 +248,7 @@ export class PartnerReferralBuilder {
    */
   withPartnerConfig(config: PartnerConfigOverride): this {
     this.request.partner_config_override = config;
+
     return this;
   }
 
@@ -245,6 +263,7 @@ export class PartnerReferralBuilder {
     if (description) {
       this.request.partner_config_override.return_url_description = description;
     }
+
     return this;
   }
 
@@ -256,6 +275,7 @@ export class PartnerReferralBuilder {
       this.request.partner_config_override = {};
     }
     this.request.partner_config_override.partner_logo_url = logoUrl;
+
     return this;
   }
 

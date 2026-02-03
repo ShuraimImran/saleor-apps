@@ -1,5 +1,5 @@
-import { Pool } from "pg";
 import * as fs from "fs";
+import { Pool } from "pg";
 
 let pool: Pool | null = null;
 

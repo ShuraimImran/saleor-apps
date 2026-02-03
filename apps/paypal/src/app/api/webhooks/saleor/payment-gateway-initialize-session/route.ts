@@ -13,11 +13,11 @@ import { withLoggerContext } from "@/lib/logger-context";
 import { setObservabilitySaleorApiUrl } from "@/lib/observability-saleor-api-url";
 import { setObservabilitySourceObjectId } from "@/lib/observability-source-object-id";
 import { paypalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
-import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
-import { PayPalClient } from "@/modules/paypal/paypal-client";
 import { PayPalPartnerReferralsApi } from "@/modules/paypal/partner-referrals/paypal-partner-referrals-api";
+import { PayPalClient } from "@/modules/paypal/paypal-client";
 import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
+import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 
 import { withRecipientVerification } from "../with-recipient-verification";
 import { PaymentGatewayInitializeSessionUseCase } from "./use-case";
@@ -32,6 +32,7 @@ const useCase = new PaymentGatewayInitializeSessionUseCase({
       partnerMerchantId: config.partnerMerchantId,
       env: config.env as "SANDBOX" | "LIVE",
     });
+
     return PayPalPartnerReferralsApi.create(client);
   },
 });
@@ -60,8 +61,10 @@ const handler = paymentGatewayInitializeSessionWebhookDefinition.createHandler(
 
       setObservabilitySaleorApiUrl(saleorApiUrlResult.value, ctx.payload.version);
 
-      // Extract saleorUserId from payload data for vaulting support
-      // The `data` field is now properly typed in the GraphQL subscription
+      /*
+       * Extract saleorUserId from payload data for vaulting support
+       * The `data` field is now properly typed in the GraphQL subscription
+       */
       const payloadData = ctx.payload.data as Record<string, unknown> | null | undefined;
       const saleorUserId = typeof payloadData?.saleorUserId === "string" ? payloadData.saleorUserId : undefined;
 

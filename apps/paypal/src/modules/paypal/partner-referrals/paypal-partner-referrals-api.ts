@@ -1,18 +1,20 @@
-import { Result, err, ok } from "neverthrow";
-import { PayPalClient } from "../paypal-client";
-import { PayPalApiError } from "../paypal-api-error";
-import { PayPalMerchantId } from "../paypal-merchant-id";
-import { PayPalPartnerReferralId, createPayPalPartnerReferralId } from "../paypal-partner-referral-id";
+import { err, ok,Result } from "neverthrow";
+
 import { createLogger } from "@/lib/logger";
+
+import { PayPalApiError } from "../paypal-api-error";
+import { PayPalClient } from "../paypal-client";
+import { PayPalMerchantId } from "../paypal-merchant-id";
+import { createPayPalPartnerReferralId,PayPalPartnerReferralId } from "../paypal-partner-referral-id";
 import {
   CreatePartnerReferralRequest,
   CreatePartnerReferralResponse,
-  ShowSellerStatusResponse,
+  DeleteApplePayDomainResponse,
+  GetApplePayDomainsResponse,
   PaymentMethodReadiness,
   RegisterApplePayDomainRequest,
   RegisterApplePayDomainResponse,
-  GetApplePayDomainsResponse,
-  DeleteApplePayDomainResponse,
+  ShowSellerStatusResponse,
 } from "./types";
 
 const logger = createLogger("PayPalPartnerReferralsApi");
@@ -133,9 +135,11 @@ export class PayPalPartnerReferralsApi implements IPayPalPartnerReferralsApi {
 
       // Extract partner_referral_id from the links if not directly provided
       const selfLink = response.links.find((link) => link.rel === "self");
+
       if (selfLink && !response.partner_referral_id) {
         // Extract ID from self link URL
         const match = selfLink.href.match(/partner-referrals\/([^/?]+)/);
+
         if (match && match[1]) {
           response.partner_referral_id = createPayPalPartnerReferralId(match[1]);
         }
@@ -176,6 +180,7 @@ export class PayPalPartnerReferralsApi implements IPayPalPartnerReferralsApi {
         logger.error("Partner merchant ID not configured", {
           merchant_id: merchantId,
         });
+
         return err(
           new PayPalApiError("Partner merchant ID not configured in global settings", {
             statusCode: 400,
@@ -243,6 +248,7 @@ export class PayPalPartnerReferralsApi implements IPayPalPartnerReferralsApi {
         logger.error("Partner merchant ID not configured", {
           tracking_id: trackingId,
         });
+
         return err(
           new PayPalApiError("Partner merchant ID not configured in global settings", {
             statusCode: 400,
@@ -347,9 +353,11 @@ export class PayPalPartnerReferralsApi implements IPayPalPartnerReferralsApi {
         }
       }
 
-      // Apple Pay: PPCP_CUSTOM subscribed + APPLE_PAY capability active
-      // Note: PAYMENT_METHODS product is optional - if APPLE_PAY capability is already active,
-      // it means the merchant has been granted access through PPCP_CUSTOM
+      /*
+       * Apple Pay: PPCP_CUSTOM subscribed + APPLE_PAY capability active
+       * Note: PAYMENT_METHODS product is optional - if APPLE_PAY capability is already active,
+       * it means the merchant has been granted access through PPCP_CUSTOM
+       */
       const applePayCapability = capabilities.find((c) => c.name === "APPLE_PAY");
 
       logger.info("Apple Pay readiness check", {
@@ -383,9 +391,11 @@ export class PayPalPartnerReferralsApi implements IPayPalPartnerReferralsApi {
         });
       }
 
-      // Google Pay: PPCP_CUSTOM subscribed + GOOGLE_PAY capability active
-      // Note: PAYMENT_METHODS product is optional - if GOOGLE_PAY capability is already active,
-      // it means the merchant has been granted access through PPCP_CUSTOM
+      /*
+       * Google Pay: PPCP_CUSTOM subscribed + GOOGLE_PAY capability active
+       * Note: PAYMENT_METHODS product is optional - if GOOGLE_PAY capability is already active,
+       * it means the merchant has been granted access through PPCP_CUSTOM
+       */
       const googlePayCapability = capabilities.find((c) => c.name === "GOOGLE_PAY");
 
       logger.info("Google Pay readiness check", {
@@ -427,9 +437,12 @@ export class PayPalPartnerReferralsApi implements IPayPalPartnerReferralsApi {
         );
 
         if (vaultingCapability?.status === "ACTIVE") {
-          // Check for required scopes in oauth_integrations (not in capabilities)
-          // Scopes are returned in: oauth_integrations[].oauth_third_party[].scopes
+          /*
+           * Check for required scopes in oauth_integrations (not in capabilities)
+           * Scopes are returned in: oauth_integrations[].oauth_third_party[].scopes
+           */
           const oauthScopes: string[] = [];
+
           for (const integration of status.oauth_integrations || []) {
             for (const thirdParty of integration.oauth_third_party || []) {
               if (thirdParty.scopes) {

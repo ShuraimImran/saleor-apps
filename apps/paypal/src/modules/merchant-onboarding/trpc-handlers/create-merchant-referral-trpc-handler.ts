@@ -1,10 +1,12 @@
 import { captureException } from "@sentry/nextjs";
 import { TRPCError } from "@trpc/server";
+
 import { getPool } from "@/lib/database";
+import { PartnerReferralBuilder } from "@/modules/paypal/partner-referrals/partner-referral-builder";
+import { PayPalPartnerReferralsApiFactory } from "@/modules/paypal/partner-referrals/paypal-partner-referrals-api-factory";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
-import { PayPalPartnerReferralsApiFactory } from "@/modules/paypal/partner-referrals/paypal-partner-referrals-api-factory";
-import { PartnerReferralBuilder } from "@/modules/paypal/partner-referrals/partner-referral-builder";
+
 import { PostgresMerchantOnboardingRepository } from "../merchant-onboarding-repository";
 import { createMerchantReferralInputSchema } from "./create-merchant-referral-input-schema";
 
@@ -40,6 +42,7 @@ export class CreateMerchantReferralTrpcHandler {
       }
 
       const saleorApiUrl = createSaleorApiUrl(ctx.saleorApiUrl);
+
       if (saleorApiUrl.isErr()) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -106,8 +109,10 @@ export class CreateMerchantReferralTrpcHandler {
 
         // Configure payment methods based on input
         if (!input.enablePPCP) {
-          // If PPCP not enabled, we need to reconfigure
-          // For now, PPCP is required, so throw error
+          /*
+           * If PPCP not enabled, we need to reconfigure
+           * For now, PPCP is required, so throw error
+           */
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "PPCP (PayPal Complete Payments) is required",
@@ -149,6 +154,7 @@ export class CreateMerchantReferralTrpcHandler {
 
         // Extract action URL from HATEOAS links
         const actionLink = referralResponse.links.find((link) => link.rel === "action_url");
+
         if (!actionLink) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",

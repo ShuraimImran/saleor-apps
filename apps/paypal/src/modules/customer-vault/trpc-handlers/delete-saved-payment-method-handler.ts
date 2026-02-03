@@ -5,11 +5,12 @@ import { z } from "zod";
 import { getPool } from "@/lib/database";
 import { createLogger } from "@/lib/logger";
 import { paypalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
-import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
 import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
+import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedStorefrontProcedure } from "@/modules/trpc/protected-storefront-procedure";
+
 import { PostgresCustomerVaultRepository } from "../customer-vault-repository";
 
 const logger = createLogger("DeleteSavedPaymentMethodHandler");
@@ -27,6 +28,7 @@ export class DeleteSavedPaymentMethodHandler {
   getTrpcProcedure() {
     return this.baseProcedure.input(inputSchema).mutation(async ({ ctx, input }) => {
       const saleorUserId = ctx.saleorUserId as string;
+
       if (!ctx.saleorApiUrl) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -35,6 +37,7 @@ export class DeleteSavedPaymentMethodHandler {
       }
 
       const saleorApiUrl = createSaleorApiUrl(ctx.saleorApiUrl);
+
       if (saleorApiUrl.isErr()) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -43,8 +46,10 @@ export class DeleteSavedPaymentMethodHandler {
       }
 
       try {
-        // Get PayPal configuration
-        // ctx.appToken is set by attachAppToken middleware
+        /*
+         * Get PayPal configuration
+         * ctx.appToken is set by attachAppToken middleware
+         */
         const configResult = await paypalConfigRepo.getPayPalConfig({
           saleorApiUrl: ctx.saleorApiUrl!,
           token: ctx.appToken!,

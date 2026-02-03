@@ -1,4 +1,4 @@
-import { Client, cacheExchange, fetchExchange } from "urql";
+import { cacheExchange, Client, fetchExchange } from "urql";
 
 export const createGraphQLClient = (saleorApiUrl: string, token: string) => {
   return new Client({

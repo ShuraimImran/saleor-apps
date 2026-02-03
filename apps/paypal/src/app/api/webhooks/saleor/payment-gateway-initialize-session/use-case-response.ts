@@ -92,8 +92,10 @@ class Success extends SuccessWebhookResponse {
       advancedCardProcessing: z.boolean(),
       vaulting: z.boolean(),
     }).optional(),
-    // Saved payment methods for Return Buyer flow
-    // Supports Card (Phase 1), PayPal Wallet (Phase 2), and Venmo (Phase 2)
+    /*
+     * Saved payment methods for Return Buyer flow
+     * Supports Card (Phase 1), PayPal Wallet (Phase 2), and Venmo (Phase 2)
+     */
     savedPaymentMethods: z.array(z.discriminatedUnion("type", [
       // Card payment method (ACDC - Phase 1)
       z.object({
@@ -138,8 +140,10 @@ class Success extends SuccessWebhookResponse {
         }),
       }),
     ])).optional(),
-    // User ID Token for JS SDK vaulting (data-user-id-token attribute)
-    // Required for displaying vaulted PayPal/Venmo buttons and saving new payment methods
+    /*
+     * User ID Token for JS SDK vaulting (data-user-id-token attribute)
+     * Required for displaying vaulted PayPal/Venmo buttons and saving new payment methods
+     */
     userIdToken: z.string().optional(),
   });
 

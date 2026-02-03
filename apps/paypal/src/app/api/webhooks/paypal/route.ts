@@ -1,16 +1,17 @@
 import { captureException } from "@sentry/nextjs";
 import { NextRequest, NextResponse } from "next/server";
-import { createLogger } from "@/lib/logger";
+
 import { getPool } from "@/lib/database";
+import { createLogger } from "@/lib/logger";
+import { RateLimitConfigs,withRateLimit } from "@/lib/rate-limiter";
 import { PostgresMerchantOnboardingRepository } from "@/modules/merchant-onboarding/merchant-onboarding-repository";
-import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
 import { PayPalPartnerReferralsApiFactory } from "@/modules/paypal/partner-referrals/paypal-partner-referrals-api-factory";
-import {
-  verifyWebhookSignature,
-  extractWebhookHeaders,
-} from "@/modules/paypal/paypal-webhook-verification";
 import { PayPalEnv } from "@/modules/paypal/paypal-env";
-import { withRateLimit, RateLimitConfigs } from "@/lib/rate-limiter";
+import {
+  extractWebhookHeaders,
+  verifyWebhookSignature,
+} from "@/modules/paypal/paypal-webhook-verification";
+import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
 
 const logger = createLogger("PayPalWebhookHandler");
 
@@ -53,6 +54,7 @@ async function handleMerchantOnboardingCompleted(event: PayPalWebhookEvent) {
       has_merchant_id: !!merchantId,
       has_tracking_id: !!trackingId,
     });
+
     return;
   }
 
@@ -65,10 +67,12 @@ async function handleMerchantOnboardingCompleted(event: PayPalWebhookEvent) {
   const pool = getPool();
   const repository = PostgresMerchantOnboardingRepository.create(pool);
 
-  // Find the merchant record by tracking_id
-  // Since we don't have saleorApiUrl in the webhook, we'll need to find it
-  // This is a limitation - we may need to store webhook metadata differently
-  // For now, we'll log this and handle it in the refresh status endpoint
+  /*
+   * Find the merchant record by tracking_id
+   * Since we don't have saleorApiUrl in the webhook, we'll need to find it
+   * This is a limitation - we may need to store webhook metadata differently
+   * For now, we'll log this and handle it in the refresh status endpoint
+   */
 
   logger.info("Merchant onboarding completed via webhook - refresh status to complete", {
     merchant_id: merchantId,
@@ -93,6 +97,7 @@ async function handleMerchantConsentRevoked(event: PayPalWebhookEvent) {
     logger.error("Missing merchant_id in webhook", {
       event_id: event.id,
     });
+
     return;
   }
 
@@ -100,8 +105,10 @@ async function handleMerchantConsentRevoked(event: PayPalWebhookEvent) {
     merchant_id: merchantId,
   });
 
-  // Update merchant status to revoked
-  // Similar limitation as above - need to find merchant by merchant_id across all tenants
+  /*
+   * Update merchant status to revoked
+   * Similar limitation as above - need to find merchant by merchant_id across all tenants
+   */
   logger.info("Merchant consent revoked - should update status to REVOKED", {
     merchant_id: merchantId,
   });
@@ -114,6 +121,7 @@ async function handleMerchantConsentRevoked(event: PayPalWebhookEvent) {
 async function PayPalWebhookHandler(request: NextRequest): Promise<Response> {
   // Rate limiting - protect against webhook flooding attacks
   const rateLimitResponse = withRateLimit(request, RateLimitConfigs.webhook);
+
   if (rateLimitResponse) {
     return rateLimitResponse;
   }
@@ -129,6 +137,7 @@ async function PayPalWebhookHandler(request: NextRequest): Promise<Response> {
       logger.error("Failed to parse webhook body", {
         error: parseError,
       });
+
       return NextResponse.json(
         { error: "Invalid JSON payload" },
         { status: 400 }
@@ -143,11 +152,13 @@ async function PayPalWebhookHandler(request: NextRequest): Promise<Response> {
 
     // Verify webhook signature
     const webhookHeaders = extractWebhookHeaders(request);
+
     if (!webhookHeaders) {
       logger.warn("Missing PayPal webhook signature headers", {
         event_id: event.id,
         event_type: event.event_type,
       });
+
       return NextResponse.json(
         { error: "Missing webhook signature headers" },
         { status: 401 }
@@ -163,6 +174,7 @@ async function PayPalWebhookHandler(request: NextRequest): Promise<Response> {
       logger.error("Failed to get PayPal config for webhook verification", {
         error: configResult.error.message,
       });
+
       return NextResponse.json(
         { error: "Configuration error" },
         { status: 500 }
@@ -170,8 +182,10 @@ async function PayPalWebhookHandler(request: NextRequest): Promise<Response> {
     }
 
     const config = configResult.value;
+
     if (!config) {
       logger.error("No active PayPal configuration found for webhook verification");
+
       return NextResponse.json(
         { error: "PayPal not configured" },
         { status: 500 }
@@ -180,6 +194,7 @@ async function PayPalWebhookHandler(request: NextRequest): Promise<Response> {
 
     if (!config.webhookId) {
       logger.error("No webhook ID configured - cannot verify webhook signature");
+
       return NextResponse.json(
         { error: "Webhook ID not configured" },
         { status: 500 }
@@ -203,6 +218,7 @@ async function PayPalWebhookHandler(request: NextRequest): Promise<Response> {
         verificationStatus: verificationResult.verificationStatus,
         transmissionId: webhookHeaders["paypal-transmission-id"],
       });
+
       return NextResponse.json(
         { error: "Invalid webhook signature" },
         { status: 401 }

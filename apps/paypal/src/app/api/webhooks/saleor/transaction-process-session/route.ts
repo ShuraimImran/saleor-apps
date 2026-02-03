@@ -53,10 +53,12 @@ const handler = transactionProcessSessionWebhookDefinition.createHandler(async (
 
         try {
           const appContext = appContextContainer.getContextValue();
+
           logger.info("About to generate response", {
             hasPaypalEnv: !!appContext.paypalEnv,
             paypalEnv: appContext.paypalEnv,
           });
+
           return result.getResponse();
         } catch (error: unknown) {
           logger.error("Error generating response", {

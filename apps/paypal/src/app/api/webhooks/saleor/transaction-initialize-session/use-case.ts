@@ -7,36 +7,36 @@ import {
 } from "@/app/api/webhooks/saleor/saleor-webhook-responses";
 import { TransactionInitializeSessionEventFragment } from "@/generated/graphql";
 import { appContextContainer } from "@/lib/app-context";
-import { BaseError } from "@/lib/errors";
-import { createLogger } from "@/lib/logger";
 import { getPool } from "@/lib/database";
 import { env } from "@/lib/env";
+import { BaseError } from "@/lib/errors";
+import { createLogger } from "@/lib/logger";
 import { PayPalTenantConfigRepository } from "@/modules/app-config/repositories/paypal-tenant-config-repository";
+import {
+  ICustomerVaultRepository,
+  PostgresCustomerVaultRepository,
+} from "@/modules/customer-vault/customer-vault-repository";
 import { PayPalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
+import { mapPayPalErrorToApiError } from "@/modules/paypal/paypal-api-error";
+import { createPayPalMoney } from "@/modules/paypal/paypal-money";
 import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
 import { IPayPalOrdersApiFactory, PayPalOrderItem } from "@/modules/paypal/types";
-import { SaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { resolveSaleorMoneyFromPayPalOrder } from "@/modules/saleor/resolve-saleor-money-from-paypal-order";
+import { SaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import {
   getChannelIdFromRequestedEventPayload,
   getTransactionFromRequestedEventPayload,
 } from "@/modules/saleor/transaction-requested-event-helpers";
-import { mapPayPalErrorToApiError } from "@/modules/paypal/paypal-api-error";
-import { createPayPalMoney } from "@/modules/paypal/paypal-money";
 import {
-  ChargeActionRequiredResult,
   AuthorizationActionRequiredResult,
+  ChargeActionRequiredResult,
 } from "@/modules/transaction-result/action-required-result";
 import {
-  ChargeFailureResult,
   AuthorizationFailureResult,
+  ChargeFailureResult,
 } from "@/modules/transaction-result/failure-result";
 import { ChargeSuccessResult } from "@/modules/transaction-result/success-result";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
-import {
-  PostgresCustomerVaultRepository,
-  ICustomerVaultRepository,
-} from "@/modules/customer-vault/customer-vault-repository";
 
 import {
   TransactionInitializeSessionUseCaseResponses,
@@ -57,8 +57,10 @@ type VaultingPaymentMethodType = "card" | "paypal" | "venmo" | "apple_pay";
  * Supports both ACDC Card Vaulting (Phase 1) and PayPal Wallet Vaulting (Phase 2)
  */
 interface VaultingData {
-  // Payment method type being vaulted
-  // Defaults to "card" for backward compatibility with Phase 1
+  /*
+   * Payment method type being vaulted
+   * Defaults to "card" for backward compatibility with Phase 1
+   */
   paymentMethodType?: VaultingPaymentMethodType;
   // "Save During Purchase" flow - save payment method for future use
   savePaymentMethod?: boolean;
@@ -66,12 +68,16 @@ interface VaultingData {
   vaultId?: string;
   // Saleor user ID (required for vaulting - logged-in users only)
   saleorUserId?: string;
-  // MIT (Merchant-Initiated Transaction) - "Buyer Not Present" flow
-  // When true, the transaction is initiated by the merchant without buyer interaction
-  // Used for: subscriptions, delayed charges, reorders, etc.
+  /*
+   * MIT (Merchant-Initiated Transaction) - "Buyer Not Present" flow
+   * When true, the transaction is initiated by the merchant without buyer interaction
+   * Used for: subscriptions, delayed charges, reorders, etc.
+   */
   merchantInitiated?: boolean;
-  // Idempotency key - prevents duplicate transactions on retry
-  // Frontend should generate a unique key per checkout attempt (e.g., "checkout-{id}-{timestamp}")
+  /*
+   * Idempotency key - prevents duplicate transactions on retry
+   * Frontend should generate a unique key per checkout attempt (e.g., "checkout-{id}-{timestamp}")
+   */
   idempotencyKey?: string;
 }
 
@@ -87,8 +93,10 @@ function parseVaultingData(eventData: unknown): VaultingData {
 
   // Parse payment method type with validation
   let paymentMethodType: VaultingPaymentMethodType | undefined;
+
   if (typeof data.paymentMethodType === "string") {
     const validTypes: VaultingPaymentMethodType[] = ["card", "paypal", "venmo", "apple_pay"];
+
     if (validTypes.includes(data.paymentMethodType as VaultingPaymentMethodType)) {
       paymentMethodType = data.paymentMethodType as VaultingPaymentMethodType;
     }
@@ -183,6 +191,7 @@ function extractAmountBreakdown(
     // Calculate total tax (subtotal tax + shipping tax)
     const subtotalTax = sourceObject.subtotalPrice?.tax?.amount || 0;
     const shippingTax = sourceObject.shippingPrice?.tax?.amount || 0;
+
     taxTotal = subtotalTax + shippingTax;
   } else if (sourceObject.__typename === "Order") {
     // Use NET amounts (without tax) for item_total and shipping
@@ -191,6 +200,7 @@ function extractAmountBreakdown(
     // Calculate total tax (subtotal tax + shipping tax)
     const subtotalTax = sourceObject.subtotal?.tax?.amount || 0;
     const shippingTax = sourceObject.shippingPrice?.tax?.amount || 0;
+
     taxTotal = subtotalTax + shippingTax;
   }
 
@@ -212,20 +222,25 @@ function extractBuyerEmail(
   } else if (sourceObject.__typename === "Order") {
     return sourceObject.userEmail || undefined;
   }
+
   return undefined;
 }
 
 const normalizeNationalNumber = (raw?: string | null) => {
   if (!raw) return undefined;
   const digits = raw.replace(/\D/g, "");
+
   if (digits.length < 4 || digits.length > 15) return undefined;
+
   return digits;
 };
 
 const normalizeSoftDescriptor = (raw?: string | null) => {
   if (!raw) return undefined;
   const trimmed = raw.trim();
+
   if (!trimmed) return undefined;
+
   return trimmed.slice(0, 22);
 };
 
@@ -294,6 +309,7 @@ function isDigitalGoodsOnly(
   if (sourceObject.__typename === "Checkout") {
     // Primary check: Saleor's isShippingRequired flag (most reliable, if available in fragment)
     const checkoutAny = sourceObject as Record<string, unknown>;
+
     if ("isShippingRequired" in checkoutAny && checkoutAny.isShippingRequired === false) {
       return true;
     }
@@ -451,6 +467,7 @@ export class TransactionInitializeSessionUseCase {
     const appContext = {
       paypalEnv: config.environment || config.getPayPalEnvValue(),
     };
+
     appContextContainer.set(appContext);
 
     // Fetch BN code and partner fee percentage from global config
@@ -458,6 +475,7 @@ export class TransactionInitializeSessionUseCase {
     let partnerMerchantId: string | undefined;
     let partnerFeePercent: number | undefined;
     const globalConfigLoadStart = Date.now();
+
     try {
       const pool = getPool();
       const globalConfigRepository = GlobalPayPalConfigRepository.create(pool);
@@ -465,6 +483,7 @@ export class TransactionInitializeSessionUseCase {
 
       if (globalConfigResult.isOk() && globalConfigResult.value) {
         const globalConfig = globalConfigResult.value;
+
         bnCode = globalConfig.bnCode || undefined;
         partnerMerchantId = globalConfig.partnerMerchantId || undefined;
         partnerFeePercent = globalConfig.partnerFeePercent || undefined;
@@ -570,6 +589,7 @@ export class TransactionInitializeSessionUseCase {
 
     // Calculate platform fee if configured
     let platformFees: Array<{ amount: typeof paypalMoney; payee?: { merchant_id: string } }> | undefined;
+
     if (partnerFeePercent && partnerFeePercent > 0 && config.merchantId && partnerMerchantId) {
       const feeAmount = event.action.amount * (partnerFeePercent / 100);
       const platformFeeMoney = createPayPalMoney({
@@ -577,8 +597,10 @@ export class TransactionInitializeSessionUseCase {
         amount: feeAmount,
       });
 
-      // Platform fee payee is optional - if not specified, PayPal uses the partner's merchant ID
-      // from the authentication context
+      /*
+       * Platform fee payee is optional - if not specified, PayPal uses the partner's merchant ID
+       * from the authentication context
+       */
       platformFees = [{
         amount: platformFeeMoney,
       }];
@@ -608,6 +630,7 @@ export class TransactionInitializeSessionUseCase {
     const shipping = extractShippingAddress(event.sourceObject);
 
     let softDescriptor: string | undefined;
+
     try {
       const tenantConfigRepository = PayPalTenantConfigRepository.create(getPool());
       const tenantConfigResult = await tenantConfigRepository.getBySaleorApiUrl(
@@ -649,9 +672,11 @@ export class TransactionInitializeSessionUseCase {
       sourceType: event.sourceObject.__typename,
     });
 
-    // Build experience context for PayPal checkout flow
-    // This controls the PayPal checkout experience (branding, return URLs, etc.)
-    // IWT Requirement: Digital goods should specify NO_SHIPPING
+    /*
+     * Build experience context for PayPal checkout flow
+     * This controls the PayPal checkout experience (branding, return URLs, etc.)
+     * IWT Requirement: Digital goods should specify NO_SHIPPING
+     */
     const experienceContext = {
       brand_name: env.APP_NAME || "Store",
       user_action: "PAY_NOW" as const, // Show "Pay Now" instead of "Continue"
@@ -662,9 +687,11 @@ export class TransactionInitializeSessionUseCase {
           : ("GET_FROM_FILE" as const),
     };
 
-    // Build payment source configuration
-    // This enables callbacks for shipping address changes and other checkout updates
-    // IWT Requirement: app_switch_preference enables native PayPal app checkout on mobile
+    /*
+     * Build payment source configuration
+     * This enables callbacks for shipping address changes and other checkout updates
+     * IWT Requirement: app_switch_preference enables native PayPal app checkout on mobile
+     */
     let paymentSource: {
       paypal?: {
         experience_context?: any;
@@ -732,8 +759,10 @@ export class TransactionInitializeSessionUseCase {
           paypal: {
             experience_context: {
               ...experienceContext,
-              // IWT Requirement: Enable app switch for mobile checkout
-              // When true, allows PayPal to switch to the native PayPal app if installed
+              /*
+               * IWT Requirement: Enable app switch for mobile checkout
+               * When true, allows PayPal to switch to the native PayPal app if installed
+               */
               app_switch_preference: true,
               callback_configuration: {
                 callback_url: `${env.APP_API_BASE_URL}/api/webhooks/paypal/order-update-callback`,
@@ -757,12 +786,14 @@ export class TransactionInitializeSessionUseCase {
           },
         };
 
-    // ========================================
-    // Payment Method Vaulting
-    // Phase 1: Card (ACDC)
-    // Phase 2: PayPal Wallet, Venmo, Apple Pay
-    // ========================================
-    // Parse vaulting data from event.data (passed by frontend)
+    /*
+     * ========================================
+     * Payment Method Vaulting
+     * Phase 1: Card (ACDC)
+     * Phase 2: PayPal Wallet, Venmo, Apple Pay
+     * ========================================
+     * Parse vaulting data from event.data (passed by frontend)
+     */
     const vaultingData = parseVaultingData((event as any).data);
     let vaultCustomerId: string | undefined;
 
@@ -794,8 +825,10 @@ export class TransactionInitializeSessionUseCase {
       }
 
       if (paymentMethodType === "paypal") {
-        // PayPal Wallet Vaulting - "Return Buyer" flow (Phase 2)
-        // Use vault_id in payment_source.paypal
+        /*
+         * PayPal Wallet Vaulting - "Return Buyer" flow (Phase 2)
+         * Use vault_id in payment_source.paypal
+         */
         paymentSource.paypal = {
           ...paymentSource.paypal,
           vault_id: vaultingData.vaultId,
@@ -805,16 +838,20 @@ export class TransactionInitializeSessionUseCase {
           vaultId: vaultingData.vaultId,
         });
 
-        // Note: MIT for PayPal wallets is handled differently than cards
-        // PayPal wallet doesn't use stored_credential, the vault_id itself implies consent
+        /*
+         * Note: MIT for PayPal wallets is handled differently than cards
+         * PayPal wallet doesn't use stored_credential, the vault_id itself implies consent
+         */
         if (isMIT) {
           this.logger.info("PayPal Wallet MIT - vault_id used for merchant-initiated transaction", {
             vaultId: vaultingData.vaultId,
           });
         }
       } else if (paymentMethodType === "venmo") {
-        // Venmo Vaulting - "Return Buyer" flow (Phase 2)
-        // Use vault_id in payment_source.venmo
+        /*
+         * Venmo Vaulting - "Return Buyer" flow (Phase 2)
+         * Use vault_id in payment_source.venmo
+         */
         paymentSource.venmo = {
           vault_id: vaultingData.vaultId,
         };
@@ -823,16 +860,20 @@ export class TransactionInitializeSessionUseCase {
           vaultId: vaultingData.vaultId,
         });
 
-        // Note: MIT for Venmo is similar to PayPal wallets
-        // The vault_id itself implies consent for merchant-initiated transactions
+        /*
+         * Note: MIT for Venmo is similar to PayPal wallets
+         * The vault_id itself implies consent for merchant-initiated transactions
+         */
         if (isMIT) {
           this.logger.info("Venmo MIT - vault_id used for merchant-initiated transaction", {
             vaultId: vaultingData.vaultId,
           });
         }
       } else if (paymentMethodType === "apple_pay") {
-        // Apple Pay Vaulting - "Return Buyer" flow (Phase 2)
-        // Use vault_id in payment_source.apple_pay
+        /*
+         * Apple Pay Vaulting - "Return Buyer" flow (Phase 2)
+         * Use vault_id in payment_source.apple_pay
+         */
         paymentSource.apple_pay = {
           vault_id: vaultingData.vaultId,
         };
@@ -859,13 +900,17 @@ export class TransactionInitializeSessionUseCase {
           });
         }
       } else {
-        // ACDC Card Vaulting - "Return Buyer" flow (Phase 1)
-        // Use vault_id in payment_source.card
-        // stored_credential is REQUIRED for vaulted card payments per PayPal API
+        /*
+         * ACDC Card Vaulting - "Return Buyer" flow (Phase 1)
+         * Use vault_id in payment_source.card
+         * stored_credential is REQUIRED for vaulted card payments per PayPal API
+         */
 
-        // Determine payment initiator:
-        // - MIT (Merchant-Initiated Transaction): "Buyer Not Present" - subscriptions, delayed charges, reorders
-        // - CIT (Customer-Initiated Transaction): "Buyer Present" - buyer clicking "pay" with saved card
+        /*
+         * Determine payment initiator:
+         * - MIT (Merchant-Initiated Transaction): "Buyer Not Present" - subscriptions, delayed charges, reorders
+         * - CIT (Customer-Initiated Transaction): "Buyer Present" - buyer clicking "pay" with saved card
+         */
         const paymentInitiator = isMIT ? "MERCHANT" : "CUSTOMER";
         const paymentType = isMIT ? "UNSCHEDULED" : "ONE_TIME";
 
@@ -936,9 +981,11 @@ export class TransactionInitializeSessionUseCase {
               usageType: "MERCHANT",
             });
 
-            // Clear vaultCustomerId to prevent duplicate handling in createOrder
-            // (PayPal wallet vaulting is handled via paymentSource.paypal.attributes,
-            // not via the vaultCustomerId parameter which is for card vaulting)
+            /*
+             * Clear vaultCustomerId to prevent duplicate handling in createOrder
+             * (PayPal wallet vaulting is handled via paymentSource.paypal.attributes,
+             * not via the vaultCustomerId parameter which is for card vaulting)
+             */
             vaultCustomerId = undefined;
           }
 
@@ -971,12 +1018,14 @@ export class TransactionInitializeSessionUseCase {
             vaultCustomerId = undefined;
           }
 
-          // Apple Pay vaulting (save-during-purchase):
-          // Apple Pay orders are created WITHOUT payment_source — the token is
-          // attached later by the frontend via paypal.Applepay().confirmOrder().
-          // Vault attributes cannot be included at order creation time.
-          // NOTE: PayPal currently supports Apple Pay one-time payments with payer present only.
-          // Apple Pay save-during-purchase vaulting may require Setup Tokens API in the future.
+          /*
+           * Apple Pay vaulting (save-during-purchase):
+           * Apple Pay orders are created WITHOUT payment_source — the token is
+           * attached later by the frontend via paypal.Applepay().confirmOrder().
+           * Vault attributes cannot be included at order creation time.
+           * NOTE: PayPal currently supports Apple Pay one-time payments with payer present only.
+           * Apple Pay save-during-purchase vaulting may require Setup Tokens API in the future.
+           */
           if (paymentMethodType === "apple_pay" && vaultCustomerId) {
             this.logger.info("Apple Pay save-during-purchase requested — skipping payment_source (token comes from confirmOrder)", {
               customerId: vaultCustomerId,
@@ -987,11 +1036,13 @@ export class TransactionInitializeSessionUseCase {
             vaultCustomerId = undefined;
           }
 
-          // For ACDC Card (hosted CardFields), vaultCustomerId is kept
-          // so that payment_source.card.attributes.vault is included in
-          // the create order request. The CardFields SDK will submit the
-          // card number/expiry/CVV separately, and PayPal will combine
-          // them with the vault attributes to vault the card on capture.
+          /*
+           * For ACDC Card (hosted CardFields), vaultCustomerId is kept
+           * so that payment_source.card.attributes.vault is included in
+           * the create order request. The CardFields SDK will submit the
+           * card number/expiry/CVV separately, and PayPal will combine
+           * them with the vault attributes to vault the card on capture.
+           */
         } else {
           this.logger.warn("Failed to get/create customer vault mapping, proceeding without vaulting", {
             error: customerVaultResult.error,
@@ -1006,20 +1057,26 @@ export class TransactionInitializeSessionUseCase {
       this.logger.warn("savePaymentMethod requested but no saleorUserId provided - vaulting requires logged-in user");
     }
 
-    // PayPal only allows ONE payment_source type per request.
-    // For ACDC CardFields, the SDK handles card data client-side,
-    // so we must NOT send payment_source.paypal for card payments.
-    // Otherwise PayPal returns INVALID_REQUEST error.
+    /*
+     * PayPal only allows ONE payment_source type per request.
+     * For ACDC CardFields, the SDK handles card data client-side,
+     * so we must NOT send payment_source.paypal for card payments.
+     * Otherwise PayPal returns INVALID_REQUEST error.
+     */
     if (paymentSource) {
       if (paymentMethodType === "card") {
-        // ACDC CardFields: remove all non-card payment sources.
-        // The CardFields SDK submits card data directly to PayPal.
-        // Backend only needs payment_source.card when vaulting (attributes).
+        /*
+         * ACDC CardFields: remove all non-card payment sources.
+         * The CardFields SDK submits card data directly to PayPal.
+         * Backend only needs payment_source.card when vaulting (attributes).
+         */
         delete paymentSource.paypal;
         delete paymentSource.venmo;
         delete paymentSource.apple_pay;
-        // If nothing remains, clear paymentSource entirely so
-        // PayPal creates a plain order (CardFields will attach card later)
+        /*
+         * If nothing remains, clear paymentSource entirely so
+         * PayPal creates a plain order (CardFields will attach card later)
+         */
         if (Object.keys(paymentSource).length === 0) {
           paymentSource = undefined;
         }
@@ -1038,16 +1095,20 @@ export class TransactionInitializeSessionUseCase {
         this.logger.debug("Cleaned payment_source for venmo payment");
       } else if (paymentMethodType === "apple_pay") {
         if (!vaultingData.vaultId) {
-          // Apple Pay new payment (one-time or save-during-purchase):
-          // Do NOT include payment_source in order creation.
-          // The Apple Pay token doesn't exist until the user authorizes on the Apple Pay sheet.
-          // Frontend attaches the token via paypal.Applepay().confirmOrder() after order creation.
-          // See: https://developer.paypal.com/docs/multiparty/checkout/apm/apple-pay/
+          /*
+           * Apple Pay new payment (one-time or save-during-purchase):
+           * Do NOT include payment_source in order creation.
+           * The Apple Pay token doesn't exist until the user authorizes on the Apple Pay sheet.
+           * Frontend attaches the token via paypal.Applepay().confirmOrder() after order creation.
+           * See: https://developer.paypal.com/docs/multiparty/checkout/apm/apple-pay/
+           */
           paymentSource = undefined;
           this.logger.debug("Cleared payment_source for new Apple Pay payment — token comes from confirmOrder()");
         } else {
-          // Apple Pay Return Buyer — server-side payment using vaulted token.
-          // payment_source.apple_pay.vault_id is required (no Apple Pay sheet shown).
+          /*
+           * Apple Pay Return Buyer — server-side payment using vaulted token.
+           * payment_source.apple_pay.vault_id is required (no Apple Pay sheet shown).
+           */
           delete paymentSource.paypal;
           delete paymentSource.card;
           delete paymentSource.venmo;
@@ -1144,8 +1205,10 @@ export class TransactionInitializeSessionUseCase {
       });
     }
 
-    // Handle COMPLETED status - vaulted card payments are auto-captured by PayPal
-    // No need for TransactionProcess, payment is already done
+    /*
+     * Handle COMPLETED status - vaulted card payments are auto-captured by PayPal
+     * No need for TransactionProcess, payment is already done
+     */
     if (paypalOrder.status === "COMPLETED") {
       this.logger.info("PayPal order auto-completed (vaulted card payment)", {
         paypalOrderId: paypalOrder.id,
@@ -1206,8 +1269,10 @@ export class TransactionInitializeSessionUseCase {
       );
     }
 
-    // Handle APPROVED status - order approved but not yet captured
-    // This shouldn't happen often for vaulted cards but handle it gracefully
+    /*
+     * Handle APPROVED status - order approved but not yet captured
+     * This shouldn't happen often for vaulted cards but handle it gracefully
+     */
     const saleorMoneyResult = resolveSaleorMoneyFromPayPalOrder(paypalOrder);
 
     if (saleorMoneyResult.isErr()) {

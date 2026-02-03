@@ -1,9 +1,10 @@
-import { Pool } from "pg";
-import { Result, ok, err } from "neverthrow";
 import { BaseError } from "@saleor/errors";
+import { err,ok, Result } from "neverthrow";
+import { Pool } from "pg";
+
+import { PaymentMethodReadiness } from "../paypal/partner-referrals/types";
 import { PayPalMerchantId } from "../paypal/paypal-merchant-id";
 import { PayPalPartnerReferralId } from "../paypal/paypal-partner-referral-id";
-import { PaymentMethodReadiness } from "../paypal/partner-referrals/types";
 
 /**
  * Merchant onboarding status
@@ -201,6 +202,7 @@ export class PostgresMerchantOnboardingRepository implements IMerchantOnboarding
       ];
 
       const result = await this.pool.query(query, values);
+
       return ok(this.mapRowToRecord(result.rows[0]));
     } catch (error: any) {
       return err(
@@ -471,6 +473,7 @@ export class PostgresMerchantOnboardingRepository implements IMerchantOnboarding
       `;
 
       await this.pool.query(query, [saleorApiUrl, trackingId]);
+
       return ok(undefined);
     } catch (error: any) {
       return err(

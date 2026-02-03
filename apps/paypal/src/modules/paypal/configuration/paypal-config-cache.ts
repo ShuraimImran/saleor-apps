@@ -1,5 +1,5 @@
-import { PayPalConfig } from "@/modules/app-config/domain/paypal-config";
 import { createLogger } from "@/lib/logger";
+import { PayPalConfig } from "@/modules/app-config/domain/paypal-config";
 
 const logger = createLogger("PayPalConfigCache");
 
@@ -37,6 +37,7 @@ class PayPalConfigCache {
 
     if (!entry) {
       logger.debug("Cache miss: no cached config for key", { key });
+
       return undefined;
     }
 
@@ -50,6 +51,7 @@ class PayPalConfigCache {
         ttl_ms: this.TTL_MS,
       });
       this.cache.delete(key);
+
       return undefined;
     }
 
@@ -59,6 +61,7 @@ class PayPalConfigCache {
       ttl_ms: this.TTL_MS,
       has_config: !!entry.config,
     });
+
     return entry.config;
   }
 
@@ -67,6 +70,7 @@ class PayPalConfigCache {
    */
   set(saleorApiUrl: string, config: PayPalConfig | null, channelId?: string): void {
     const key = this.getCacheKey(saleorApiUrl, channelId);
+
     this.cache.set(key, {
       config,
       timestamp: Date.now(),
@@ -116,6 +120,7 @@ class PayPalConfigCache {
    */
   clear(): void {
     const size = this.cache.size;
+
     this.cache.clear();
 
     logger.debug("All cache cleared", {

@@ -1,7 +1,7 @@
 import { PayPalClientId } from "./paypal-client-id";
 import { PayPalClientSecret } from "./paypal-client-secret";
-import { PayPalMerchantId } from "./paypal-merchant-id";
 import { PayPalEnv } from "./paypal-env";
+import { PayPalMerchantId } from "./paypal-merchant-id";
 import { PayPalRefundsApi } from "./paypal-refunds-api";
 import { IPayPalRefundsApiFactory } from "./types";
 

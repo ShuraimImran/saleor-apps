@@ -3,9 +3,9 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { BaseError } from "@/lib/errors";
+import { PayPalMultiConfigMetadataManager } from "@/modules/paypal/configuration/paypal-multi-config-metadata-manager";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
-import { PayPalMultiConfigMetadataManager } from "@/modules/paypal/configuration/paypal-multi-config-metadata-manager";
 
 export class UpdateMappingTrpcHandler {
   baseProcedure = protectedClientProcedure;
@@ -58,6 +58,7 @@ export class UpdateMappingTrpcHandler {
         // Validate that config exists if configId is provided
         if (configId) {
           const configResult = await metadataManager.getConfigById(configId);
+
           if (configResult.isErr()) {
             captureException(configResult.error);
             throw new TRPCError({
@@ -76,6 +77,7 @@ export class UpdateMappingTrpcHandler {
         
         // Update channel mapping
         const updateResult = await metadataManager.updateChannelMapping(channelId, configId || null);
+
         if (updateResult.isErr()) {
           captureException(updateResult.error);
           throw new TRPCError({

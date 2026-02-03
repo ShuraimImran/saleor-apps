@@ -4,11 +4,12 @@ import { TRPCError } from "@trpc/server";
 import { getPool } from "@/lib/database";
 import { createLogger } from "@/lib/logger";
 import { paypalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
-import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
 import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
+import { PayPalVaultingApi } from "@/modules/paypal/paypal-vaulting-api";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedStorefrontProcedure } from "@/modules/trpc/protected-storefront-procedure";
+
 import { PostgresCustomerVaultRepository } from "../customer-vault-repository";
 
 const logger = createLogger("ListSavedPaymentMethodsHandler");
@@ -22,6 +23,7 @@ export class ListSavedPaymentMethodsHandler {
   getTrpcProcedure() {
     return this.baseProcedure.query(async ({ ctx }) => {
       const saleorUserId = ctx.saleorUserId as string;
+
       if (!ctx.saleorApiUrl) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -30,6 +32,7 @@ export class ListSavedPaymentMethodsHandler {
       }
 
       const saleorApiUrl = createSaleorApiUrl(ctx.saleorApiUrl);
+
       if (saleorApiUrl.isErr()) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -38,8 +41,10 @@ export class ListSavedPaymentMethodsHandler {
       }
 
       try {
-        // Get PayPal configuration
-        // ctx.appToken is set by attachAppToken middleware
+        /*
+         * Get PayPal configuration
+         * ctx.appToken is set by attachAppToken middleware
+         */
         const configResult = await paypalConfigRepo.getPayPalConfig({
           saleorApiUrl: ctx.saleorApiUrl!,
           token: ctx.appToken!,
@@ -94,12 +99,15 @@ export class ListSavedPaymentMethodsHandler {
         });
 
         if (paymentTokensResult.isErr()) {
-          // PayPal may not recognize the customer (e.g., stale mapping, credential change).
-          // Return empty results instead of failing so the UI stays functional.
+          /*
+           * PayPal may not recognize the customer (e.g., stale mapping, credential change).
+           * Return empty results instead of failing so the UI stays functional.
+           */
           logger.warn("Failed to fetch payment tokens from PayPal, returning empty list", {
             paypalCustomerId,
             error: paymentTokensResult.error,
           });
+
           return {
             savedPaymentMethods: [],
           };

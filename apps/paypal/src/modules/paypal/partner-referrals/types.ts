@@ -1,4 +1,5 @@
 import { z } from "zod";
+
 import { PayPalPartnerReferralId } from "../paypal-partner-referral-id";
 
 /**

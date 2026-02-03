@@ -8,20 +8,20 @@ import {
 } from "@/app/api/webhooks/saleor/saleor-webhook-responses";
 import { TransactionCancelationRequestedEventFragment } from "@/generated/graphql";
 import { appContextContainer } from "@/lib/app-context";
+import { getPool } from "@/lib/database";
 import { BaseError } from "@/lib/errors";
 import { createLogger } from "@/lib/logger";
-import { getPool } from "@/lib/database";
 import { loggerContext } from "@/lib/logger-context";
 import { PayPalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
+import { mapPayPalErrorToApiError } from "@/modules/paypal/paypal-api-error";
+import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
+import { IPayPalOrdersApiFactory } from "@/modules/paypal/types";
 import { resolveSaleorMoneyFromPayPalOrder } from "@/modules/saleor/resolve-saleor-money-from-paypal-order";
 import { SaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import {
   getChannelIdFromRequestedEventPayload,
   getTransactionFromRequestedEventPayload,
 } from "@/modules/saleor/transaction-requested-event-helpers";
-import { mapPayPalErrorToApiError } from "@/modules/paypal/paypal-api-error";
-import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
-import { IPayPalOrdersApiFactory } from "@/modules/paypal/types";
 import {
   CancelFailureResult,
   CancelSuccessResult,
@@ -99,6 +99,7 @@ export class TransactionCancelationRequestedUseCase {
 
     // Fetch BN code from global config for partner attribution
     let bnCode: string | undefined;
+
     try {
       const pool = getPool();
       const globalConfigRepository = GlobalPayPalConfigRepository.create(pool);

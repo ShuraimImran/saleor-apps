@@ -6,9 +6,9 @@ import {
   MalformedRequestResponse,
 } from "@/app/api/webhooks/saleor/saleor-webhook-responses";
 import { appContextContainer } from "@/lib/app-context";
+import { getPool } from "@/lib/database";
 import { BaseError } from "@/lib/errors";
 import { createLogger } from "@/lib/logger";
-import { getPool } from "@/lib/database";
 import { PayPalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
 import { mapPayPalErrorToApiError } from "@/modules/paypal/paypal-api-error";
 import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
@@ -92,6 +92,7 @@ export class TransactionChargeRequestedUseCase {
 
     // Fetch BN code from global config for partner attribution
     let bnCode: string | undefined;
+
     try {
       const pool = getPool();
       const globalConfigRepository = GlobalPayPalConfigRepository.create(pool);
@@ -152,11 +153,14 @@ export class TransactionChargeRequestedUseCase {
 
     const capturedOrder = captureOrderResult.value;
 
-    // ========================================
-    // ACDC Card Vaulting - Check for vault response (Phase 1)
-    // ========================================
-    // After successful capture, if card was vaulted, the response contains vault info
+    /*
+     * ========================================
+     * ACDC Card Vaulting - Check for vault response (Phase 1)
+     * ========================================
+     * After successful capture, if card was vaulted, the response contains vault info
+     */
     const vaultInfo = capturedOrder.payment_source?.card?.attributes?.vault;
+
     if (vaultInfo) {
       this.logger.info("Card successfully vaulted during purchase", {
         vaultId: vaultInfo.id,

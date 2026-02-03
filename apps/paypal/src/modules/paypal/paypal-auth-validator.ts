@@ -1,4 +1,5 @@
-import { ok, err, Result } from "neverthrow";
+import { err, ok, Result } from "neverthrow";
+
 import { PayPalClient } from "./paypal-client";
 import { PayPalClientId } from "./paypal-client-id";
 import { PayPalClientSecret } from "./paypal-client-secret";

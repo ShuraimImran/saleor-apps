@@ -3,8 +3,8 @@ import { Result, ResultAsync } from "neverthrow";
 import { PayPalClient } from "./paypal-client";
 import { PayPalClientId } from "./paypal-client-id";
 import { PayPalClientSecret } from "./paypal-client-secret";
-import { PayPalMerchantId } from "./paypal-merchant-id";
 import { PayPalEnv } from "./paypal-env";
+import { PayPalMerchantId } from "./paypal-merchant-id";
 
 /**
  * PayPal Webhook
@@ -48,6 +48,7 @@ export class PayPalWebhooksApi {
     env: PayPalEnv;
   }): PayPalWebhooksApi {
     const client = PayPalClient.create(args);
+
     return new PayPalWebhooksApi(client);
   }
 

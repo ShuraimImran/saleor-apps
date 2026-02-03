@@ -1,8 +1,9 @@
 import { Layout } from "@saleor/apps-ui";
-import { Box, Text, Button, Input } from "@saleor/macaw-ui";
+import { Box, Button, Input,Text } from "@saleor/macaw-ui";
 import { NextPage } from "next";
 import { useRouter } from "next/router";
-import { useState, useEffect } from "react";
+import { useEffect,useState } from "react";
+
 import { trpcClient } from "@/modules/trpc/trpc-client";
 import { AppHeader } from "@/modules/ui/app-header";
 
@@ -20,6 +21,7 @@ const WsmAdminPage: NextPage = () => {
   // Get secret key from URL parameter
   useEffect(() => {
     const keyFromUrl = router.query.key as string;
+
     if (keyFromUrl) {
       setSecretKey(keyFromUrl);
     }
@@ -89,6 +91,7 @@ const WsmAdminPage: NextPage = () => {
   const handleTestCredentials = () => {
     if (!clientId || !clientSecret) {
       setMessage({ type: "error", text: "Please enter Client ID and Client Secret" });
+
       return;
     }
 
@@ -104,6 +107,7 @@ const WsmAdminPage: NextPage = () => {
   const handleSaveConfig = () => {
     if (!clientId || !clientSecret) {
       setMessage({ type: "error", text: "Please enter Client ID and Client Secret" });
+
       return;
     }
 

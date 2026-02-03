@@ -1,6 +1,6 @@
+import { Box, Text } from "@saleor/macaw-ui";
 import { NextPage } from "next";
 import { useEffect, useState } from "react";
-import { Box, Text } from "@saleor/macaw-ui";
 
 /**
  * Public callback page for PayPal merchant onboarding
@@ -37,16 +37,20 @@ const PayPalCallbackPage: NextPage = () => {
         if (!merchantIdInPayPal) {
           setStatus("error");
           setMessage("Missing merchant ID from PayPal response");
+
           return;
         }
 
-        // Get tracking ID from URL (PayPal returns it as merchantId parameter)
-        // The merchantId in the callback URL is the tracking_id that was sent to PayPal
+        /*
+         * Get tracking ID from URL (PayPal returns it as merchantId parameter)
+         * The merchantId in the callback URL is the tracking_id that was sent to PayPal
+         */
         const trackingId = merchantId;
 
         if (!trackingId) {
           setStatus("error");
           setMessage("Tracking ID not found in callback URL. Please restart the connection process.");
+
           return;
         }
 

@@ -13,18 +13,22 @@
  */
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import Script from "next/script";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-// ---------------------------------------------------------------------------
-// Configuration
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * Configuration
+ * ---------------------------------------------------------------------------
+ */
 const PAYMENT_APP_URL = process.env.NEXT_PUBLIC_PAYPAL_APP_URL!;
 const SALEOR_API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * Types
+ * ---------------------------------------------------------------------------
+ */
 interface SavedCard {
   id: string;
   type: string;
@@ -54,9 +58,11 @@ interface PaymentTokenResponse {
   } | null;
 }
 
-// ---------------------------------------------------------------------------
-// tRPC helpers
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * tRPC helpers
+ * ---------------------------------------------------------------------------
+ */
 async function trpcQuery<T>(
   procedure: string,
   input: Record<string, unknown>,
@@ -80,6 +86,7 @@ async function trpcQuery<T>(
       data.error?.json?.message ||
       data.error?.message ||
       JSON.stringify(data.error);
+
     throw new Error(msg);
   }
 
@@ -110,15 +117,18 @@ async function trpcMutation<T>(
       data.error?.json?.message ||
       data.error?.message ||
       JSON.stringify(data.error);
+
     throw new Error(msg);
   }
 
   return (data.result?.data ?? data) as T;
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * Component
+ * ---------------------------------------------------------------------------
+ */
 export default function SavedPaymentMethodsPage() {
   // TODO: Replace with your auth context — e.g. useAuth().token
   const userToken = "YOUR_SALEOR_JWT_HERE";
@@ -144,9 +154,11 @@ export default function SavedPaymentMethodsPage() {
   const cardExpiryRef = useRef<HTMLDivElement>(null);
   const cardCvvRef = useRef<HTMLDivElement>(null);
 
-  // ----------------------------------------------------------
-  // Load saved cards
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Load saved cards
+   * ----------------------------------------------------------
+   */
   const loadSavedCards = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -157,6 +169,7 @@ export default function SavedPaymentMethodsPage() {
         {},
         userToken,
       );
+
       setSavedCards(result.savedPaymentMethods || []);
     } catch (err) {
       setError(
@@ -171,9 +184,11 @@ export default function SavedPaymentMethodsPage() {
     loadSavedCards();
   }, [loadSavedCards]);
 
-  // ----------------------------------------------------------
-  // Mount card fields AFTER React has rendered the containers
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Mount card fields AFTER React has rendered the containers
+   * ----------------------------------------------------------
+   */
   useEffect(() => {
     if (!readyToMountFields || !vaultSessionRef.current) return;
 
@@ -218,9 +233,11 @@ export default function SavedPaymentMethodsPage() {
     setReadyToMountFields(false);
   }, [readyToMountFields]);
 
-  // ----------------------------------------------------------
-  // Delete a saved card
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Delete a saved card
+   * ----------------------------------------------------------
+   */
   const handleDelete = async (paymentTokenId: string) => {
     if (!confirm("Remove this card from your wallet?")) return;
 
@@ -236,9 +253,11 @@ export default function SavedPaymentMethodsPage() {
     }
   };
 
-  // ----------------------------------------------------------
-  // Start the "Add Card" flow
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Start the "Add Card" flow
+   * ----------------------------------------------------------
+   */
   const handleAddCard = async () => {
     setError(null);
     setSuccessMessage(null);
@@ -257,6 +276,7 @@ export default function SavedPaymentMethodsPage() {
         },
         userToken,
       );
+
       console.log("[Vault] Setup token created:", setupResult.setupTokenId);
       setupTokenIdRef.current = setupResult.setupTokenId;
 
@@ -267,6 +287,7 @@ export default function SavedPaymentMethodsPage() {
         {},
         userToken,
       );
+
       console.log("[Vault] Client token received");
 
       // Step 2: Initialize SDK
@@ -276,6 +297,7 @@ export default function SavedPaymentMethodsPage() {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const paypal = (window as any).paypal;
+
       if (!paypal?.createInstance) {
         throw new Error("PayPal SDK v6 not available on window");
       }
@@ -285,18 +307,22 @@ export default function SavedPaymentMethodsPage() {
         clientToken,
         components: ["card-fields"],
       });
+
       console.log("[Vault] SDK instance created");
 
       // Step 3: Create vault session
       const session = sdk.createCardFieldsSavePaymentSession();
+
       vaultSessionRef.current = session;
       console.log("[Vault] Vault session created");
 
       // Show the card form — React will render the container divs
       setShowCardForm(true);
 
-      // Signal the useEffect to mount card fields on the NEXT render
-      // (after React has flushed showCardForm=true and the refs exist)
+      /*
+       * Signal the useEffect to mount card fields on the NEXT render
+       * (after React has flushed showCardForm=true and the refs exist)
+       */
       setReadyToMountFields(true);
     } catch (err) {
       console.error("[Vault] Error:", err);
@@ -309,9 +335,11 @@ export default function SavedPaymentMethodsPage() {
     }
   };
 
-  // ----------------------------------------------------------
-  // Submit card details
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Submit card details
+   * ----------------------------------------------------------
+   */
   const handleSubmitCard = async () => {
     if (!vaultSessionRef.current || !setupTokenIdRef.current) return;
 
@@ -323,6 +351,7 @@ export default function SavedPaymentMethodsPage() {
       const result = await vaultSessionRef.current.submit(
         setupTokenIdRef.current,
       );
+
       console.log("[Vault] Submit result:", result);
 
       switch (result.state) {
@@ -365,9 +394,11 @@ export default function SavedPaymentMethodsPage() {
     }
   };
 
-  // ----------------------------------------------------------
-  // Cancel
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Cancel
+   * ----------------------------------------------------------
+   */
   const handleCancel = () => {
     setShowCardForm(false);
     setError(null);
@@ -375,9 +406,11 @@ export default function SavedPaymentMethodsPage() {
     vaultSessionRef.current = null;
   };
 
-  // ----------------------------------------------------------
-  // Render
-  // ----------------------------------------------------------
+  /*
+   * ----------------------------------------------------------
+   * Render
+   * ----------------------------------------------------------
+   */
   return (
     <div style={{ maxWidth: 480, margin: "0 auto", padding: 20 }}>
       {/* PayPal SDK v6 — loaded once, no query params */}

@@ -1,10 +1,10 @@
 import { router } from "@/modules/trpc/trpc-server";
 
-import { ListSavedPaymentMethodsHandler } from "./list-saved-payment-methods-handler";
-import { DeleteSavedPaymentMethodHandler } from "./delete-saved-payment-method-handler";
-import { CreateSetupTokenHandler } from "./create-setup-token-handler";
 import { CreatePaymentTokenHandler } from "./create-payment-token-handler";
+import { CreateSetupTokenHandler } from "./create-setup-token-handler";
+import { DeleteSavedPaymentMethodHandler } from "./delete-saved-payment-method-handler";
 import { GenerateClientTokenHandler } from "./generate-client-token-handler";
+import { ListSavedPaymentMethodsHandler } from "./list-saved-payment-methods-handler";
 
 /**
  * Customer Vault Router

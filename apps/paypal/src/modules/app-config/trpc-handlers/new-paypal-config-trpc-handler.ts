@@ -4,12 +4,12 @@ import { TRPCError } from "@trpc/server";
 import { BaseError } from "@/lib/errors";
 import { randomId } from "@/lib/random-id";
 import { PayPalConfig } from "@/modules/app-config/domain/paypal-config";
+import { newPayPalConfigInputSchema } from "@/modules/app-config/trpc-handlers/new-paypal-config-input-schema";
+import { PayPalMultiConfigMetadataManager } from "@/modules/paypal/configuration/paypal-multi-config-metadata-manager";
 import { createPayPalClientId } from "@/modules/paypal/paypal-client-id";
 import { createPayPalClientSecret } from "@/modules/paypal/paypal-client-secret";
-import { newPayPalConfigInputSchema } from "@/modules/app-config/trpc-handlers/new-paypal-config-input-schema";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
-import { PayPalMultiConfigMetadataManager } from "@/modules/paypal/configuration/paypal-multi-config-metadata-manager";
 
 export class NewPayPalConfigTrpcHandler {
   baseProcedure = protectedClientProcedure;
@@ -91,6 +91,7 @@ export class NewPayPalConfigTrpcHandler {
           message: `Failed to save PayPal configuration: ${saveResult.error.message}`,
         });
       }
+
       return { success: true };
     });
   }

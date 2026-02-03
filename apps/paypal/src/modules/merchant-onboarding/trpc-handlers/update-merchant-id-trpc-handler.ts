@@ -1,10 +1,12 @@
 import { captureException } from "@sentry/nextjs";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+
 import { getPool } from "@/lib/database";
+import { createPayPalMerchantId } from "@/modules/paypal/paypal-merchant-id";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
-import { createPayPalMerchantId } from "@/modules/paypal/paypal-merchant-id";
+
 import { PostgresMerchantOnboardingRepository } from "../merchant-onboarding-repository";
 
 /**
@@ -31,6 +33,7 @@ export class UpdateMerchantIdTrpcHandler {
         }
 
         const saleorApiUrl = createSaleorApiUrl(ctx.saleorApiUrl);
+
         if (saleorApiUrl.isErr()) {
           throw new TRPCError({
             code: "BAD_REQUEST",

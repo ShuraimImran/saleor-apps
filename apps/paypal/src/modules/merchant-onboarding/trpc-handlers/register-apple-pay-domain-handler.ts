@@ -1,13 +1,15 @@
 import { captureException } from "@sentry/nextjs";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
+
+import { getPool } from "@/lib/database";
+import { createLogger } from "@/lib/logger";
 import { PayPalPartnerReferralsApiFactory } from "@/modules/paypal/partner-referrals/paypal-partner-referrals-api-factory";
 import { createPayPalMerchantId } from "@/modules/paypal/paypal-merchant-id";
-import { createLogger } from "@/lib/logger";
-import { getPool } from "@/lib/database";
-import { PostgresMerchantOnboardingRepository } from "../merchant-onboarding-repository";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
+import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
+
+import { PostgresMerchantOnboardingRepository } from "../merchant-onboarding-repository";
 
 const logger = createLogger("RegisterApplePayDomainHandler");
 
@@ -41,6 +43,7 @@ export class RegisterApplePayDomainHandler {
         }
 
         const saleorApiUrl = createSaleorApiUrl(ctx.saleorApiUrl);
+
         if (saleorApiUrl.isErr()) {
           throw new TRPCError({
             code: "BAD_REQUEST",

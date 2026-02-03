@@ -1,16 +1,17 @@
 import { Result, ResultAsync } from "neverthrow";
 
 import { createLogger } from "@/lib/logger";
-import { PayPalClient } from "./paypal-client";
 
-const logger = createLogger("PayPalOrdersApi");
+import { PayPalClient } from "./paypal-client";
 import { PayPalClientId } from "./paypal-client-id";
 import { PayPalClientSecret } from "./paypal-client-secret";
-import { PayPalMerchantId } from "./paypal-merchant-id";
 import { PayPalEnv } from "./paypal-env";
+import { PayPalMerchantId } from "./paypal-merchant-id";
 import { PayPalMoney } from "./paypal-money";
 import { PayPalOrderId } from "./paypal-order-id";
 import { IPayPalOrdersApi, PayPalOrder } from "./types";
+
+const logger = createLogger("PayPalOrdersApi");
 
 export class PayPalOrdersApi implements IPayPalOrdersApi {
   private client: PayPalClient;
@@ -29,6 +30,7 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
     env: PayPalEnv;
   }): PayPalOrdersApi {
     const client = PayPalClient.create(args);
+
     return new PayPalOrdersApi(client);
   }
 
@@ -120,11 +122,15 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
             >;
           };
         };
-        // PayPal Wallet Vaulting - "Return Buyer" flow (Phase 2)
-        // Used when paying with a previously saved PayPal account
+        /*
+         * PayPal Wallet Vaulting - "Return Buyer" flow (Phase 2)
+         * Used when paying with a previously saved PayPal account
+         */
         vault_id?: string;
-        // PayPal Wallet Vaulting - "Save During Purchase" flow (Phase 2)
-        // Used to save PayPal account during checkout for future use
+        /*
+         * PayPal Wallet Vaulting - "Save During Purchase" flow (Phase 2)
+         * Used to save PayPal account during checkout for future use
+         */
         attributes?: {
           vault?: {
             store_in_vault: "ON_SUCCESS";
@@ -149,8 +155,10 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
             method?: "SCA_ALWAYS" | "SCA_WHEN_REQUIRED";
           };
         };
-        // MIT (Merchant-Initiated Transaction) - "Buyer Not Present" flow (Phase 1)
-        // Used when charging a saved card without buyer interaction
+        /*
+         * MIT (Merchant-Initiated Transaction) - "Buyer Not Present" flow (Phase 1)
+         * Used when charging a saved card without buyer interaction
+         */
         stored_credential?: {
           payment_initiator: "CUSTOMER" | "MERCHANT";
           payment_type: "ONE_TIME" | "RECURRING" | "UNSCHEDULED";
@@ -176,8 +184,10 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
         };
       };
       apple_pay?: {
-        // Apple Pay Vaulting - "Return Buyer" flow (Phase 2)
-        // Used for recurring/unscheduled payments with saved Apple Pay
+        /*
+         * Apple Pay Vaulting - "Return Buyer" flow (Phase 2)
+         * Used for recurring/unscheduled payments with saved Apple Pay
+         */
         vault_id?: string;
         // Apple Pay Vaulting - "Save During Purchase" flow (Phase 2)
         attributes?: {
@@ -202,9 +212,11 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
     // Idempotency key - prevents duplicate transactions on network retry
     requestId?: string;
   }): Promise<Result<PayPalOrder, unknown>> {
-    // Build amount object with breakdown if items are provided
-    // PayPal requires: amount.value = breakdown.item_total + breakdown.shipping + breakdown.tax_total
-    // If the breakdown doesn't sum to the total, skip it to avoid 422 UNPROCESSABLE_ENTITY
+    /*
+     * Build amount object with breakdown if items are provided
+     * PayPal requires: amount.value = breakdown.item_total + breakdown.shipping + breakdown.tax_total
+     * If the breakdown doesn't sum to the total, skip it to avoid 422 UNPROCESSABLE_ENTITY
+     */
     let amountObject: any = args.amount;
 
     if (args.items && args.items.length > 0 && args.amountBreakdown) {
@@ -277,10 +289,12 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
       };
     }
 
-    // Add platform fees if provided
-    // Platform fees are used by PayPal partners to collect partner fees from merchant transactions
-    // The payee in purchase_units specifies who receives the payment (the merchant)
-    // The payee in platform_fees can optionally specify who receives the fee (defaults to the partner)
+    /*
+     * Add platform fees if provided
+     * Platform fees are used by PayPal partners to collect partner fees from merchant transactions
+     * The payee in purchase_units specifies who receives the payment (the merchant)
+     * The payee in platform_fees can optionally specify who receives the fee (defaults to the partner)
+     */
     if (args.platformFees && args.platformFees.length > 0) {
       purchaseUnit.payment_instruction = {
         disbursement_mode: "INSTANT",
@@ -309,8 +323,10 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
       requestBody.payment_source = args.paymentSource;
     }
 
-    // Handle ACDC Card Vaulting - add vault attributes if vaultCustomerId is provided
-    // This enables "Save During Purchase" flow for Phase 1 ACDC vaulting
+    /*
+     * Handle ACDC Card Vaulting - add vault attributes if vaultCustomerId is provided
+     * This enables "Save During Purchase" flow for Phase 1 ACDC vaulting
+     */
     if (args.vaultCustomerId) {
       // Ensure payment_source.card exists with vault attributes
       if (!requestBody.payment_source) {

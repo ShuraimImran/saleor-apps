@@ -1,8 +1,10 @@
 import { captureException } from "@sentry/nextjs";
 import { TRPCError } from "@trpc/server";
+
 import { getPool } from "@/lib/database";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
+
 import { PostgresMerchantOnboardingRepository } from "../merchant-onboarding-repository";
 
 /**
@@ -21,6 +23,7 @@ export class ListMerchantsTrpcHandler {
       }
 
       const saleorApiUrl = createSaleorApiUrl(ctx.saleorApiUrl);
+
       if (saleorApiUrl.isErr()) {
         throw new TRPCError({
           code: "BAD_REQUEST",

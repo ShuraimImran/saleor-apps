@@ -1,5 +1,5 @@
-import { Pool } from "pg";
 import { err, ok, Result } from "neverthrow";
+import { Pool } from "pg";
 
 import { createLogger } from "@/lib/logger";
 
@@ -43,6 +43,7 @@ export class PayPalTenantConfigRepository {
       logger.error("Failed to fetch PayPal tenant config", {
         error: error instanceof Error ? error.message : String(error),
       });
+
       return err(error instanceof Error ? error : new Error("Failed to fetch PayPal tenant config"));
     }
   }
@@ -60,6 +61,7 @@ export class PayPalTenantConfigRepository {
           soft_descriptor = EXCLUDED.soft_descriptor,
           updated_at = NOW()
       `;
+
       await this.pool.query(query, [args.saleorApiUrl, args.softDescriptor ?? null]);
 
       return ok(undefined);
@@ -67,6 +69,7 @@ export class PayPalTenantConfigRepository {
       logger.error("Failed to upsert PayPal tenant config", {
         error: error instanceof Error ? error.message : String(error),
       });
+
       return err(error instanceof Error ? error : new Error("Failed to upsert PayPal tenant config"));
     }
   }

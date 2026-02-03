@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import { createLogger } from "@/lib/logger";
 
 const logger = createLogger("RateLimiter");
@@ -95,6 +96,7 @@ export const RateLimitConfigs = {
 const getClientId = (request: NextRequest): string => {
   // Check for forwarded IP (common in proxied environments)
   const forwardedFor = request.headers.get("x-forwarded-for");
+
   if (forwardedFor) {
     // Take the first IP in the chain (original client)
     return forwardedFor.split(",")[0].trim();
@@ -102,6 +104,7 @@ const getClientId = (request: NextRequest): string => {
 
   // Check for real IP header (Cloudflare, nginx)
   const realIp = request.headers.get("x-real-ip");
+
   if (realIp) {
     return realIp;
   }
@@ -226,6 +229,7 @@ export const createRateLimitedHandler = (
 ) => {
   return async (request: NextRequest): Promise<NextResponse> => {
     const rateLimitResponse = withRateLimit(request, config);
+
     if (rateLimitResponse) {
       return rateLimitResponse;
     }
@@ -234,6 +238,7 @@ export const createRateLimitedHandler = (
 
     // Add rate limit headers to successful responses
     const result = checkRateLimit(request, config);
+
     Object.entries(result.headers).forEach(([key, value]) => {
       response.headers.set(key, value);
     });

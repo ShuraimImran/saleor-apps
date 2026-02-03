@@ -36,9 +36,16 @@ export const env = createEnv({
     VERCEL_GIT_COMMIT_SHA: z.string().optional(),
     APPSTORE_URL: z.string().optional(),
     APP_NAME: z.string().optional().default("PayPal"),
-    // IWT Debug Logging - logs full PayPal HTTP request/response for IWT submission
-    // WARNING: Enable only for IWT capture, disable in production (PCI compliance)
+    /*
+     * IWT Debug Logging - logs full PayPal HTTP request/response for IWT submission
+     * WARNING: Enable only for IWT capture, disable in production (PCI compliance)
+     */
     PAYPAL_DEBUG_LOGGING: booleanSchema.optional().default("false"),
+    /*
+     * IWT Debug Log File - optional file path to write IWT debug logs (e.g., "/tmp/paypal-iwt.log")
+     * If not set, logs only go to console. If set, logs are appended to this file.
+     */
+    PAYPAL_DEBUG_LOG_FILE: z.string().optional(),
   },
   shared: {
     NODE_ENV: z.enum(["development", "production", "test"]).optional().default("development"),
@@ -71,6 +78,7 @@ export const env = createEnv({
     APPSTORE_URL: process.env.APPSTORE_URL,
     APP_NAME: process.env.APP_NAME,
     PAYPAL_DEBUG_LOGGING: process.env.PAYPAL_DEBUG_LOGGING,
+    PAYPAL_DEBUG_LOG_FILE: process.env.PAYPAL_DEBUG_LOG_FILE,
   },
   isServer: typeof window === "undefined" || process.env.NODE_ENV === "test",
   onValidationError(issues) {

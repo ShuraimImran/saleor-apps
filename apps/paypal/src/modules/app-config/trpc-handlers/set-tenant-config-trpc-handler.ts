@@ -10,7 +10,9 @@ import { protectedClientProcedure } from "@/modules/trpc/protected-client-proced
 const normalizeSoftDescriptor = (raw?: string) => {
   if (raw === undefined) return undefined;
   const trimmed = raw.trim();
+
   if (!trimmed) return undefined;
+
   return trimmed.slice(0, 22);
 };
 

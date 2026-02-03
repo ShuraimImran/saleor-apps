@@ -1,5 +1,6 @@
-import { Box, Text, Button, Input } from "@saleor/macaw-ui";
+import { Box, Button, Input,Text } from "@saleor/macaw-ui";
 import { useState } from "react";
+
 import { trpcClient } from "@/modules/trpc/trpc-client";
 
 interface ApplePayDomainsSectionProps {
@@ -62,14 +63,17 @@ export const ApplePayDomainsSection = ({
   const handleRegisterDomain = () => {
     if (!newDomain.trim()) {
       setError("Please enter a domain name");
+
       return;
     }
 
     // Basic domain validation
     const domainRegex =
       /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?(\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?)*$/;
+
     if (!domainRegex.test(newDomain.trim())) {
       setError("Invalid domain name format. Example: example.com or subdomain.example.com");
+
       return;
     }
 

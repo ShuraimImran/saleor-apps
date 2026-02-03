@@ -1,9 +1,10 @@
 import { AuthData } from "@saleor/app-sdk/APL";
 import { SettingsManager } from "@saleor/app-sdk/settings-manager";
 import { createGraphQLClient } from "@saleor/apps-shared/create-graphql-client";
-import { Result, ok, err } from "neverthrow";
+import { err,ok, Result } from "neverthrow";
 
 import { createSettingsManager } from "@/lib/metadata-manager";
+
 import { PayPalConfig } from "./paypal-config";
 
 export class PayPalMetadataManager {
@@ -65,6 +66,7 @@ export class PayPalMetadataManager {
   async delete(): Promise<Result<void, Error>> {
     try {
       await this.settingsManager.delete(this.metadataKey);
+
       return ok(undefined);
     } catch (error) {
       return err(error instanceof Error ? error : new Error('Failed to delete PayPal config'));

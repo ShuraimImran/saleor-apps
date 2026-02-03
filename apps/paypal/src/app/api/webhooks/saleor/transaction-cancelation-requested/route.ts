@@ -14,8 +14,8 @@ import { loggerContext, withLoggerContext } from "@/lib/logger-context";
 import { setObservabilitySaleorApiUrl } from "@/lib/observability-saleor-api-url";
 import { setObservabilitySourceObjectId } from "@/lib/observability-source-object-id";
 import { paypalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
-import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { PayPalOrdersApiFactory } from "@/modules/paypal/paypal-orders-api-factory";
+import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 
 import { withRecipientVerification } from "../with-recipient-verification";
 import { TransactionCancelationRequestedUseCase } from "./use-case";

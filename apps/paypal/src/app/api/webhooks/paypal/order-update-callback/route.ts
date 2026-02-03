@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import { createLogger } from "@/lib/logger";
 
 const logger = createLogger("PayPalOrderUpdateCallback");
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest) {
 
     if (!eventType || !resource) {
       logger.warn("Invalid callback payload - missing event_type or resource");
+
       return NextResponse.json(
         { error: "Invalid payload" },
         { status: 400 }
@@ -43,51 +45,57 @@ export async function POST(request: NextRequest) {
     // Handle different event types
     switch (eventType) {
       case "CHECKOUT.ORDER.APPROVED": {
-        // This is sent when callback_configuration is configured
-        // and buyer changes shipping address or other info
+        /*
+         * This is sent when callback_configuration is configured
+         * and buyer changes shipping address or other info
+         */
         const shippingAddress = resource.purchase_units?.[0]?.shipping?.address;
 
         if (shippingAddress) {
           logger.debug("Shipping address from callback", { shippingAddress });
 
-          // TODO: Implement shipping calculation logic
-          // For now, accept all changes
-          // In production, you would:
-          // 1. Validate the shipping address
-          // 2. Calculate shipping costs for the new address
-          // 3. Return shipping options or reject if you don't ship there
+          /*
+           * TODO: Implement shipping calculation logic
+           * For now, accept all changes
+           * In production, you would:
+           * 1. Validate the shipping address
+           * 2. Calculate shipping costs for the new address
+           * 3. Return shipping options or reject if you don't ship there
+           */
 
-          // Example response with shipping options:
-          // return NextResponse.json({
-          //   purchase_units: [{
-          //     amount: {
-          //       currency_code: "USD",
-          //       value: "110.00",
-          //       breakdown: {
-          //         item_total: { currency_code: "USD", value: "100.00" },
-          //         shipping: { currency_code: "USD", value: "10.00" },
-          //       }
-          //     },
-          //     shipping: {
-          //       options: [
-          //         {
-          //           id: "STANDARD",
-          //           label: "Standard Shipping",
-          //           amount: { currency_code: "USD", value: "5.00" },
-          //           selected: true,
-          //           type: "SHIPPING"
-          //         },
-          //         {
-          //           id: "EXPRESS",
-          //           label: "Express Shipping",
-          //           amount: { currency_code: "USD", value: "10.00" },
-          //           selected: false,
-          //           type: "SHIPPING"
-          //         }
-          //       ]
-          //     }
-          //   }]
-          // }, { status: 200 });
+          /*
+           * Example response with shipping options:
+           * return NextResponse.json({
+           *   purchase_units: [{
+           *     amount: {
+           *       currency_code: "USD",
+           *       value: "110.00",
+           *       breakdown: {
+           *         item_total: { currency_code: "USD", value: "100.00" },
+           *         shipping: { currency_code: "USD", value: "10.00" },
+           *       }
+           *     },
+           *     shipping: {
+           *       options: [
+           *         {
+           *           id: "STANDARD",
+           *           label: "Standard Shipping",
+           *           amount: { currency_code: "USD", value: "5.00" },
+           *           selected: true,
+           *           type: "SHIPPING"
+           *         },
+           *         {
+           *           id: "EXPRESS",
+           *           label: "Express Shipping",
+           *           amount: { currency_code: "USD", value: "10.00" },
+           *           selected: false,
+           *           type: "SHIPPING"
+           *         }
+           *       ]
+           *     }
+           *   }]
+           * }, { status: 200 });
+           */
         }
 
         // Accept changes without modifications
@@ -102,14 +110,17 @@ export async function POST(request: NextRequest) {
 
         logger.debug("Shipping option selected", { selectedShippingOption });
 
-        // TODO: Recalculate order total based on selected shipping option
-        // Return updated order with new totals
+        /*
+         * TODO: Recalculate order total based on selected shipping option
+         * Return updated order with new totals
+         */
 
         return NextResponse.json({}, { status: 200 });
       }
 
       default:
         logger.warn("Unhandled event type", { eventType });
+
         return NextResponse.json({}, { status: 200 });
     }
   } catch (error) {

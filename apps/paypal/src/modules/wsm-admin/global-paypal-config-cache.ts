@@ -1,5 +1,6 @@
-import { GlobalPayPalConfig } from "./global-paypal-config";
 import { createLogger } from "@/lib/logger";
+
+import { GlobalPayPalConfig } from "./global-paypal-config";
 
 const logger = createLogger("GlobalPayPalConfigCache");
 
@@ -18,6 +19,7 @@ class GlobalPayPalConfigCache {
   get(): GlobalPayPalConfig | null {
     if (!this.cache || !this.cacheTimestamp) {
       logger.debug("Cache miss: no cached config");
+
       return null;
     }
 
@@ -30,6 +32,7 @@ class GlobalPayPalConfigCache {
         ttl_ms: this.TTL_MS,
       });
       this.invalidate();
+
       return null;
     }
 
@@ -37,6 +40,7 @@ class GlobalPayPalConfigCache {
       age_ms: age,
       ttl_ms: this.TTL_MS,
     });
+
     return this.cache;
   }
 
@@ -71,6 +75,7 @@ class GlobalPayPalConfigCache {
     ttl: number;
   } {
     const age = this.cacheTimestamp ? Date.now() - this.cacheTimestamp : null;
+
     return {
       hasCachedConfig: !!this.cache,
       cacheAge: age,

@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+ 
 import { writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 

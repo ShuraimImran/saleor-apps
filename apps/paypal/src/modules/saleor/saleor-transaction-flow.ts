@@ -6,5 +6,6 @@ export const resolveSaleorTransactionFlow = (
   if (transactionFlow === "AUTHORIZATION") {
     return "AUTHORIZATION";
   }
+
   return "CHARGE";
 };

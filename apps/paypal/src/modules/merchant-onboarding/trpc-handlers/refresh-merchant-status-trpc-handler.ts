@@ -1,17 +1,19 @@
+import { createGraphQLClient } from "@saleor/apps-shared/create-graphql-client";
 import { captureException } from "@sentry/nextjs";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+
 import { getPool } from "@/lib/database";
-import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
-import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
+import { createSettingsManager } from "@/lib/metadata-manager";
+import { PayPalConfig } from "@/modules/app-config/domain/paypal-config";
+import { PayPalMultiConfigMetadataManager } from "@/modules/paypal/configuration/paypal-multi-config-metadata-manager";
 import { PayPalPartnerReferralsApiFactory } from "@/modules/paypal/partner-referrals/paypal-partner-referrals-api-factory";
 import { createPayPalMerchantId } from "@/modules/paypal/paypal-merchant-id";
-import { PostgresMerchantOnboardingRepository } from "../merchant-onboarding-repository";
+import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
+import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
-import { PayPalMultiConfigMetadataManager } from "@/modules/paypal/configuration/paypal-multi-config-metadata-manager";
-import { PayPalConfig } from "@/modules/app-config/domain/paypal-config";
-import { createSettingsManager } from "@/lib/metadata-manager";
-import { createGraphQLClient } from "@saleor/apps-shared/create-graphql-client";
+
+import { PostgresMerchantOnboardingRepository } from "../merchant-onboarding-repository";
 
 /**
  * tRPC Handler for refreshing merchant status from PayPal
@@ -50,6 +52,7 @@ export class RefreshMerchantStatusTrpcHandler {
         }
 
         const saleorApiUrl = createSaleorApiUrl(ctx.saleorApiUrl);
+
         if (saleorApiUrl.isErr()) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -113,12 +116,14 @@ export class RefreshMerchantStatusTrpcHandler {
 
           // Query seller status - use tracking_id if merchant hasn't completed onboarding yet
           let statusResult;
+
           if (!record.paypalMerchantId) {
             // Merchant hasn't completed onboarding - query by tracking_id
             statusResult = await referralsApi.getSellerStatusByTrackingId(input.trackingId);
           } else {
             // Merchant has completed onboarding - query by merchant_id
             const merchantId = createPayPalMerchantId(record.paypalMerchantId);
+
             statusResult = await referralsApi.getSellerStatus(merchantId);
           }
 
@@ -169,18 +174,23 @@ export class RefreshMerchantStatusTrpcHandler {
 
             // Advanced Card Processing requires CUSTOM_CARD_PROCESSING capability
             const cardProcessing = capabilities.find((c) => c.name === "CUSTOM_CARD_PROCESSING");
+
             if (cardProcessing?.status === "ACTIVE" && !cardProcessing.limits?.length) {
               readiness.advancedCardProcessing = true;
             }
 
-            // Apple Pay and Google Pay - check if capabilities are active
-            // No longer requires PAYMENT_METHODS product, just checks capability status
+            /*
+             * Apple Pay and Google Pay - check if capabilities are active
+             * No longer requires PAYMENT_METHODS product, just checks capability status
+             */
             const applePay = capabilities.find((c) => c.name === "APPLE_PAY");
+
             if (applePay?.status === "ACTIVE") {
               readiness.applePay = true;
             }
 
             const googlePay = capabilities.find((c) => c.name === "GOOGLE_PAY");
+
             if (googlePay?.status === "ACTIVE") {
               readiness.googlePay = true;
             }
@@ -240,6 +250,7 @@ export class RefreshMerchantStatusTrpcHandler {
 
           // Determine onboarding status
           let onboardingStatus = record.onboardingStatus;
+
           if (readiness.primaryEmailConfirmed && readiness.paymentsReceivable && readiness.oauthIntegrated) {
             onboardingStatus = "COMPLETED";
           } else {
@@ -279,13 +290,16 @@ export class RefreshMerchantStatusTrpcHandler {
 
                 // Get current configuration for this tenant
                 const configResult = await metadataManager.getAllConfigs();
+
                 if (configResult.isOk()) {
                   const configs = configResult.value;
 
-                  // Find or create the config for this merchant
-                  // For now, we'll update the first config or create a new one
-                  // TODO: In a multi-tenant setup, we should match by some tenant identifier
-                  let existingConfig = configs.length > 0 ? configs[0] : null;
+                  /*
+                   * Find or create the config for this merchant
+                   * For now, we'll update the first config or create a new one
+                   * TODO: In a multi-tenant setup, we should match by some tenant identifier
+                   */
+                  const existingConfig = configs.length > 0 ? configs[0] : null;
 
                   if (existingConfig) {
                     // Update existing config with merchant OAuth credentials

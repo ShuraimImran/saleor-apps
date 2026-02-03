@@ -1,12 +1,14 @@
 import { TRPCError } from "@trpc/server";
-import { publicProcedure } from "@/modules/trpc/public-procedure";
+import { z } from "zod";
+
 import { getPool } from "@/lib/database";
+import { env } from "@/lib/env";
+import { createLogger } from "@/lib/logger";
+import { PayPalWebhookManager } from "@/modules/paypal/paypal-webhook-manager";
+import { publicProcedure } from "@/modules/trpc/public-procedure";
+
 import { GlobalPayPalConfigRepository } from "../global-paypal-config-repository";
 import { setGlobalConfigInputSchema } from "./wsm-admin-input-schemas";
-import { PayPalWebhookManager } from "@/modules/paypal/paypal-webhook-manager";
-import { createLogger } from "@/lib/logger";
-import { env } from "@/lib/env";
-import { z } from "zod";
 
 const logger = createLogger("SetGlobalConfigHandler");
 
@@ -40,6 +42,7 @@ function getWebhookUrl(): string | null {
 
   if (!baseUrl) {
     logger.warn("APP_API_BASE_URL not configured, webhook registration will be skipped");
+
     return null;
   }
 

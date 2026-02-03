@@ -1,8 +1,10 @@
+import { err,ok, Result } from "neverthrow";
 import { Pool } from "pg";
-import { Result, ok, err } from "neverthrow";
+
+import { createLogger } from "@/lib/logger";
+
 import { GlobalPayPalConfig, PayPalEnvironment } from "./global-paypal-config";
 import { globalPayPalConfigCache } from "./global-paypal-config-cache";
-import { createLogger } from "@/lib/logger";
 
 const logger = createLogger("GlobalPayPalConfigRepository");
 
@@ -27,8 +29,10 @@ export class GlobalPayPalConfigRepository {
   async getActiveConfig(): Promise<Result<GlobalPayPalConfig | null, Error>> {
     // Check cache first
     const cachedConfig = globalPayPalConfigCache.get();
+
     if (cachedConfig !== null) {
       logger.debug("Returning cached global PayPal config");
+
       return ok(cachedConfig);
     }
 
@@ -55,6 +59,7 @@ export class GlobalPayPalConfigRepository {
       if (result.rows.length === 0) {
         // Cache the null result to avoid repeated DB queries
         globalPayPalConfigCache.set(null);
+
         return ok(null);
       }
 
@@ -88,6 +93,7 @@ export class GlobalPayPalConfigRepository {
         error: error instanceof Error ? error.message : String(error),
         query_time_ms: Date.now() - startTime,
       });
+
       return err(error instanceof Error ? error : new Error("Failed to get active config"));
     }
   }
@@ -165,6 +171,7 @@ export class GlobalPayPalConfigRepository {
       return ok(configResult.value);
     } catch (error) {
       await client.query("ROLLBACK");
+
       return err(error instanceof Error ? error : new Error("Failed to upsert config"));
     } finally {
       client.release();
@@ -198,6 +205,7 @@ export class GlobalPayPalConfigRepository {
 
       if (!response.ok) {
         const errorText = await response.text();
+
         return err(new Error(`PayPal API error: ${response.status} - ${errorText}`));
       }
 
@@ -242,6 +250,7 @@ export class GlobalPayPalConfigRepository {
       logger.error("Failed to update webhook info", {
         error: error instanceof Error ? error.message : String(error),
       });
+
       return err(error instanceof Error ? error : new Error("Failed to update webhook info"));
     }
   }
@@ -258,6 +267,7 @@ export class GlobalPayPalConfigRepository {
       `;
 
       const result = await this.pool.query(query);
+
       return ok(parseInt(result.rows[0].count, 10));
     } catch (error) {
       return err(error instanceof Error ? error : new Error("Failed to get tenants count"));

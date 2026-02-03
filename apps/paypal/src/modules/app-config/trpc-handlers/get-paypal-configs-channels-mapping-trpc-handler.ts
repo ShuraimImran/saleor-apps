@@ -5,9 +5,9 @@ import {
   PayPalFrontendConfig,
   PayPalFrontendConfigSerializedFields,
 } from "@/modules/app-config/domain/paypal-config";
+import { PayPalMultiConfigMetadataManager } from "@/modules/paypal/configuration/paypal-multi-config-metadata-manager";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
-import { PayPalMultiConfigMetadataManager } from "@/modules/paypal/configuration/paypal-multi-config-metadata-manager";
 
 // todo test
 export class GetPayPalConfigsChannelsMappingTrpcHandler {
@@ -43,6 +43,7 @@ export class GetPayPalConfigsChannelsMappingTrpcHandler {
         });
 
         const rootConfigResult = await metadataManager.getRootConfig();
+
         if (rootConfigResult.isErr()) {
           captureException(rootConfigResult.error);
           throw new TRPCError({
@@ -60,6 +61,7 @@ export class GetPayPalConfigsChannelsMappingTrpcHandler {
         
         Object.entries(channelConfigMapping).forEach(([channelId, configId]) => {
           const paypalConfig = paypalConfigsById[configId];
+
           if (paypalConfig) {
             result[channelId] = {
               id: paypalConfig.id,
