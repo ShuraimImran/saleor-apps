@@ -261,6 +261,19 @@ export const initializeDatabase = async (): Promise<void> => {
       FOR EACH ROW
       EXECUTE FUNCTION update_merchant_onboarding_timestamp();
 
+    -- PayPal Order to Saleor Checkout Mapping Table
+    -- Used by shipping callbacks to look up which Saleor checkout a PayPal order belongs to
+    CREATE TABLE IF NOT EXISTS paypal_order_checkout_mapping (
+      paypal_order_id TEXT PRIMARY KEY,
+      saleor_checkout_id TEXT NOT NULL,
+      saleor_api_url TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_order_checkout_mapping_created
+      ON paypal_order_checkout_mapping(created_at);
+
     -- PayPal Customer Vault Table
     -- Maps Saleor customers to PayPal vault customers for card vaulting
     CREATE TABLE IF NOT EXISTS paypal_customer_vault (

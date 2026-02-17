@@ -37,6 +37,7 @@ import {
 } from "@/modules/transaction-result/failure-result";
 import { ChargeSuccessResult } from "@/modules/transaction-result/success-result";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
+import { PostgresOrderCheckoutMappingRepository } from "@/modules/checkout-mapping/order-checkout-mapping-repository";
 
 import {
   TransactionInitializeSessionUseCaseResponses,
@@ -1184,6 +1185,31 @@ export class TransactionInitializeSessionUseCase {
     }
 
     const paypalOrder = createOrderResult.value;
+
+    // Save PayPal order -> Saleor checkout mapping for shipping callbacks
+    if (event.sourceObject.__typename === "Checkout") {
+      try {
+        const mappingRepo = PostgresOrderCheckoutMappingRepository.create(getPool());
+
+        await mappingRepo.save({
+          paypalOrderId: paypalOrder.id,
+          saleorCheckoutId: event.sourceObject.id,
+          saleorApiUrl: authData.saleorApiUrl,
+          channelId,
+        });
+
+        this.logger.debug("Saved order-checkout mapping for shipping callbacks", {
+          paypalOrderId: paypalOrder.id,
+          saleorCheckoutId: event.sourceObject.id,
+        });
+      } catch (mappingError) {
+        // Non-fatal: shipping callbacks will fail but checkout can still proceed
+        this.logger.warn("Failed to save order-checkout mapping", {
+          paypalOrderId: paypalOrder.id,
+          error: mappingError instanceof Error ? mappingError.message : String(mappingError),
+        });
+      }
+    }
 
     // Log the full PayPal order response
     this.logger.info("Successfully created PayPal order - Full Response", {
