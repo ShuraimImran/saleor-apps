@@ -37,7 +37,6 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
   async createOrder(args: {
     amount: PayPalMoney;
     intent: "CAPTURE" | "AUTHORIZE";
-    payeeMerchantId?: string;
     metadata?: Record<string, string>;
     items?: Array<{
       name: string;
@@ -281,13 +280,6 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
         shipping: args.shipping,
       }),
     };
-
-    // Add merchant payee if provided (required for platform fees)
-    if (args.payeeMerchantId) {
-      purchaseUnit.payee = {
-        merchant_id: args.payeeMerchantId,
-      };
-    }
 
     /*
      * Add platform fees if provided

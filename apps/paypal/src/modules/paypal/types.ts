@@ -120,7 +120,6 @@ export interface IPayPalOrdersApi {
   createOrder(args: {
     amount: PayPalMoney;
     intent: "CAPTURE" | "AUTHORIZE";
-    payeeMerchantId?: string;
     metadata?: Record<string, string>;
     items?: PayPalOrderItem[];
     amountBreakdown?: {

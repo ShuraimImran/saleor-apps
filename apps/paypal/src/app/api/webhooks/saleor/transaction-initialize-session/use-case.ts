@@ -620,7 +620,6 @@ export class TransactionInitializeSessionUseCase {
       amount: paypalMoney,
       itemsCount: paypalItems.length,
       hasPlatformFees: !!platformFees,
-      payeeMerchantId: config.merchantId,
       transactionId: event.transaction.id,
     });
 
@@ -680,11 +679,7 @@ export class TransactionInitializeSessionUseCase {
     const experienceContext = {
       brand_name: env.APP_NAME || "Store",
       user_action: "PAY_NOW" as const, // Show "Pay Now" instead of "Continue"
-      shipping_preference: digitalGoodsOnly
-        ? ("NO_SHIPPING" as const)
-        : shipping
-          ? ("SET_PROVIDED_ADDRESS" as const)
-          : ("GET_FROM_FILE" as const),
+      shipping_preference: "SET_PROVIDED_ADDRESS" as const,
     };
 
     /*
@@ -1021,7 +1016,7 @@ export class TransactionInitializeSessionUseCase {
           /*
            * Apple Pay vaulting (save-during-purchase):
            * Apple Pay orders are created WITHOUT payment_source — the token is
-           * attached later by the frontend via paypal.Applepay().confirmOrder().
+           * attached later by the frontend via paypal.Applepay().confirmOrder(). // cspell:ignore Applepay
            * Vault attributes cannot be included at order creation time.
            * NOTE: PayPal currently supports Apple Pay one-time payments with payer present only.
            * Apple Pay save-during-purchase vaulting may require Setup Tokens API in the future.
@@ -1099,7 +1094,7 @@ export class TransactionInitializeSessionUseCase {
            * Apple Pay new payment (one-time or save-during-purchase):
            * Do NOT include payment_source in order creation.
            * The Apple Pay token doesn't exist until the user authorizes on the Apple Pay sheet.
-           * Frontend attaches the token via paypal.Applepay().confirmOrder() after order creation.
+           * Frontend attaches the token via paypal.Applepay().confirmOrder() after order creation. // cspell:ignore Applepay
            * See: https://developer.paypal.com/docs/multiparty/checkout/apm/apple-pay/
            */
           paymentSource = undefined;
@@ -1128,7 +1123,6 @@ export class TransactionInitializeSessionUseCase {
     const createOrderResult = await paypalOrdersApi.createOrder({
       amount: paypalMoney,
       intent,
-      payeeMerchantId: config.merchantId || undefined,
       items: paypalItems.length > 0 ? paypalItems : undefined,
       amountBreakdown: paypalItems.length > 0 ? {
         itemTotal: breakdown.subtotal,
