@@ -749,37 +749,11 @@ export class TransactionInitializeSessionUseCase {
           usage: "FIRST" | "SUBSEQUENT" | "DERIVED";
         };
       };
-    } | undefined = env.APP_API_BASE_URL
-      ? {
-          paypal: {
-            experience_context: {
-              ...experienceContext,
-              /*
-               * IWT Requirement: Enable app switch for mobile checkout
-               * When true, allows PayPal to switch to the native PayPal app if installed
-               */
-              app_switch_preference: true,
-              callback_configuration: {
-                callback_url: `${env.APP_API_BASE_URL}/api/webhooks/paypal/order-update-callback`,
-                callback_events: [
-                  "SHIPPING_CHANGE",
-                  "SHIPPING_OPTIONS_CHANGE",
-                  "BILLING_ADDRESS_CHANGE",
-                  "PHONE_NUMBER_CHANGE",
-                ] as Array<"SHIPPING_CHANGE" | "SHIPPING_OPTIONS_CHANGE" | "BILLING_ADDRESS_CHANGE" | "PHONE_NUMBER_CHANGE">,
-              },
-            },
-          },
-        }
-      : {
-          // Even without callback URL, set app_switch_preference for IWT compliance
-          paypal: {
-            experience_context: {
-              ...experienceContext,
-              app_switch_preference: true,
-            },
-          },
-        };
+    } | undefined = {
+      paypal: {
+        experience_context: experienceContext,
+      },
+    };
 
     /*
      * ========================================
