@@ -34,12 +34,18 @@ const logger = createLogger("PayPalOrderUpdateCallback");
  * @see https://developer.paypal.com/docs/checkout/advanced/customize/shipping-callback/
  */
 export async function POST(request: NextRequest) {
+  logger.info("=== PAYPAL CALLBACK RECEIVED ===", {
+    timestamp: new Date().toISOString(),
+    headers: Object.fromEntries(request.headers.entries()),
+  });
+
   try {
     const body = await request.json();
 
     logger.info("Received PayPal order update callback", {
       eventType: body.event_type,
       orderId: body.resource?.id,
+      fullBody: JSON.stringify(body, null, 2),
     });
 
     const resource = body.resource;

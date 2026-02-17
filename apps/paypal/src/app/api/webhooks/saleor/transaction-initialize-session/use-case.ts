@@ -249,23 +249,33 @@ const normalizeSoftDescriptor = (raw?: string | null) => {
  * Helper function to extract shipping address from Saleor source object
  * Maps Saleor address format to PayPal address format
  */
+type PayPalShippingInfo = {
+  name?: { full_name?: string };
+  address?: {
+    address_line_1?: string;
+    address_line_2?: string;
+    admin_area_2?: string;
+    admin_area_1?: string;
+    postal_code?: string;
+    country_code?: string;
+  };
+  email_address?: string;
+  phone_number?: { national_number?: string };
+  options?: Array<{
+    id: string;
+    label: string;
+    selected: boolean;
+    type: "SHIPPING" | "PICKUP";
+    amount: {
+      currency_code: string;
+      value: string;
+    };
+  }>;
+};
+
 function extractShippingAddress(
   sourceObject: TransactionInitializeSessionEventFragment["sourceObject"]
-):
-  | {
-      name?: { full_name?: string };
-      address?: {
-        address_line_1?: string;
-        address_line_2?: string;
-        admin_area_2?: string;
-        admin_area_1?: string;
-        postal_code?: string;
-        country_code?: string;
-      };
-      email_address?: string;
-      phone_number?: { national_number?: string };
-    }
-  | undefined {
+): PayPalShippingInfo | undefined {
   const shippingAddress =
     sourceObject.__typename === "Checkout" || sourceObject.__typename === "Order"
       ? sourceObject.shippingAddress
@@ -677,15 +687,16 @@ export class TransactionInitializeSessionUseCase {
      * Build experience context for PayPal checkout flow
      * This controls the PayPal checkout experience (branding, return URLs, etc.)
      * IWT Requirement: Digital goods should specify NO_SHIPPING
+     * 
+     * Note: When using shipping options with callbacks, use GET_FROM_FILE
+     * to allow PayPal to manage shipping address selection and trigger callbacks
      */
     const experienceContext = {
       brand_name: env.APP_NAME || "Store",
-      user_action: "PAY_NOW" as const, // Show "Pay Now" instead of "Continue"
+      user_action: "PAY_NOW" as const,
       shipping_preference: digitalGoodsOnly
         ? ("NO_SHIPPING" as const)
-        : shipping
-          ? ("SET_PROVIDED_ADDRESS" as const)
-          : ("GET_FROM_FILE" as const),
+        : ("GET_FROM_FILE" as const),
     };
 
     /*
@@ -760,20 +771,6 @@ export class TransactionInitializeSessionUseCase {
           paypal: {
             experience_context: {
               ...experienceContext,
-              /*
-               * IWT Requirement: Enable app switch for mobile checkout
-               * When true, allows PayPal to switch to the native PayPal app if installed
-               */
-              app_switch_preference: true,
-              callback_configuration: {
-                callback_url: `${env.APP_API_BASE_URL}/api/webhooks/paypal/order-update-callback`,
-                callback_events: [
-                  "SHIPPING_CHANGE",
-                  "SHIPPING_OPTIONS_CHANGE",
-                  "BILLING_ADDRESS_CHANGE",
-                  "PHONE_NUMBER_CHANGE",
-                ] as Array<"SHIPPING_CHANGE" | "SHIPPING_OPTIONS_CHANGE" | "BILLING_ADDRESS_CHANGE" | "PHONE_NUMBER_CHANGE">,
-              },
             },
           },
         }
@@ -787,6 +784,13 @@ export class TransactionInitializeSessionUseCase {
           },
         };
 
+    this.logger.info("Payment source configuration", {
+      hasAppApiBaseUrl: !!env.APP_API_BASE_URL,
+      appApiBaseUrl: env.APP_API_BASE_URL,
+      hasPaymentSource: !!paymentSource,
+      paymentSource: JSON.stringify(paymentSource, null, 2),
+    });
+
     /*
      * ========================================
      * Payment Method Vaulting
@@ -798,8 +802,8 @@ export class TransactionInitializeSessionUseCase {
     const vaultingData = parseVaultingData((event as any).data);
     let vaultCustomerId: string | undefined;
 
-    // Default to "card" for backward compatibility with Phase 1
-    const paymentMethodType = vaultingData.paymentMethodType || "card";
+    // Default to "paypal" for regular PayPal payments (no vaulting)
+    const paymentMethodType = vaultingData.paymentMethodType || "paypal";
 
     this.logger.debug("Vaulting data from event", {
       paymentMethodType,
@@ -1124,6 +1128,66 @@ export class TransactionInitializeSessionUseCase {
       }
     }
 
+    // Extract and map shipping methods to PayPal format
+    let shippingWithOptions = shipping;
+    
+    this.logger.debug("Full sourceObject data", {
+      sourceObject: JSON.stringify(event.sourceObject, null, 2),
+    });
+    
+    this.logger.debug("Checking for shipping methods", {
+      sourceType: event.sourceObject.__typename,
+      hasShippingMethods: "shippingMethods" in event.sourceObject,
+      hasIsShippingRequired: "isShippingRequired" in event.sourceObject,
+      isShippingRequired: "isShippingRequired" in event.sourceObject ? (event.sourceObject as any).isShippingRequired : undefined,
+      shippingMethodsCount: "shippingMethods" in event.sourceObject ? (event.sourceObject as any).shippingMethods?.length : 0,
+    });
+
+    if (
+      event.sourceObject.__typename === "Checkout" &&
+      "shippingMethods" in event.sourceObject &&
+      "isShippingRequired" in event.sourceObject &&
+      event.sourceObject.isShippingRequired &&
+      event.sourceObject.shippingMethods &&
+      event.sourceObject.shippingMethods.length > 0
+    ) {
+      const { mapSaleorShippingToPayPal } = await import("@/modules/paypal/address-mapper");
+      
+      // Get currently selected delivery method from Saleor
+      const selectedDeliveryMethodId = "deliveryMethod" in event.sourceObject && 
+        event.sourceObject.deliveryMethod?.id
+        ? event.sourceObject.deliveryMethod.id
+        : null;
+      
+      this.logger.debug("Delivery method detection", {
+        hasDeliveryMethod: "deliveryMethod" in event.sourceObject,
+        deliveryMethod: event.sourceObject.deliveryMethod,
+        selectedDeliveryMethodId,
+      });
+      
+      const paypalShippingOptions = mapSaleorShippingToPayPal(
+        event.sourceObject.shippingMethods,
+        paypalMoney.currency_code,
+      ).map((option) => ({
+        ...option,
+        // Mark the currently selected method in Saleor as selected, or cheapest if none selected
+        selected: selectedDeliveryMethodId ? option.id === selectedDeliveryMethodId : option.selected,
+      }));
+      
+      shippingWithOptions = {
+        ...shipping,
+        options: paypalShippingOptions,
+      };
+
+      this.logger.info("Including initial shipping options in PayPal order", {
+        optionsCount: paypalShippingOptions.length,
+        selectedId: paypalShippingOptions.find(o => o.selected)?.id,
+        saleorSelectedId: selectedDeliveryMethodId,
+      });
+    } else {
+      this.logger.debug("Skipping shipping options - conditions not met");
+    }
+
     // Create PayPal order
     const createOrderStart = Date.now();
     const createOrderResult = await paypalOrdersApi.createOrder({
@@ -1145,9 +1209,14 @@ export class TransactionInitializeSessionUseCase {
       },
       // PayPal certification-required parameters
       payer,
-      shipping,
+      shipping: shippingWithOptions,
       softDescriptor,
       paymentSource,
+      // Order update callback for shipping changes
+      orderUpdateCallbackConfig: env.APP_API_BASE_URL ? {
+        callback_url: `${env.APP_API_BASE_URL}/api/webhooks/paypal/order-update-callback`,
+        callback_events: ["ShippingAddress", "ShippingOptions"],
+      } : undefined,
       // ACDC Card Vaulting - customer ID for "Save During Purchase" flow
       vaultCustomerId,
       // Idempotency key - prevents duplicate transactions on network retry

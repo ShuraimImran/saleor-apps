@@ -90,6 +90,16 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
       phone_number?: {
         national_number?: string;
       };
+      options?: Array<{
+        id: string;
+        label: string;
+        selected: boolean;
+        type: "SHIPPING" | "PICKUP";
+        amount: {
+          currency_code: string;
+          value: string;
+        };
+      }>;
     };
     experienceContext?: {
       brand_name?: string;
@@ -211,6 +221,11 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
     vaultCustomerId?: string;
     // Idempotency key - prevents duplicate transactions on network retry
     requestId?: string;
+    // Order update callback configuration for shipping changes
+    orderUpdateCallbackConfig?: {
+      callback_url: string;
+      callback_events: Array<"SHIPPING_ADDRESS" | "SHIPPING_OPTIONS">;
+    };
   }): Promise<Result<PayPalOrder, unknown>> {
     /*
      * Build amount object with breakdown if items are provided
@@ -348,6 +363,14 @@ export class PayPalOrdersApi implements IPayPalOrdersApi {
         verification: {
           method: "SCA_WHEN_REQUIRED",
         },
+      };
+    }
+
+    // Add order update callback configuration if provided
+    if (args.orderUpdateCallbackConfig) {
+      requestBody.order_update_callback_config = {
+        callback_url: args.orderUpdateCallbackConfig.callback_url,
+        callback_events: args.orderUpdateCallbackConfig.callback_events,
       };
     }
 

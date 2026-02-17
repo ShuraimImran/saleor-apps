@@ -6,6 +6,27 @@ fragment SourceObject on OrderOrCheckout {
       ...Channel
     }
     email
+    isShippingRequired
+    shippingMethods {
+      id
+      name
+      price {
+        amount
+        currency
+      }
+      minimumDeliveryDays
+      maximumDeliveryDays
+    }
+    deliveryMethod {
+      ... on ShippingMethod {
+        id
+        name
+        price {
+          amount
+          currency
+        }
+      }
+    }
     shippingAddress {
       firstName
       lastName

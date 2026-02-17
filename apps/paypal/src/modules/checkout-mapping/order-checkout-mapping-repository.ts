@@ -24,7 +24,11 @@ export interface IOrderCheckoutMappingRepository {
 }
 
 export class PostgresOrderCheckoutMappingRepository implements IOrderCheckoutMappingRepository {
-  private constructor(private readonly pool: Pool) {}
+  private pool: Pool;
+
+  private constructor(pool: Pool) {
+    this.pool = pool;
+  }
 
   static create(pool: Pool): PostgresOrderCheckoutMappingRepository {
     return new PostgresOrderCheckoutMappingRepository(pool);
