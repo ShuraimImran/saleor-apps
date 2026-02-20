@@ -14,11 +14,7 @@ export const AppHeader = ({ ...props }: BoxProps) => {
         PayPal Payment Configuration
       </Text>
       <Text size={3} color="default2">
-        Configure your PayPal integration to start accepting payments. Read the{" "}
-        <TextLink href="https://docs.saleor.io/developer/app-store/apps/paypal/overview" newTab>
-          documentation
-        </TextLink>{" "}
-        to learn more about setup and features.
+        Configure your PayPal integration to start accepting payments.
       </Text>
       <Box>{props.children}</Box>
     </Box>
