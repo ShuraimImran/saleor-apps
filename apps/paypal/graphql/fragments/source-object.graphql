@@ -242,7 +242,7 @@ fragment SourceObject on OrderOrCheckout {
       thumbnail {
         url
       }
-      variant {
+      orderVariant: variant {
         product {
           images {
             url

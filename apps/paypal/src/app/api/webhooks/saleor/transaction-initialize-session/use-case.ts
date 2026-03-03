@@ -162,7 +162,7 @@ function extractPayPalItemsFromSource(
       const unitAmount = line.unitPrice.net?.amount ?? line.unitPrice.gross.amount;
 
       // Get first image from images array, fallback to thumbnail, strip trailing slash
-      const rawImageUrl = (line as any).variant?.product?.images?.[0]?.url || line.thumbnail?.url;
+      const rawImageUrl = (line as any).orderVariant?.product?.images?.[0]?.url || line.thumbnail?.url;
       const imageUrl = rawImageUrl?.replace(/\/$/, '') || undefined;
 
       items.push({
