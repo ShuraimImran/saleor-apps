@@ -134,6 +134,10 @@ function extractPayPalItemsFromSource(
       // Use NET unit price (without tax) to match the item_total breakdown
       const unitAmount = line.unitPrice.net?.amount ?? line.unitPrice.gross.amount;
 
+      // Get first image from images array, fallback to thumbnail, strip trailing slash
+      const rawImageUrl = line.variant.product?.images?.[0]?.url || line.variant.product?.thumbnail?.url;
+      const imageUrl = rawImageUrl?.replace(/\/$/, '') || undefined;
+
       items.push({
         name: fullName.substring(0, 127), // PayPal max 127 chars
         quantity: String(line.quantity),
@@ -142,7 +146,7 @@ function extractPayPalItemsFromSource(
           amount: unitAmount,
         }),
         sku: line.variant.sku || undefined,
-        image_url: line.variant.product?.thumbnail?.url || undefined,
+        image_url: imageUrl,
         category: isDigital ? "DIGITAL_GOODS" : "PHYSICAL_GOODS",
       });
     }
@@ -157,6 +161,10 @@ function extractPayPalItemsFromSource(
       // Use NET unit price (without tax) to match the item_total breakdown
       const unitAmount = line.unitPrice.net?.amount ?? line.unitPrice.gross.amount;
 
+      // Get first image from images array, fallback to thumbnail, strip trailing slash
+      const rawImageUrl = (line as any).variant?.product?.images?.[0]?.url || line.thumbnail?.url;
+      const imageUrl = rawImageUrl?.replace(/\/$/, '') || undefined;
+
       items.push({
         name: fullName.substring(0, 127), // PayPal max 127 chars
         quantity: String(line.quantity),
@@ -165,7 +173,7 @@ function extractPayPalItemsFromSource(
           amount: unitAmount,
         }),
         sku: line.productSku || undefined,
-        image_url: line.thumbnail?.url || undefined,
+        image_url: imageUrl,
         category: isDigital ? "DIGITAL_GOODS" : "PHYSICAL_GOODS",
       });
     }

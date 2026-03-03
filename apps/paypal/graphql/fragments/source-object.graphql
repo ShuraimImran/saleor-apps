@@ -91,6 +91,9 @@ fragment SourceObject on OrderOrCheckout {
           thumbnail {
             url
           }
+          images {
+            url
+          }
         }
       }
       totalPrice {
@@ -238,6 +241,13 @@ fragment SourceObject on OrderOrCheckout {
       }
       thumbnail {
         url
+      }
+      variant {
+        product {
+          images {
+            url
+          }
+        }
       }
     }
   }
