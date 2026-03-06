@@ -136,7 +136,9 @@ function extractPayPalItemsFromSource(
 
       // Get first image from images array, fallback to thumbnail, strip trailing slash
       const rawImageUrl = line.variant.product?.images?.[0]?.url || line.variant.product?.thumbnail?.url;
-      const imageUrl = rawImageUrl?.replace(/\/$/, '') || undefined;
+      const imageUrl = rawImageUrl?.replace(/\/$/, '');
+      // Only include image_url if it has a valid extension (PayPal requirement)
+      const hasValidExtension = imageUrl && /\.(jpg|jpeg|png|gif)$/i.test(imageUrl);
 
       items.push({
         name: fullName.substring(0, 127), // PayPal max 127 chars
@@ -146,7 +148,7 @@ function extractPayPalItemsFromSource(
           amount: unitAmount,
         }),
         sku: line.variant.sku || undefined,
-        image_url: imageUrl,
+        image_url: hasValidExtension ? imageUrl : undefined,
         category: isDigital ? "DIGITAL_GOODS" : "PHYSICAL_GOODS",
       });
     }
@@ -163,7 +165,9 @@ function extractPayPalItemsFromSource(
 
       // Get first image from images array, fallback to thumbnail, strip trailing slash
       const rawImageUrl = (line as any).orderVariant?.product?.images?.[0]?.url || line.thumbnail?.url;
-      const imageUrl = rawImageUrl?.replace(/\/$/, '') || undefined;
+      const imageUrl = rawImageUrl?.replace(/\/$/, '');
+      // Only include image_url if it has a valid extension (PayPal requirement)
+      const hasValidExtension = imageUrl && /\.(jpg|jpeg|png|gif)$/i.test(imageUrl);
 
       items.push({
         name: fullName.substring(0, 127), // PayPal max 127 chars
@@ -173,7 +177,7 @@ function extractPayPalItemsFromSource(
           amount: unitAmount,
         }),
         sku: line.productSku || undefined,
-        image_url: imageUrl,
+        image_url: hasValidExtension ? imageUrl : undefined,
         category: isDigital ? "DIGITAL_GOODS" : "PHYSICAL_GOODS",
       });
     }
