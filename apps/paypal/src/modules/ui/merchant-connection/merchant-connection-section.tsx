@@ -6,10 +6,30 @@ import { trpcClient } from "@/modules/trpc/trpc-client";
 
 import { ApplePayDomainsSection } from "./apple-pay-domains-section";
 
+type PayPalEnvironment = "SANDBOX" | "LIVE";
+
 export const MerchantConnectionSection = () => {
   const { appBridge, appBridgeState } = useAppBridge();
   const [error, setError] = useState<string | null>(null);
   const [merchantEmail, setMerchantEmail] = useState<string>("");
+  const [environment, setEnvironment] = useState<PayPalEnvironment>("SANDBOX");
+
+  // Load tenant config to get current environment
+  const tenantConfig = trpcClient.appConfig.getTenantConfig.useQuery(undefined, { retry: false });
+  const tenantConfigUpdate = trpcClient.appConfig.setTenantConfig.useMutation({
+    onSuccess: () => {
+      tenantConfig.refetch();
+    },
+    onError: (err: any) => {
+      setError(`Failed to update environment: ${err.message}`);
+    },
+  });
+
+  useEffect(() => {
+    if (tenantConfig.data) {
+      setEnvironment((tenantConfig.data.environment as PayPalEnvironment) ?? "SANDBOX");
+    }
+  }, [tenantConfig.data]);
 
   // Set default email from app bridge user
   useEffect(() => {
@@ -198,7 +218,63 @@ export const MerchantConnectionSection = () => {
     deleteMerchant({ trackingId });
   };
 
+  const handleEnvironmentChange = (newEnv: PayPalEnvironment) => {
+    setEnvironment(newEnv);
+    tenantConfigUpdate.mutate({
+      softDescriptor: tenantConfig.data?.softDescriptor,
+      environment: newEnv,
+    });
+  };
+
   const isLoading = isLoadingStatus || isCreatingReferral || isRefreshing || isDeleting;
+
+  const environmentToggle = (
+    <Box
+      padding={4}
+      borderRadius={4}
+      borderWidth={1}
+      borderColor={environment === "LIVE" ? "success1" : "default1"}
+      __backgroundColor={environment === "LIVE" ? "#F0FDF4" : "#FAFAFA"}
+      marginBottom={2}
+    >
+      <Text size={3} fontWeight="medium" marginBottom={2}>
+        PayPal Environment
+      </Text>
+      <Box display="flex" gap={2} alignItems="center">
+        <Button
+          size="small"
+          variant={environment === "SANDBOX" ? "primary" : "secondary"}
+          onClick={() => handleEnvironmentChange("SANDBOX")}
+          disabled={isLoading || tenantConfigUpdate.isLoading}
+        >
+          Sandbox
+        </Button>
+        <Button
+          size="small"
+          variant={environment === "LIVE" ? "primary" : "secondary"}
+          onClick={() => handleEnvironmentChange("LIVE")}
+          disabled={isLoading || tenantConfigUpdate.isLoading}
+        >
+          Live
+        </Button>
+        <Box
+          paddingX={2}
+          paddingY={1}
+          borderRadius={4}
+          __backgroundColor={environment === "LIVE" ? "#D1FAE5" : "#FEF3C7"}
+        >
+          <Text size={2} fontWeight="medium">
+            {environment === "LIVE" ? "Production" : "Test Mode"}
+          </Text>
+        </Box>
+      </Box>
+      <Text size={2} color="default2" marginTop={2}>
+        {environment === "LIVE"
+          ? "Merchants will onboard with real PayPal accounts and process real payments."
+          : "Merchants will onboard with PayPal sandbox accounts for testing."}
+      </Text>
+    </Box>
+  );
 
   if (!merchantStatus) {
     // Not connected state
@@ -213,10 +289,12 @@ export const MerchantConnectionSection = () => {
             __backgroundColor="#FEF2F2"
           >
             <Text color="critical1" fontWeight="medium">
-              ⚠️ {error}
+              {error}
             </Text>
           </Box>
         )}
+
+        {environmentToggle}
 
         <Box
           padding={6}
@@ -287,10 +365,12 @@ export const MerchantConnectionSection = () => {
           __backgroundColor="#FEF2F2"
         >
           <Text color="critical1" fontWeight="medium">
-            ⚠️ {error}
+            {error}
           </Text>
         </Box>
       )}
+
+      {environmentToggle}
 
       <Box
         padding={6}
