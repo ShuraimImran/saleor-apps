@@ -59,6 +59,7 @@ async function main() {
     console.log("   • wsm_global_paypal_config.bn_code");
     console.log("   • wsm_global_paypal_config.webhook_id");
     console.log("   • wsm_global_paypal_config.webhook_url");
+    console.log("   • paypal_tenant_config.environment (SANDBOX/LIVE)");
     console.log("   • paypal_merchant_onboarding.merchant_client_id");
     console.log("   • paypal_merchant_onboarding.merchant_oauth_email");
     console.log("\nIndexes created:");
@@ -66,7 +67,8 @@ async function main() {
     console.log("   • idx_saleor_app_configuration_app_name");
     console.log("   • idx_saleor_app_configuration_is_active");
     console.log("   • idx_paypal_tenant_config_saleor_url");
-    console.log("   • idx_wsm_global_config_active");
+    console.log("   • idx_wsm_global_config_unique_env (one config per environment)");
+    console.log("   • idx_wsm_global_config_environment");
     console.log("   • idx_merchant_onboarding_saleor_url");
     console.log("   • idx_merchant_onboarding_tracking_id");
     console.log("   • idx_merchant_onboarding_merchant_id");

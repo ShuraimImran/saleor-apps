@@ -32,7 +32,9 @@ export default {
   ],
   words: [
     "Chargeback",
+    "Chargebacks",
     "chargeback",
+    "chargebacks",
     "CHARGEBACK",
     "atobarai",
     "avalara",

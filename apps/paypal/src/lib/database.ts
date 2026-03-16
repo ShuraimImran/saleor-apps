@@ -98,6 +98,7 @@ export const initializeDatabase = async (): Promise<void> => {
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       saleor_api_url TEXT NOT NULL UNIQUE,
       soft_descriptor TEXT,
+      environment TEXT NOT NULL DEFAULT 'SANDBOX' CHECK (environment IN ('SANDBOX', 'LIVE')),
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     );
@@ -169,9 +170,27 @@ export const initializeDatabase = async (): Promise<void> => {
       END IF;
     END $$;
 
-    -- Only allow one active global config at a time
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_wsm_global_paypal_config_active
-      ON wsm_global_paypal_config(is_active) WHERE is_active = TRUE;
+    -- Per-tenant environment override migration:
+    -- Add environment column to paypal_tenant_config for existing installations
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='paypal_tenant_config' AND column_name='environment'
+      ) THEN
+        ALTER TABLE paypal_tenant_config ADD COLUMN environment TEXT NOT NULL DEFAULT 'SANDBOX' CHECK (environment IN ('SANDBOX', 'LIVE'));
+      END IF;
+    END $$;
+
+    -- Drop old single-active index if it exists (allowed only one active config total)
+    DROP INDEX IF EXISTS idx_wsm_global_paypal_config_active;
+
+    -- Allow one active config per environment (one SANDBOX + one LIVE)
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_wsm_global_config_unique_env
+      ON wsm_global_paypal_config(environment) WHERE is_active = TRUE;
+
+    CREATE INDEX IF NOT EXISTS idx_wsm_global_config_environment
+      ON wsm_global_paypal_config(environment);
 
     -- Trigger to update updated_at timestamp for global config
     CREATE OR REPLACE FUNCTION update_wsm_global_config_timestamp()
