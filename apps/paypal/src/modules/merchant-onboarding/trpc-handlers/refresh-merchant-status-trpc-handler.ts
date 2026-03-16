@@ -84,9 +84,11 @@ export class RefreshMerchantStatusTrpcHandler {
 
           const record = recordResult.value;
 
-          // Fetch PayPal configuration from the global repository
+          // Fetch PayPal configuration from the global repository for this tenant's environment
+          const { resolveTenantEnvironment } = await import("@/modules/wsm-admin/resolve-tenant-environment");
+          const tenantEnv = await resolveTenantEnvironment(saleorApiUrl.value, pool);
           const globalConfigRepository = GlobalPayPalConfigRepository.create(pool);
-          const paypalConfigResult = await globalConfigRepository.getActiveConfig();
+          const paypalConfigResult = await globalConfigRepository.getConfigByEnvironment(tenantEnv);
 
           if (paypalConfigResult.isErr()) {
             captureException(paypalConfigResult.error);

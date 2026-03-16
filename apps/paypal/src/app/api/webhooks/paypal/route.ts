@@ -165,10 +165,14 @@ async function PayPalWebhookHandler(request: NextRequest): Promise<Response> {
       );
     }
 
+    // Determine environment from query param (set during webhook registration)
+    const envParam = request.nextUrl.searchParams.get("env");
+    const webhookEnv = envParam === "LIVE" ? "LIVE" as const : "SANDBOX" as const;
+
     // Get global PayPal config for verification credentials
     const pool = getPool();
     const configRepo = GlobalPayPalConfigRepository.create(pool);
-    const configResult = await configRepo.getActiveConfig();
+    const configResult = await configRepo.getConfigByEnvironment(webhookEnv);
 
     if (configResult.isErr()) {
       logger.error("Failed to get PayPal config for webhook verification", {

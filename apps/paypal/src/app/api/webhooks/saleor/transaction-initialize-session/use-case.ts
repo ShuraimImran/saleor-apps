@@ -479,7 +479,9 @@ export class TransactionInitializeSessionUseCase {
     try {
       const pool = getPool();
       const globalConfigRepository = GlobalPayPalConfigRepository.create(pool);
-      const globalConfigResult = await globalConfigRepository.getActiveConfig();
+      const { resolveTenantEnvironment } = await import("@/modules/wsm-admin/resolve-tenant-environment");
+      const tenantEnv = await resolveTenantEnvironment(authData.saleorApiUrl, pool);
+      const globalConfigResult = await globalConfigRepository.getConfigByEnvironment(tenantEnv);
 
       if (globalConfigResult.isOk() && globalConfigResult.value) {
         const globalConfig = globalConfigResult.value;

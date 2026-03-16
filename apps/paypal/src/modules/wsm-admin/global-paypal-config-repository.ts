@@ -8,6 +8,25 @@ import { globalPayPalConfigCache } from "./global-paypal-config-cache";
 
 const logger = createLogger("GlobalPayPalConfigRepository");
 
+const SELECT_COLUMNS = `id, client_id, client_secret, partner_merchant_id, partner_fee_percent, bn_code, webhook_id, webhook_url, environment, is_active, created_at, updated_at`;
+
+function rowToConfig(row: Record<string, unknown>): Result<GlobalPayPalConfig, Error> {
+  return GlobalPayPalConfig.create({
+    id: row.id as string,
+    clientId: row.client_id as string,
+    clientSecret: row.client_secret as string,
+    partnerMerchantId: row.partner_merchant_id as string | null,
+    partnerFeePercent: row.partner_fee_percent as number | null,
+    bnCode: row.bn_code as string | null,
+    webhookId: row.webhook_id as string | null,
+    webhookUrl: row.webhook_url as string | null,
+    environment: row.environment as PayPalEnvironment,
+    isActive: row.is_active as boolean,
+    createdAt: row.created_at as Date,
+    updatedAt: row.updated_at as Date,
+  });
+}
+
 /**
  * Repository for managing global WSM PayPal configuration
  */
@@ -23,85 +42,153 @@ export class GlobalPayPalConfigRepository {
   }
 
   /**
-   * Get the currently active global PayPal configuration
+   * Get the global PayPal configuration for a specific environment
    * Uses in-memory cache to reduce database queries
    */
-  async getActiveConfig(): Promise<Result<GlobalPayPalConfig | null, Error>> {
+  async getConfigByEnvironment(environment: PayPalEnvironment): Promise<Result<GlobalPayPalConfig | null, Error>> {
     // Check cache first
-    const cachedConfig = globalPayPalConfigCache.get();
+    const cachedConfig = globalPayPalConfigCache.get(environment);
 
     if (cachedConfig !== null) {
-      logger.debug("Returning cached global PayPal config");
+      logger.debug("Returning cached global PayPal config", { environment });
 
       return ok(cachedConfig);
     }
 
     // Cache miss - fetch from database
-    logger.debug("Cache miss - fetching global PayPal config from database");
+    logger.debug("Cache miss - fetching global PayPal config from database", { environment });
     const startTime = Date.now();
 
     try {
       const query = `
-        SELECT id, client_id, client_secret, partner_merchant_id, partner_fee_percent, bn_code, webhook_id, webhook_url, environment, is_active, created_at, updated_at
+        SELECT ${SELECT_COLUMNS}
         FROM wsm_global_paypal_config
-        WHERE is_active = TRUE
+        WHERE environment = $1 AND is_active = TRUE
         LIMIT 1
       `;
 
-      const result = await this.pool.query(query);
+      const result = await this.pool.query(query, [environment]);
       const dbQueryTime = Date.now() - startTime;
 
       logger.debug("Database query completed", {
+        environment,
         query_time_ms: dbQueryTime,
         rows_found: result.rows.length,
       });
 
       if (result.rows.length === 0) {
         // Cache the null result to avoid repeated DB queries
-        globalPayPalConfigCache.set(null);
+        globalPayPalConfigCache.set(environment, null);
 
         return ok(null);
       }
 
-      const row = result.rows[0];
-      const configResult = GlobalPayPalConfig.create({
-        id: row.id,
-        clientId: row.client_id,
-        clientSecret: row.client_secret,
-        partnerMerchantId: row.partner_merchant_id,
-        partnerFeePercent: row.partner_fee_percent,
-        bnCode: row.bn_code,
-        webhookId: row.webhook_id,
-        webhookUrl: row.webhook_url,
-        environment: row.environment as PayPalEnvironment,
-        isActive: row.is_active,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      });
+      const configResult = rowToConfig(result.rows[0]);
 
       if (configResult.isErr()) {
         return err(configResult.error);
       }
 
       // Cache the result
-      globalPayPalConfigCache.set(configResult.value);
-      logger.debug("Global PayPal config cached successfully");
+      globalPayPalConfigCache.set(environment, configResult.value);
+      logger.debug("Global PayPal config cached successfully", { environment });
 
       return ok(configResult.value);
     } catch (error) {
-      logger.error("Failed to get active config from database", {
+      logger.error("Failed to get config from database", {
+        environment,
         error: error instanceof Error ? error.message : String(error),
         query_time_ms: Date.now() - startTime,
       });
 
+      return err(error instanceof Error ? error : new Error("Failed to get config by environment"));
+    }
+  }
+
+  /**
+   * @deprecated Use getConfigByEnvironment(environment) instead.
+   * Kept for backward compatibility — returns the single active config (prefers LIVE, falls back to SANDBOX).
+   */
+  async getActiveConfig(): Promise<Result<GlobalPayPalConfig | null, Error>> {
+    // Check cache first
+    const cachedLive = globalPayPalConfigCache.get("LIVE");
+
+    if (cachedLive !== null) {
+      return ok(cachedLive);
+    }
+
+    const cachedSandbox = globalPayPalConfigCache.get("SANDBOX");
+
+    if (cachedSandbox !== null) {
+      return ok(cachedSandbox);
+    }
+
+    try {
+      const query = `
+        SELECT ${SELECT_COLUMNS}
+        FROM wsm_global_paypal_config
+        WHERE is_active = TRUE
+        ORDER BY CASE environment WHEN 'LIVE' THEN 0 ELSE 1 END
+        LIMIT 1
+      `;
+
+      const result = await this.pool.query(query);
+
+      if (result.rows.length === 0) {
+        return ok(null);
+      }
+
+      const configResult = rowToConfig(result.rows[0]);
+
+      if (configResult.isErr()) {
+        return err(configResult.error);
+      }
+
+      globalPayPalConfigCache.set(configResult.value.environment, configResult.value);
+
+      return ok(configResult.value);
+    } catch (error) {
       return err(error instanceof Error ? error : new Error("Failed to get active config"));
     }
   }
 
   /**
-   * Create or update global PayPal configuration
-   * Deactivates all existing configs and creates a new active one
-   * Invalidates cache to ensure fresh data is loaded
+   * Get all active configs (one per environment)
+   * Used by WSM admin UI to display both SANDBOX and LIVE configs
+   */
+  async getAllConfigs(): Promise<Result<GlobalPayPalConfig[], Error>> {
+    try {
+      const query = `
+        SELECT ${SELECT_COLUMNS}
+        FROM wsm_global_paypal_config
+        WHERE is_active = TRUE
+        ORDER BY environment
+      `;
+
+      const result = await this.pool.query(query);
+
+      const configs: GlobalPayPalConfig[] = [];
+
+      for (const row of result.rows) {
+        const configResult = rowToConfig(row);
+
+        if (configResult.isErr()) {
+          return err(configResult.error);
+        }
+
+        configs.push(configResult.value);
+      }
+
+      return ok(configs);
+    } catch (error) {
+      return err(error instanceof Error ? error : new Error("Failed to get all configs"));
+    }
+  }
+
+  /**
+   * Create or update global PayPal configuration for a specific environment
+   * Uses INSERT ... ON CONFLICT to upsert by environment
+   * Invalidates cache for the affected environment only
    */
   async upsertConfig(data: {
     clientId: string;
@@ -113,25 +200,24 @@ export class GlobalPayPalConfigRepository {
     webhookUrl?: string | null;
     environment: PayPalEnvironment;
   }): Promise<Result<GlobalPayPalConfig, Error>> {
-    const client = await this.pool.connect();
-
     try {
-      await client.query("BEGIN");
-
-      // Deactivate all existing configs
-      await client.query(`
-        UPDATE wsm_global_paypal_config
-        SET is_active = FALSE
-      `);
-
-      // Insert new config
-      const insertQuery = `
+      const query = `
         INSERT INTO wsm_global_paypal_config (client_id, client_secret, partner_merchant_id, partner_fee_percent, bn_code, webhook_id, webhook_url, environment, is_active)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
-        RETURNING id, client_id, client_secret, partner_merchant_id, partner_fee_percent, bn_code, webhook_id, webhook_url, environment, is_active, created_at, updated_at
+        ON CONFLICT (environment) WHERE is_active = TRUE
+        DO UPDATE SET
+          client_id = EXCLUDED.client_id,
+          client_secret = EXCLUDED.client_secret,
+          partner_merchant_id = EXCLUDED.partner_merchant_id,
+          partner_fee_percent = EXCLUDED.partner_fee_percent,
+          bn_code = EXCLUDED.bn_code,
+          webhook_id = COALESCE(EXCLUDED.webhook_id, wsm_global_paypal_config.webhook_id),
+          webhook_url = COALESCE(EXCLUDED.webhook_url, wsm_global_paypal_config.webhook_url),
+          updated_at = NOW()
+        RETURNING ${SELECT_COLUMNS}
       `;
 
-      const result = await client.query(insertQuery, [
+      const result = await this.pool.query(query, [
         data.clientId,
         data.clientSecret,
         data.partnerMerchantId ?? null,
@@ -142,39 +228,19 @@ export class GlobalPayPalConfigRepository {
         data.environment,
       ]);
 
-      await client.query("COMMIT");
-
-      const row = result.rows[0];
-      const configResult = GlobalPayPalConfig.create({
-        id: row.id,
-        clientId: row.client_id,
-        clientSecret: row.client_secret,
-        partnerMerchantId: row.partner_merchant_id,
-        partnerFeePercent: row.partner_fee_percent,
-        bnCode: row.bn_code,
-        webhookId: row.webhook_id,
-        webhookUrl: row.webhook_url,
-        environment: row.environment as PayPalEnvironment,
-        isActive: row.is_active,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      });
+      const configResult = rowToConfig(result.rows[0]);
 
       if (configResult.isErr()) {
         return err(configResult.error);
       }
 
-      // Invalidate cache since config changed
-      globalPayPalConfigCache.invalidate();
-      logger.info("Cache invalidated due to config update");
+      // Invalidate cache only for the affected environment
+      globalPayPalConfigCache.invalidate(data.environment);
+      logger.info("Cache invalidated due to config update", { environment: data.environment });
 
       return ok(configResult.value);
     } catch (error) {
-      await client.query("ROLLBACK");
-
       return err(error instanceof Error ? error : new Error("Failed to upsert config"));
-    } finally {
-      client.release();
     }
   }
 
@@ -222,25 +288,27 @@ export class GlobalPayPalConfigRepository {
   }
 
   /**
-   * Update webhook information for the active config
+   * Update webhook information for a specific environment's config
    * Used after webhook registration with PayPal
    */
   async updateWebhookInfo(data: {
     webhookId: string;
     webhookUrl: string;
+    environment: PayPalEnvironment;
   }): Promise<Result<void, Error>> {
     try {
       const query = `
         UPDATE wsm_global_paypal_config
         SET webhook_id = $1, webhook_url = $2, updated_at = NOW()
-        WHERE is_active = TRUE
+        WHERE environment = $3 AND is_active = TRUE
       `;
 
-      await this.pool.query(query, [data.webhookId, data.webhookUrl]);
+      await this.pool.query(query, [data.webhookId, data.webhookUrl, data.environment]);
 
-      // Invalidate cache since config changed
-      globalPayPalConfigCache.invalidate();
-      logger.info("Webhook info updated for active config", {
+      // Invalidate cache for the affected environment
+      globalPayPalConfigCache.invalidate(data.environment);
+      logger.info("Webhook info updated for config", {
+        environment: data.environment,
         webhookId: data.webhookId,
         webhookUrl: data.webhookUrl,
       });

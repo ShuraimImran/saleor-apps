@@ -1,9 +1,11 @@
 import { Layout } from "@saleor/apps-ui";
-import { Box, Input, Select, Text } from "@saleor/macaw-ui";
+import { Box, Button, Input, Select, Text } from "@saleor/macaw-ui";
 import React from "react";
 
 import { ChannelFragment } from "@/generated/graphql";
 import { PayPalFrontendConfigSerializedFields } from "@/modules/app-config/domain/paypal-config";
+
+type PayPalEnvironment = "SANDBOX" | "LIVE";
 
 type Props = {
   channels: ChannelFragment[];
@@ -13,6 +15,8 @@ type Props = {
   softDescriptor: string;
   onSoftDescriptorChange(value: string): void;
   onSoftDescriptorBlur(): void;
+  environment: PayPalEnvironment;
+  onEnvironmentChange(value: PayPalEnvironment): void;
   isLoading: boolean;
 };
 
@@ -26,12 +30,51 @@ export const ChannelsConfigMapping = ({
   softDescriptor,
   onSoftDescriptorChange,
   onSoftDescriptorBlur,
+  environment,
+  onEnvironmentChange,
   isLoading,
 }: Props) => {
   return (
     <Layout.AppSectionCard>
       <Box>
         <Box paddingBottom={4} borderBottomWidth={1} borderColor="default1">
+          <Text size={3} fontWeight="medium" marginBottom={2}>
+            PayPal Environment
+          </Text>
+          <Box display="flex" gap={2} alignItems="center">
+            <Button
+              size="small"
+              variant={environment === "SANDBOX" ? "primary" : "secondary"}
+              onClick={() => onEnvironmentChange("SANDBOX")}
+              disabled={isLoading}
+            >
+              Sandbox
+            </Button>
+            <Button
+              size="small"
+              variant={environment === "LIVE" ? "primary" : "secondary"}
+              onClick={() => onEnvironmentChange("LIVE")}
+              disabled={isLoading}
+            >
+              Live
+            </Button>
+            <Box
+              paddingX={2}
+              paddingY={1}
+              borderRadius={4}
+              __backgroundColor={environment === "LIVE" ? "#D1FAE5" : "#FEF3C7"}
+            >
+              <Text size={2} fontWeight="medium">
+                {environment === "LIVE" ? "Production" : "Test Mode"}
+              </Text>
+            </Box>
+          </Box>
+          <Text size={2} color="default2" marginTop={1}>
+            Select which PayPal environment this tenant uses. Changing environment requires merchants to re-onboard.
+          </Text>
+        </Box>
+
+        <Box paddingBottom={4} paddingTop={4} borderBottomWidth={1} borderColor="default1">
           <Text size={3} fontWeight="medium" marginBottom={2}>
             Soft Descriptor
           </Text>

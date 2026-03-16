@@ -95,12 +95,14 @@ export class GetApplePayDomainsHandler {
             };
           }
 
-          // Get global WSM configuration
+          // Get global WSM configuration for this tenant's environment
           const { GlobalPayPalConfigRepository } = await import(
             "@/modules/wsm-admin/global-paypal-config-repository"
           );
+          const { resolveTenantEnvironment } = await import("@/modules/wsm-admin/resolve-tenant-environment");
+          const tenantEnv = await resolveTenantEnvironment(saleorApiUrl.value, getPool());
           const globalConfigRepo = GlobalPayPalConfigRepository.create(getPool());
-          const globalConfigResult = await globalConfigRepo.getActiveConfig();
+          const globalConfigResult = await globalConfigRepo.getConfigByEnvironment(tenantEnv);
 
           if (globalConfigResult.isErr()) {
             captureException(globalConfigResult.error);

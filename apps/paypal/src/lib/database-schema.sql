@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS paypal_tenant_config (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   saleor_api_url TEXT NOT NULL UNIQUE,
   soft_descriptor TEXT,
+  environment TEXT NOT NULL DEFAULT 'SANDBOX' CHECK (environment IN ('SANDBOX', 'LIVE')),
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -139,7 +140,7 @@ CREATE TABLE IF NOT EXISTS wsm_global_paypal_config (
   environment TEXT NOT NULL CHECK (environment IN ('SANDBOX', 'LIVE')),
 
   -- Status
-  is_active BOOLEAN DEFAULT TRUE,                -- Only one config can be active
+  is_active BOOLEAN DEFAULT TRUE,                -- Kept for backward compat, always TRUE
 
   -- Metadata
   created_at TIMESTAMP DEFAULT NOW(),
@@ -147,8 +148,12 @@ CREATE TABLE IF NOT EXISTS wsm_global_paypal_config (
 );
 
 -- Indexes
-CREATE INDEX IF NOT EXISTS idx_wsm_global_config_active
-  ON wsm_global_paypal_config(is_active);
+CREATE INDEX IF NOT EXISTS idx_wsm_global_config_environment
+  ON wsm_global_paypal_config(environment);
+
+-- Unique constraint: one config per environment (allows one SANDBOX + one LIVE)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wsm_global_config_unique_env
+  ON wsm_global_paypal_config(environment) WHERE is_active = TRUE;
 
 -- Trigger to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_wsm_global_config_timestamp()
@@ -174,6 +179,13 @@ COMMENT ON COLUMN wsm_global_paypal_config.webhook_url IS 'The URL registered wi
 -- Run this if upgrading from a previous version
 ALTER TABLE wsm_global_paypal_config ADD COLUMN IF NOT EXISTS webhook_id TEXT;
 ALTER TABLE wsm_global_paypal_config ADD COLUMN IF NOT EXISTS webhook_url TEXT;
+
+-- Migration: Per-tenant environment override
+-- Allows one SANDBOX + one LIVE global config simultaneously
+-- Each tenant can independently select their environment
+ALTER TABLE paypal_tenant_config ADD COLUMN IF NOT EXISTS environment TEXT NOT NULL DEFAULT 'SANDBOX' CHECK (environment IN ('SANDBOX', 'LIVE'));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wsm_global_config_unique_env ON wsm_global_paypal_config(environment) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_wsm_global_config_environment ON wsm_global_paypal_config(environment);
 
 -- PayPal Customer Vault Table
 -- Maps Saleor customers to PayPal vault customers for card vaulting (Phase 1 ACDC)

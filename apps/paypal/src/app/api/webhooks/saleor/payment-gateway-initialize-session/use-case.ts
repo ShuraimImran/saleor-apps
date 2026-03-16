@@ -98,11 +98,14 @@ export class PaymentGatewayInitializeSessionUseCase {
 
       if (config.merchantId) {
         try {
-          // Fetch partner merchant ID from global config
+          // Fetch partner merchant ID from global config for this tenant's environment
           const { GlobalPayPalConfigRepository } = await import("@/modules/wsm-admin/global-paypal-config-repository");
+          const { resolveTenantEnvironment } = await import("@/modules/wsm-admin/resolve-tenant-environment");
           const { getPool } = await import("@/lib/database");
-          const globalConfigRepo = GlobalPayPalConfigRepository.create(getPool());
-          const globalConfigResult = await globalConfigRepo.getActiveConfig();
+          const pool = getPool();
+          const tenantEnv = await resolveTenantEnvironment(authData.saleorApiUrl, pool);
+          const globalConfigRepo = GlobalPayPalConfigRepository.create(pool);
+          const globalConfigResult = await globalConfigRepo.getConfigByEnvironment(tenantEnv);
 
           let partnerMerchantId: string | undefined;
 

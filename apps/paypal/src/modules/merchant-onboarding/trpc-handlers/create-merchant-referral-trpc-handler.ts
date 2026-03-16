@@ -51,10 +51,13 @@ export class CreateMerchantReferralTrpcHandler {
       }
 
       try {
-        // Get global WSM configuration
+        // Get global WSM configuration for this tenant's environment
         const { GlobalPayPalConfigRepository } = await import("@/modules/wsm-admin/global-paypal-config-repository");
-        const globalConfigRepo = GlobalPayPalConfigRepository.create(getPool());
-        const globalConfigResult = await globalConfigRepo.getActiveConfig();
+        const { resolveTenantEnvironment } = await import("@/modules/wsm-admin/resolve-tenant-environment");
+        const pool = getPool();
+        const tenantEnv = await resolveTenantEnvironment(saleorApiUrl.value, pool);
+        const globalConfigRepo = GlobalPayPalConfigRepository.create(pool);
+        const globalConfigResult = await globalConfigRepo.getConfigByEnvironment(tenantEnv);
 
         if (globalConfigResult.isErr()) {
           captureException(globalConfigResult.error);
@@ -163,7 +166,6 @@ export class CreateMerchantReferralTrpcHandler {
         }
 
         // Store onboarding record in database
-        const pool = getPool();
         const repository = PostgresMerchantOnboardingRepository.create(pool);
 
         const createResult = await repository.create({

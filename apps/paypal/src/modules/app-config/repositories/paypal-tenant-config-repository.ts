@@ -2,9 +2,11 @@ import { err, ok, Result } from "neverthrow";
 import { Pool } from "pg";
 
 import { createLogger } from "@/lib/logger";
+import { PayPalEnvironment } from "@/modules/wsm-admin/global-paypal-config";
 
 type PayPalTenantConfig = {
   softDescriptor?: string | null;
+  environment: PayPalEnvironment;
 };
 
 const logger = createLogger("PayPalTenantConfigRepository");
@@ -25,7 +27,7 @@ export class PayPalTenantConfigRepository {
   ): Promise<Result<PayPalTenantConfig | null, Error>> {
     try {
       const query = `
-        SELECT soft_descriptor
+        SELECT soft_descriptor, environment
         FROM paypal_tenant_config
         WHERE saleor_api_url = $1
         LIMIT 1
@@ -38,6 +40,7 @@ export class PayPalTenantConfigRepository {
 
       return ok({
         softDescriptor: result.rows[0].soft_descriptor ?? undefined,
+        environment: (result.rows[0].environment as PayPalEnvironment) ?? "SANDBOX",
       });
     } catch (error) {
       logger.error("Failed to fetch PayPal tenant config", {
@@ -51,18 +54,24 @@ export class PayPalTenantConfigRepository {
   async upsert(args: {
     saleorApiUrl: string;
     softDescriptor?: string | null;
+    environment?: PayPalEnvironment;
   }): Promise<Result<void, Error>> {
     try {
       const query = `
-        INSERT INTO paypal_tenant_config (saleor_api_url, soft_descriptor)
-        VALUES ($1, $2)
+        INSERT INTO paypal_tenant_config (saleor_api_url, soft_descriptor, environment)
+        VALUES ($1, $2, $3)
         ON CONFLICT (saleor_api_url)
         DO UPDATE SET
           soft_descriptor = EXCLUDED.soft_descriptor,
+          environment = EXCLUDED.environment,
           updated_at = NOW()
       `;
 
-      await this.pool.query(query, [args.saleorApiUrl, args.softDescriptor ?? null]);
+      await this.pool.query(query, [
+        args.saleorApiUrl,
+        args.softDescriptor ?? null,
+        args.environment ?? "SANDBOX",
+      ]);
 
       return ok(undefined);
     } catch (error) {

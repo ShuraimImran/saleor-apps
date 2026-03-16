@@ -113,10 +113,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Determine environment from query param (set during webhook registration)
+    const envParam = request.nextUrl.searchParams.get("env");
+    const webhookEnv = envParam === "LIVE" ? "LIVE" as const : "SANDBOX" as const;
+
     // Get global PayPal config for verification credentials
     const pool = getPool();
     const configRepo = GlobalPayPalConfigRepository.create(pool);
-    const configResult = await configRepo.getActiveConfig();
+    const configResult = await configRepo.getConfigByEnvironment(webhookEnv);
 
     if (configResult.isErr()) {
       logger.error("Failed to get PayPal config for webhook verification", {
@@ -220,7 +224,7 @@ export async function POST(request: NextRequest) {
       }
 
       case "PAYMENT.CAPTURE.REFUNDED": {
-        await handleCaptureRefunded(resource as PayPalRefundResource);
+        await handleCaptureRefunded(resource as PayPalRefundResource, webhookEnv);
 
         return NextResponse.json({ received: true }, { status: 200 });
       }
@@ -497,7 +501,7 @@ async function handleCaptureDenied(resource: PayPalCaptureResource): Promise<voi
  * But PayPal may also process refunds externally (e.g., via PayPal dashboard) or there may be
  * delays. This webhook confirms the final refund status.
  */
-async function handleCaptureRefunded(resource: PayPalRefundResource): Promise<void> {
+async function handleCaptureRefunded(resource: PayPalRefundResource, environment: PayPalEnv): Promise<void> {
   const refundId = resource.id;
   const amount = resource.amount;
   const customId = resource.custom_id;
@@ -552,7 +556,7 @@ async function handleCaptureRefunded(resource: PayPalRefundResource): Promise<vo
               amount: amount.value,
               pspReference: refundId,
               message: "PayPal refund completed successfully",
-              externalUrl: getPayPalExternalUrl(refundId, "SANDBOX"), // TODO: Use actual environment
+              externalUrl: getPayPalExternalUrl(refundId, environment),
             });
 
             if (reportResult.isOk()) {

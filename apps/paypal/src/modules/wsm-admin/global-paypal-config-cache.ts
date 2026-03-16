@@ -1,84 +1,105 @@
 import { createLogger } from "@/lib/logger";
 
-import { GlobalPayPalConfig } from "./global-paypal-config";
+import { GlobalPayPalConfig, PayPalEnvironment } from "./global-paypal-config";
 
 const logger = createLogger("GlobalPayPalConfigCache");
 
+interface CacheEntry {
+  config: GlobalPayPalConfig | null;
+  timestamp: number;
+}
+
 /**
  * In-memory cache for global PayPal configuration
- * Reduces database queries for frequently accessed config
+ * Stores one entry per environment (SANDBOX and LIVE independently)
  */
 class GlobalPayPalConfigCache {
-  private cache: GlobalPayPalConfig | null = null;
-  private cacheTimestamp: number | null = null;
+  private entries: Map<PayPalEnvironment, CacheEntry> = new Map();
   private readonly TTL_MS = 5 * 60 * 1000; // 5 minutes TTL
 
   /**
-   * Get cached config if valid, otherwise return null
+   * Get cached config for a specific environment, or null on cache miss
    */
-  get(): GlobalPayPalConfig | null {
-    if (!this.cache || !this.cacheTimestamp) {
-      logger.debug("Cache miss: no cached config");
+  get(environment: PayPalEnvironment): GlobalPayPalConfig | null {
+    const entry = this.entries.get(environment);
+
+    if (!entry) {
+      logger.debug("Cache miss: no cached config", { environment });
 
       return null;
     }
 
     const now = Date.now();
-    const age = now - this.cacheTimestamp;
+    const age = now - entry.timestamp;
 
     if (age > this.TTL_MS) {
       logger.debug("Cache miss: config expired", {
+        environment,
         age_ms: age,
         ttl_ms: this.TTL_MS,
       });
-      this.invalidate();
+      this.entries.delete(environment);
 
       return null;
     }
 
     logger.debug("Cache hit: returning cached config", {
+      environment,
       age_ms: age,
       ttl_ms: this.TTL_MS,
     });
 
-    return this.cache;
+    return entry.config;
   }
 
   /**
-   * Set config in cache
+   * Set config in cache for a specific environment
    */
-  set(config: GlobalPayPalConfig | null): void {
-    this.cache = config;
-    this.cacheTimestamp = Date.now();
+  set(environment: PayPalEnvironment, config: GlobalPayPalConfig | null): void {
+    this.entries.set(environment, {
+      config,
+      timestamp: Date.now(),
+    });
 
     logger.debug("Config cached", {
+      environment,
       has_config: !!config,
-      cached_at: this.cacheTimestamp,
     });
   }
 
   /**
-   * Invalidate the cache
+   * Invalidate cache for a specific environment, or all environments if none specified
    */
-  invalidate(): void {
-    logger.debug("Cache invalidated");
-    this.cache = null;
-    this.cacheTimestamp = null;
+  invalidate(environment?: PayPalEnvironment): void {
+    if (environment) {
+      this.entries.delete(environment);
+      logger.debug("Cache invalidated for environment", { environment });
+    } else {
+      this.entries.clear();
+      logger.debug("Cache invalidated for all environments");
+    }
   }
 
   /**
    * Get cache statistics
    */
   getStats(): {
-    hasCachedConfig: boolean;
-    cacheAge: number | null;
+    sandbox: { hasCachedConfig: boolean; cacheAge: number | null };
+    live: { hasCachedConfig: boolean; cacheAge: number | null };
     ttl: number;
   } {
-    const age = this.cacheTimestamp ? Date.now() - this.cacheTimestamp : null;
+    const getEnvStats = (env: PayPalEnvironment) => {
+      const entry = this.entries.get(env);
+
+      return {
+        hasCachedConfig: !!entry?.config,
+        cacheAge: entry ? Date.now() - entry.timestamp : null,
+      };
+    };
 
     return {
-      hasCachedConfig: !!this.cache,
-      cacheAge: age,
+      sandbox: getEnvStats("SANDBOX"),
+      live: getEnvStats("LIVE"),
       ttl: this.TTL_MS,
     };
   }

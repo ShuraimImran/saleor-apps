@@ -36,8 +36,9 @@ function validateSuperAdminKey(secretKey: string) {
 /**
  * Get the webhook URL for PayPal platform events
  * Uses APP_API_BASE_URL environment variable
+ * Includes environment query param so incoming webhooks can be routed to the correct config
  */
-function getWebhookUrl(): string | null {
+function getWebhookUrl(environment: string): string | null {
   const baseUrl = env.APP_API_BASE_URL;
 
   if (!baseUrl) {
@@ -49,7 +50,7 @@ function getWebhookUrl(): string | null {
   // Remove trailing slash if present
   const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
 
-  return `${normalizedBaseUrl}/api/webhooks/paypal/platform-events`;
+  return `${normalizedBaseUrl}/api/webhooks/paypal/platform-events?env=${environment}`;
 }
 
 /**
@@ -94,7 +95,7 @@ export class SetGlobalConfigHandler {
       let webhookInfo: { webhookId: string; webhookUrl: string } | null = null;
       let webhookError: string | null = null;
 
-      const webhookUrl = getWebhookUrl();
+      const webhookUrl = getWebhookUrl(input.environment);
 
       if (webhookUrl) {
         logger.info("Attempting to register PayPal webhooks", {
@@ -123,6 +124,7 @@ export class SetGlobalConfigHandler {
             const updateResult = await repository.updateWebhookInfo({
               webhookId: webhookInfo.webhookId,
               webhookUrl: webhookInfo.webhookUrl,
+              environment: input.environment,
             });
 
             if (updateResult.isErr()) {

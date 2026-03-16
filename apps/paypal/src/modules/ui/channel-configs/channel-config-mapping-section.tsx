@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import { trpcClient } from "@/modules/trpc/trpc-client";
 import { ChannelsConfigMapping } from "@/modules/ui/channel-configs/channels-config-mapping";
 
+type PayPalEnvironment = "SANDBOX" | "LIVE";
+
 export const ChannelConfigMappingSection = () => {
   const allChannels = trpcClient.appConfig.fetchChannels.useQuery();
   const allConfigs = trpcClient.appConfig.getPayPalConfigsList.useQuery();
@@ -15,6 +17,7 @@ export const ChannelConfigMappingSection = () => {
 
   const { notifyError, notifySuccess } = useDashboardNotification();
   const [softDescriptor, setSoftDescriptor] = useState("");
+  const [environment, setEnvironment] = useState<PayPalEnvironment>("SANDBOX");
 
   const mappingUpdate = trpcClient.appConfig.updateMapping.useMutation({
     onSuccess() {
@@ -48,6 +51,7 @@ export const ChannelConfigMappingSection = () => {
   useEffect(() => {
     if (tenantConfig.data) {
       setSoftDescriptor(tenantConfig.data.softDescriptor ?? "");
+      setEnvironment((tenantConfig.data.environment as PayPalEnvironment) ?? "SANDBOX");
     }
   }, [tenantConfig.data]);
 
@@ -110,6 +114,15 @@ export const ChannelConfigMappingSection = () => {
         onSoftDescriptorBlur={() => {
           tenantConfigUpdate.mutate({
             softDescriptor,
+            environment,
+          });
+        }}
+        environment={environment}
+        onEnvironmentChange={(newEnv) => {
+          setEnvironment(newEnv);
+          tenantConfigUpdate.mutate({
+            softDescriptor,
+            environment: newEnv,
           });
         }}
         onMappingChange={({ configId, channelId }) => {

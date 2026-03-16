@@ -7,16 +7,279 @@ import { useEffect,useState } from "react";
 import { trpcClient } from "@/modules/trpc/trpc-client";
 import { AppHeader } from "@/modules/ui/app-header";
 
+type PayPalEnvironment = "SANDBOX" | "LIVE";
+
+interface ConfigFormState {
+  clientId: string;
+  clientSecret: string;
+  partnerMerchantId: string;
+  partnerFeePercent: string;
+  bnCode: string;
+}
+
+const emptyForm: ConfigFormState = {
+  clientId: "",
+  clientSecret: "",
+  partnerMerchantId: "",
+  partnerFeePercent: "",
+  bnCode: "",
+};
+
+const EnvironmentConfigPanel = ({
+  environment,
+  secretKey,
+  existingConfig,
+  onSaved,
+}: {
+  environment: PayPalEnvironment;
+  secretKey: string;
+  existingConfig: {
+    clientId: string;
+    clientSecret: string;
+    partnerMerchantId: string | null;
+    partnerFeePercent: number | null;
+    bnCode: string | null;
+    webhookId: string | null;
+    webhookUrl: string | null;
+    updatedAt: string | Date;
+  } | null;
+  onSaved: () => void;
+}) => {
+  const [form, setForm] = useState<ConfigFormState>(emptyForm);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const isLive = environment === "LIVE";
+  const label = isLive ? "Live (Production)" : "Sandbox (Test)";
+  const borderColor = isLive ? "success1" : "default1";
+
+  const { mutate: testCredentials, isLoading: isTestingCredentials } =
+    trpcClient.wsmAdmin.testCredentials.useMutation({
+      onSuccess: (result) => {
+        setMessage({ type: result.success ? "success" : "error", text: result.message });
+      },
+      onError: (err: any) => {
+        setMessage({ type: "error", text: `Test failed: ${err.message}` });
+      },
+    });
+
+  const { mutate: saveConfig, isLoading: isSavingConfig } =
+    trpcClient.wsmAdmin.setGlobalConfig.useMutation({
+      onSuccess: (result) => {
+        if (result.success) {
+          setMessage({ type: "success", text: result.message });
+          setForm(emptyForm);
+          onSaved();
+        }
+      },
+      onError: (err: any) => {
+        setMessage({ type: "error", text: `Save failed: ${err.message}` });
+      },
+    });
+
+  const handleTest = () => {
+    if (!form.clientId || !form.clientSecret) {
+      setMessage({ type: "error", text: "Please enter Client ID and Client Secret" });
+
+      return;
+    }
+
+    setMessage(null);
+    testCredentials({ secretKey, clientId: form.clientId, clientSecret: form.clientSecret, environment });
+  };
+
+  const handleSave = () => {
+    if (!form.clientId || !form.clientSecret) {
+      setMessage({ type: "error", text: "Please enter Client ID and Client Secret" });
+
+      return;
+    }
+
+    setMessage(null);
+    saveConfig({
+      secretKey,
+      clientId: form.clientId,
+      clientSecret: form.clientSecret,
+      partnerMerchantId: form.partnerMerchantId || undefined,
+      partnerFeePercent: form.partnerFeePercent ? parseFloat(form.partnerFeePercent) : undefined,
+      bnCode: form.bnCode || undefined,
+      environment,
+    });
+  };
+
+  return (
+    <Box
+      padding={4}
+      borderRadius={4}
+      borderWidth={1}
+      borderColor={borderColor}
+      display="flex"
+      flexDirection="column"
+      gap={4}
+    >
+      <Box display="flex" justifyContent="space-between" alignItems="center">
+        <Text size={4} fontWeight="bold">
+          {label}
+        </Text>
+        {existingConfig ? (
+          <Box
+            paddingX={2}
+            paddingY={1}
+            borderRadius={4}
+            __backgroundColor={isLive ? "#D1FAE5" : "#FEF3C7"}
+          >
+            <Text size={2} fontWeight="medium">
+              {isLive ? "Configured" : "Configured"}
+            </Text>
+          </Box>
+        ) : (
+          <Box paddingX={2} paddingY={1} borderRadius={4} __backgroundColor="#FEE2E2">
+            <Text size={2} fontWeight="medium">
+              Not Configured
+            </Text>
+          </Box>
+        )}
+      </Box>
+
+      {existingConfig && (
+        <Box
+          padding={3}
+          borderRadius={4}
+          __backgroundColor={isLive ? "#F0FDF4" : "#FFFBEB"}
+        >
+          <Box display="flex" flexDirection="column" gap={1}>
+            <Text size={2}>
+              <strong>Client ID:</strong> {existingConfig.clientId}
+            </Text>
+            <Text size={2}>
+              <strong>Client Secret:</strong> {existingConfig.clientSecret}
+            </Text>
+            {existingConfig.partnerMerchantId && (
+              <Text size={2}>
+                <strong>Partner Merchant ID:</strong> {existingConfig.partnerMerchantId}
+              </Text>
+            )}
+            {existingConfig.partnerFeePercent !== null && existingConfig.partnerFeePercent !== undefined && (
+              <Text size={2}>
+                <strong>Partner Fee:</strong> {existingConfig.partnerFeePercent}%
+              </Text>
+            )}
+            {existingConfig.bnCode && (
+              <Text size={2}>
+                <strong>BN Code:</strong> {existingConfig.bnCode}
+              </Text>
+            )}
+            {existingConfig.webhookId && (
+              <Text size={2}>
+                <strong>Webhook:</strong> Registered ({existingConfig.webhookId.slice(0, 12)}...)
+              </Text>
+            )}
+            <Text size={1} color="default2">
+              Last updated: {new Date(existingConfig.updatedAt).toLocaleString()}
+            </Text>
+          </Box>
+        </Box>
+      )}
+
+      {message && (
+        <Box
+          padding={3}
+          borderRadius={4}
+          borderWidth={1}
+          borderColor={message.type === "success" ? "success1" : "critical1"}
+        >
+          <Text size={2} color={message.type === "success" ? "success1" : "critical1"}>
+            {message.text}
+          </Text>
+        </Box>
+      )}
+
+      <Text size={3} fontWeight="medium">
+        {existingConfig ? "Update" : "Set"} Credentials
+      </Text>
+
+      <Box>
+        <Text marginBottom={1} size={2}>Partner Client ID</Text>
+        <Input
+          type="text"
+          size="small"
+          value={form.clientId}
+          onChange={(e) => setForm((f) => ({ ...f, clientId: e.target.value }))}
+          placeholder="AYSq3RDGsmBLJE-otTkBtM..."
+        />
+      </Box>
+
+      <Box>
+        <Text marginBottom={1} size={2}>Partner Client Secret</Text>
+        <Input
+          type="password"
+          size="small"
+          value={form.clientSecret}
+          onChange={(e) => setForm((f) => ({ ...f, clientSecret: e.target.value }))}
+          placeholder="EHnHq7t06p..."
+        />
+      </Box>
+
+      <Box>
+        <Text marginBottom={1} size={2}>Partner Merchant ID (Optional)</Text>
+        <Input
+          type="text"
+          size="small"
+          value={form.partnerMerchantId}
+          onChange={(e) => setForm((f) => ({ ...f, partnerMerchantId: e.target.value }))}
+          placeholder="ABCDEFGHIJKLM"
+        />
+      </Box>
+
+      <Box>
+        <Text marginBottom={1} size={2}>Partner Fee Percent (Optional)</Text>
+        <Input
+          type="number"
+          size="small"
+          value={form.partnerFeePercent}
+          onChange={(e) => setForm((f) => ({ ...f, partnerFeePercent: e.target.value }))}
+          placeholder="2.00"
+          min="0"
+          max="100"
+          step="0.01"
+        />
+      </Box>
+
+      <Box>
+        <Text marginBottom={1} size={2}>BN Code (Optional)</Text>
+        <Input
+          type="text"
+          size="small"
+          value={form.bnCode}
+          onChange={(e) => setForm((f) => ({ ...f, bnCode: e.target.value }))}
+          placeholder="YourPartnerName_SP"
+        />
+      </Box>
+
+      <Box display="flex" gap={2}>
+        <Button
+          variant="secondary"
+          size="small"
+          onClick={handleTest}
+          disabled={isTestingCredentials || isSavingConfig || !form.clientId || !form.clientSecret}
+        >
+          {isTestingCredentials ? "Testing..." : "Test Credentials"}
+        </Button>
+        <Button
+          variant="primary"
+          size="small"
+          onClick={handleSave}
+          disabled={isTestingCredentials || isSavingConfig || !form.clientId || !form.clientSecret}
+        >
+          {isSavingConfig ? "Saving..." : "Save Configuration"}
+        </Button>
+      </Box>
+    </Box>
+  );
+};
+
 const WsmAdminPage: NextPage = () => {
   const router = useRouter();
   const [secretKey, setSecretKey] = useState("");
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [partnerMerchantId, setPartnerMerchantId] = useState("");
-  const [partnerFeePercent, setPartnerFeePercent] = useState("");
-  const [bnCode, setBnCode] = useState("");
-  const [environment, setEnvironment] = useState<"SANDBOX" | "LIVE">("SANDBOX");
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Get secret key from URL parameter
   useEffect(() => {
@@ -38,90 +301,8 @@ const WsmAdminPage: NextPage = () => {
     {
       enabled: !!secretKey,
       retry: false,
-      onError: (err: any) => {
-        if (err.message?.includes("Invalid super admin")) {
-          setMessage({ type: "error", text: "Invalid secret key" });
-        } else {
-          setMessage({ type: "error", text: `Failed to load config: ${err.message}` });
-        }
-      },
-      onSuccess: (data) => {
-        if (data.configured && data.config) {
-          setEnvironment(data.config.environment);
-        }
-      }
     }
   );
-
-  // Mutations
-  const { mutate: testCredentials, isLoading: isTestingCredentials } =
-    trpcClient.wsmAdmin.testCredentials.useMutation({
-      onSuccess: (result) => {
-        if (result.success) {
-          setMessage({ type: "success", text: result.message });
-        } else {
-          setMessage({ type: "error", text: result.message });
-        }
-      },
-      onError: (err: any) => {
-        setMessage({ type: "error", text: `Test failed: ${err.message}` });
-      },
-    });
-
-  const { mutate: saveConfig, isLoading: isSavingConfig } =
-    trpcClient.wsmAdmin.setGlobalConfig.useMutation({
-      onSuccess: (result) => {
-        if (result.success) {
-          setMessage({ type: "success", text: result.message });
-          // Reload config to show updated values
-          refetchConfig();
-          // Clear form
-          setClientId("");
-          setClientSecret("");
-          setPartnerMerchantId("");
-          setPartnerFeePercent("");
-          setBnCode("");
-        }
-      },
-      onError: (err: any) => {
-        setMessage({ type: "error", text: `Save failed: ${err.message}` });
-      },
-    });
-
-  const handleTestCredentials = () => {
-    if (!clientId || !clientSecret) {
-      setMessage({ type: "error", text: "Please enter Client ID and Client Secret" });
-
-      return;
-    }
-
-    setMessage(null);
-    testCredentials({
-      secretKey,
-      clientId,
-      clientSecret,
-      environment,
-    });
-  };
-
-  const handleSaveConfig = () => {
-    if (!clientId || !clientSecret) {
-      setMessage({ type: "error", text: "Please enter Client ID and Client Secret" });
-
-      return;
-    }
-
-    setMessage(null);
-    saveConfig({
-      secretKey,
-      clientId,
-      clientSecret,
-      partnerMerchantId: partnerMerchantId || undefined,
-      partnerFeePercent: partnerFeePercent ? parseFloat(partnerFeePercent) : undefined,
-      bnCode: bnCode || undefined,
-      environment,
-    });
-  };
 
   if (!secretKey) {
     return (
@@ -153,7 +334,7 @@ const WsmAdminPage: NextPage = () => {
           Authentication Failed
         </Text>
         <Text marginTop={4} color="critical1">
-          {message?.text || "Invalid secret key or server error"}
+          Invalid secret key or server error
         </Text>
       </Box>
     );
@@ -168,172 +349,31 @@ const WsmAdminPage: NextPage = () => {
         sideContent={
           <Box display="flex" flexDirection="column" gap={4}>
             <Text>
-              Configure global PayPal Partner API credentials that will be used by all Saleor
-              tenants for merchant onboarding.
+              Configure PayPal Partner API credentials for each environment independently.
+              Each tenant can be assigned to either Sandbox or Live.
             </Text>
             <Text>
-              These credentials should be your PayPal Partner account Client ID and Secret, which
-              enable you to onboard merchants and receive partner fees.
+              <strong>Sandbox:</strong> For testing with PayPal sandbox accounts.
+            </Text>
+            <Text>
+              <strong>Live:</strong> For production payments with real PayPal accounts.
             </Text>
           </Box>
         }
       >
         <Box display="flex" flexDirection="column" gap={6}>
-          {configData?.configured && configData.config && (
-            <Box
-              padding={4}
-              borderRadius={4}
-              borderWidth={1}
-              borderColor="default1"
-            >
-              <Text size={4} fontWeight="medium" marginBottom={2}>
-                Current Configuration
-              </Text>
-              <Box display="flex" flexDirection="column" gap={2}>
-                <Text>
-                  <strong>Environment:</strong> {configData.config.environment}
-                </Text>
-                <Text>
-                  <strong>Client ID:</strong> {configData.config.clientId}
-                </Text>
-                <Text>
-                  <strong>Client Secret:</strong> {configData.config.clientSecret}
-                </Text>
-                {configData.config.partnerMerchantId && (
-                  <Text>
-                    <strong>Partner Merchant ID:</strong> {configData.config.partnerMerchantId}
-                  </Text>
-                )}
-                {configData.config.partnerFeePercent !== null && configData.config.partnerFeePercent !== undefined && (
-                  <Text>
-                    <strong>Partner Fee Percent:</strong> {configData.config.partnerFeePercent}%
-                  </Text>
-                )}
-                {configData.config.bnCode && (
-                  <Text>
-                    <strong>BN Code:</strong> {configData.config.bnCode}
-                  </Text>
-                )}
-                <Text color="default2">
-                  Last updated: {new Date(configData.config.updatedAt).toLocaleString()}
-                </Text>
-              </Box>
-            </Box>
-          )}
-
-          {message && (
-            <Box
-              padding={4}
-              borderRadius={4}
-              borderWidth={1}
-              borderColor={message.type === "success" ? "success1" : "critical1"}
-            >
-              <Text color={message.type === "success" ? "success1" : "critical1"}>{message.text}</Text>
-            </Box>
-          )}
-
-          <Box display="flex" flexDirection="column" gap={4}>
-            <Text size={4} fontWeight="medium">
-              {configData?.configured ? "Update" : "Set"} PayPal Partner Credentials
-            </Text>
-
-            <Box>
-              <Text marginBottom={2}>Environment</Text>
-              <Box display="flex" gap={2}>
-                <Button
-                  variant={environment === "SANDBOX" ? "primary" : "secondary"}
-                  onClick={() => setEnvironment("SANDBOX")}
-                >
-                  Sandbox (Test)
-                </Button>
-                <Button
-                  variant={environment === "LIVE" ? "primary" : "secondary"}
-                  onClick={() => setEnvironment("LIVE")}
-                >
-                  Live (Production)
-                </Button>
-              </Box>
-            </Box>
-
-            <Box>
-              <Text marginBottom={2}>Partner Client ID</Text>
-              <Input
-                type="text"
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                placeholder="AYSq3RDGsmBLJE-otTkBtM..."
-              />
-            </Box>
-
-            <Box>
-              <Text marginBottom={2}>Partner Client Secret</Text>
-              <Input
-                type="password"
-                value={clientSecret}
-                onChange={(e) => setClientSecret(e.target.value)}
-                placeholder="EHnHq7t06p..."
-              />
-            </Box>
-
-            <Box>
-              <Text marginBottom={2}>Partner Merchant ID (Optional)</Text>
-              <Input
-                type="text"
-                value={partnerMerchantId}
-                onChange={(e) => setPartnerMerchantId(e.target.value)}
-                placeholder="ABCDEFGHIJKLM"
-              />
-              <Text marginTop={1} size={2} color="default2">
-                Your PayPal Partner Merchant ID, required for querying seller status
-              </Text>
-            </Box>
-
-            <Box>
-              <Text marginBottom={2}>Partner Fee Percent (Optional)</Text>
-              <Input
-                type="number"
-                value={partnerFeePercent}
-                onChange={(e) => setPartnerFeePercent(e.target.value)}
-                placeholder="2.00"
-                min="0"
-                max="100"
-                step="0.01"
-              />
-              <Text marginTop={1} size={2} color="default2">
-                Platform fee percentage (e.g., 2.00 for 2%). PayPal deducts this from merchant payments
-              </Text>
-            </Box>
-
-            <Box>
-              <Text marginBottom={2}>BN Code (Optional)</Text>
-              <Input
-                type="text"
-                value={bnCode}
-                onChange={(e) => setBnCode(e.target.value)}
-                placeholder="YourPartnerName_SP"
-              />
-              <Text marginTop={1} size={2} color="default2">
-                PayPal Partner Attribution BN code for tracking partner fees
-              </Text>
-            </Box>
-
-            <Box display="flex" gap={2}>
-              <Button
-                variant="secondary"
-                onClick={handleTestCredentials}
-                disabled={isTestingCredentials || isSavingConfig || !clientId || !clientSecret}
-              >
-                {isTestingCredentials ? "Testing..." : "Test Credentials"}
-              </Button>
-              <Button
-                variant="primary"
-                onClick={handleSaveConfig}
-                disabled={isTestingCredentials || isSavingConfig || !clientId || !clientSecret}
-              >
-                {isSavingConfig ? "Saving..." : "Save Configuration"}
-              </Button>
-            </Box>
-          </Box>
+          <EnvironmentConfigPanel
+            environment="SANDBOX"
+            secretKey={secretKey}
+            existingConfig={configData?.sandboxConfig ?? null}
+            onSaved={() => refetchConfig()}
+          />
+          <EnvironmentConfigPanel
+            environment="LIVE"
+            secretKey={secretKey}
+            existingConfig={configData?.liveConfig ?? null}
+            onSaved={() => refetchConfig()}
+          />
         </Box>
       </Layout.AppSection>
     </Box>

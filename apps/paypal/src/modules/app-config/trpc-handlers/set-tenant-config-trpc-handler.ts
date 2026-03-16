@@ -24,6 +24,7 @@ export class SetTenantConfigTrpcHandler {
       .input(
         z.object({
           softDescriptor: z.string().optional(),
+          environment: z.enum(["SANDBOX", "LIVE"]).optional(),
         }),
       )
       .mutation(async ({ input, ctx }) => {
@@ -49,6 +50,7 @@ export class SetTenantConfigTrpcHandler {
         const result = await repository.upsert({
           saleorApiUrl: saleorApiUrl.value,
           softDescriptor: normalizedSoftDescriptor ?? null,
+          environment: input.environment,
         });
 
         if (result.isErr()) {
