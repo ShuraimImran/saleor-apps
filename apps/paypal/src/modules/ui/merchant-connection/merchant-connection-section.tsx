@@ -228,6 +228,10 @@ export const MerchantConnectionSection = () => {
 
   const isLoading = isLoadingStatus || isCreatingReferral || isRefreshing || isDeleting;
 
+  const isPending = merchantStatus?.onboardingStatus === "PENDING";
+  const isInProgress = merchantStatus?.onboardingStatus === "IN_PROGRESS";
+  const isCompleted = merchantStatus?.onboardingStatus === "COMPLETED";
+
   const environmentToggle = (
     <Box
       padding={4}
@@ -276,23 +280,25 @@ export const MerchantConnectionSection = () => {
     </Box>
   );
 
+  const errorBanner = error ? (
+    <Box
+      padding={4}
+      borderRadius={4}
+      borderWidth={1}
+      borderColor="critical1"
+      __backgroundColor="#FEF2F2"
+    >
+      <Text color="critical1" fontWeight="medium">
+        {error}
+      </Text>
+    </Box>
+  ) : null;
+
   if (!merchantStatus) {
     // Not connected state
     return (
       <Box display="flex" flexDirection="column" gap={5}>
-        {error && (
-          <Box
-            padding={4}
-            borderRadius={4}
-            borderWidth={1}
-            borderColor="critical1"
-            __backgroundColor="#FEF2F2"
-          >
-            <Text color="critical1" fontWeight="medium">
-              {error}
-            </Text>
-          </Box>
-        )}
+        {errorBanner}
 
         {environmentToggle}
 
@@ -333,7 +339,7 @@ export const MerchantConnectionSection = () => {
             disabled={isLoading || !merchantEmail}
             size="large"
           >
-            {isLoading ? "Connecting..." : "🔗 Connect PayPal Account"}
+            {isLoading ? "Connecting..." : "Connect PayPal Account"}
           </Button>
 
           <Box
@@ -345,7 +351,8 @@ export const MerchantConnectionSection = () => {
             borderColor="info1"
           >
             <Text size={2} color="default2">
-              ℹ️ You'll be securely redirected to PayPal to authorize the connection. Once completed, you'll be brought back to this page.
+              You will be securely redirected to PayPal to authorize the connection.
+              Once completed, you will be brought back to this page.
             </Text>
           </Box>
         </Box>
@@ -353,34 +360,122 @@ export const MerchantConnectionSection = () => {
     );
   }
 
-  // Connected state
-  return (
-    <Box display="flex" flexDirection="column" gap={5}>
-      {error && (
-        <Box
-          padding={4}
-          borderRadius={4}
-          borderWidth={1}
-          borderColor="critical1"
-          __backgroundColor="#FEF2F2"
-        >
-          <Text color="critical1" fontWeight="medium">
-            {error}
+  // Determine status display
+  const getStatusBadge = () => {
+    if (isCompleted && merchantStatus.paymentsReceivable) {
+      return (
+        <Box paddingX={3} paddingY={1} borderRadius={4} __backgroundColor="#10B981">
+          <Text size={2} fontWeight="medium" __color="#FFFFFF">
+            Ready to receive payments
           </Text>
         </Box>
-      )}
+      );
+    }
+
+    if (isPending) {
+      return (
+        <Box paddingX={3} paddingY={1} borderRadius={4} __backgroundColor="#EF4444">
+          <Text size={2} fontWeight="medium" __color="#FFFFFF">
+            Onboarding not completed
+          </Text>
+        </Box>
+      );
+    }
+
+    if (isInProgress) {
+      return (
+        <Box paddingX={3} paddingY={1} borderRadius={4} __backgroundColor="#F59E0B">
+          <Text size={2} fontWeight="medium" __color="#FFFFFF">
+            Setup in progress
+          </Text>
+        </Box>
+      );
+    }
+
+    return (
+      <Box paddingX={3} paddingY={1} borderRadius={4} __backgroundColor="#F59E0B">
+        <Text size={2} fontWeight="medium" __color="#FFFFFF">
+          Pending verification
+        </Text>
+      </Box>
+    );
+  };
+
+  const getHeaderText = () => {
+    if (isPending) return "PayPal Onboarding Started";
+    if (isCompleted && merchantStatus.paymentsReceivable) return "PayPal Account Connected";
+
+    return "PayPal Account Linked";
+  };
+
+  const getHeaderColor = () => {
+    if (isPending) return "#F59E0B";
+    if (isCompleted && merchantStatus.paymentsReceivable) return "#10B981";
+
+    return "#2563EB";
+  };
+
+  const getBorderColor = () => {
+    if (isPending) return "warning1" as const;
+    if (isCompleted && merchantStatus.paymentsReceivable) return "success1" as const;
+
+    return "info1" as const;
+  };
+
+  const getBgColor = () => {
+    if (isPending) return "#FFFBEB";
+    if (isCompleted && merchantStatus.paymentsReceivable) return "#F0FDF4";
+
+    return "#EFF6FF";
+  };
+
+  // Connected / In-progress state
+  return (
+    <Box display="flex" flexDirection="column" gap={5}>
+      {errorBanner}
 
       {environmentToggle}
 
+      {/* Pending onboarding warning - shown prominently */}
+      {isPending && (
+        <Box
+          padding={5}
+          borderRadius={4}
+          borderWidth={1}
+          borderColor="warning1"
+          __backgroundColor="#FFFBEB"
+        >
+          <Text size={3} fontWeight="bold" color="warning1" marginBottom={3}>
+            Complete PayPal Onboarding
+          </Text>
+          <Text size={3} color="default2" marginBottom={4}>
+            You have started the connection process but have not completed the PayPal
+            onboarding yet. Please complete the setup in the PayPal window that was opened.
+          </Text>
+          <Text size={3} color="default2" marginBottom={4}>
+            If you closed the window, you can click the button below to restart the process.
+          </Text>
+          <Button
+            variant="primary"
+            size="small"
+            onClick={handleConnectPayPal}
+            disabled={isLoading || !merchantEmail}
+          >
+            {isLoading ? "Connecting..." : "Restart PayPal Onboarding"}
+          </Button>
+        </Box>
+      )}
+
+      {/* Account status card */}
       <Box
         padding={6}
         borderRadius={4}
         borderWidth={1}
-        borderColor="info1"
-        __backgroundColor="#EFF6FF"
+        borderColor={getBorderColor()}
+        __backgroundColor={getBgColor()}
       >
-        <Text size={5} marginBottom={4} fontWeight="bold" __color="#2563EB">
-          ✓ PayPal Account Connected
+        <Text size={5} marginBottom={4} fontWeight="bold" __color={getHeaderColor()}>
+          {getHeaderText()}
         </Text>
         <Box display="flex" flexDirection="column" gap={3}>
           <Box display="flex" alignItems="center" gap={2}>
@@ -403,98 +498,63 @@ export const MerchantConnectionSection = () => {
             <Text size={3} fontWeight="medium" __color="#6B7280">
               Status:
             </Text>
-            {merchantStatus.paymentsReceivable ? (
-              <Box
-                paddingX={3}
-                paddingY={1}
-                borderRadius={4}
-                __backgroundColor="#3B82F6"
-              >
-                <Text size={2} fontWeight="medium" __color="#FFFFFF">
-                  Ready to receive payments
-                </Text>
-              </Box>
-            ) : (
-              <Box
-                paddingX={3}
-                paddingY={1}
-                borderRadius={4}
-                __backgroundColor="#F59E0B"
-              >
-                <Text size={2} fontWeight="medium" __color="#FFFFFF">
-                  Setup in progress
-                </Text>
-              </Box>
-            )}
+            {getStatusBadge()}
           </Box>
         </Box>
       </Box>
 
-      <Box
-        padding={5}
-        borderRadius={4}
-        borderWidth={1}
-        borderColor="default1"
-        __backgroundColor="#FAFAFA"
-      >
-        <Text size={4} marginBottom={4} fontWeight="medium">
-          Payment Methods
-        </Text>
-        <Box display="flex" flexWrap="wrap" gap={3}>
-          <PaymentMethodBadge
-            label="PayPal Buttons"
-            enabled={merchantStatus.paymentMethods?.paypalButtons || false}
-          />
-          <PaymentMethodBadge
-            label="Card Processing"
-            enabled={merchantStatus.paymentMethods?.advancedCardProcessing || false}
-          />
-          <PaymentMethodBadge
-            label="Apple Pay"
-            enabled={merchantStatus.paymentMethods?.applePay || false}
-          />
-          <PaymentMethodBadge
-            label="Google Pay"
-            enabled={merchantStatus.paymentMethods?.googlePay || false}
-          />
+      {/* Payment Methods - only show when not pending */}
+      {!isPending && (
+        <Box
+          padding={5}
+          borderRadius={4}
+          borderWidth={1}
+          borderColor="default1"
+          __backgroundColor="#FAFAFA"
+        >
+          <Text size={4} marginBottom={4} fontWeight="medium">
+            Payment Methods
+          </Text>
+          <Box display="flex" flexWrap="wrap" gap={3}>
+            <PaymentMethodBadge
+              label="PayPal Buttons"
+              enabled={merchantStatus.paymentMethods?.paypalButtons || false}
+            />
+            <PaymentMethodBadge
+              label="Card Processing"
+              enabled={merchantStatus.paymentMethods?.advancedCardProcessing || false}
+            />
+            <PaymentMethodBadge
+              label="Apple Pay"
+              enabled={merchantStatus.paymentMethods?.applePay || false}
+            />
+            <PaymentMethodBadge
+              label="Google Pay"
+              enabled={merchantStatus.paymentMethods?.googlePay || false}
+            />
+          </Box>
         </Box>
-      </Box>
+      )}
 
-      {/* Apple Pay Domain Management */}
-      {trackingId && (
+      {/* Apple Pay Domain Management - only show when not pending */}
+      {!isPending && trackingId && (
         <ApplePayDomainsSection
           trackingId={trackingId}
           applePayEnabled={merchantStatus.paymentMethods?.applePay || false}
         />
       )}
 
-      {merchantStatus.onboardingStatus === "PENDING" && (
-        <Box
-          padding={4}
-          borderRadius={4}
-          borderWidth={1}
-          borderColor="warning1"
-          __backgroundColor="#FFFBEB"
-        >
-          <Text size={3} fontWeight="medium" color="warning1" marginBottom={2}>
-            ⚠️ Complete PayPal Onboarding
-          </Text>
-          <Text size={3} color="default2">
-            You've started the connection process but haven't completed the PayPal onboarding yet.
-            Please complete the setup in the PayPal window, or click "Connect PayPal Account" again to restart.
-          </Text>
-        </Box>
-      )}
-
       <Box display="flex" gap={3} flexWrap="wrap">
-        <Button
-          variant="secondary"
-          onClick={handleRefreshStatus}
-          disabled={isLoading}
-          title="Refresh payment method status from PayPal"
-        >
-          {isRefreshing ? "Refreshing..." : "🔄 Refresh Status"}
-        </Button>
+        {!isPending && (
+          <Button
+            variant="secondary"
+            onClick={handleRefreshStatus}
+            disabled={isLoading}
+            title="Refresh payment method status from PayPal"
+          >
+            {isRefreshing ? "Refreshing..." : "Refresh Status"}
+          </Button>
+        )}
         <Button variant="tertiary" onClick={handleDisconnectClick} disabled={isLoading}>
           {isDeleting ? "Disconnecting..." : "Disconnect"}
         </Button>
@@ -532,7 +592,7 @@ const PaymentMethodBadge = ({ label, enabled }: { label: string; enabled: boolea
         justifyContent="center"
       >
         <Text size={1} __color="#FFFFFF" fontWeight="bold">
-          {enabled ? "✓" : "○"}
+          {enabled ? "+" : "-"}
         </Text>
       </Box>
       <Text size={3} fontWeight="medium" __color={enabled ? "#2563EB" : "#6B7280"}>

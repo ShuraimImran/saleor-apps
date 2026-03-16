@@ -104,12 +104,15 @@ export const ApplePayDomainsSection = ({
         borderColor="default1"
         __backgroundColor="#FAFAFA"
       >
-        <Text size={4} marginBottom={2} fontWeight="medium">
-           Apple Pay Domain Management
+        <Text size={4} marginBottom={4} fontWeight="medium">
+          Apple Pay Domain Management
+        </Text>
+        <Text size={3} color="default2" marginBottom={2}>
+          Apple Pay is not enabled for your account.
         </Text>
         <Text size={3} color="default2">
-          Apple Pay is not enabled for your account. To use Apple Pay, ensure your PayPal account
-          has Apple Pay capabilities enabled. Contact PayPal support or check your account settings.
+          To use Apple Pay, ensure your PayPal account has Apple Pay capabilities enabled.
+          Contact PayPal support or check your account settings.
         </Text>
       </Box>
     );
@@ -128,7 +131,7 @@ export const ApplePayDomainsSection = ({
     >
       <Box display="flex" alignItems="center" gap={2} marginBottom={4}>
         <Text size={4} fontWeight="medium">
-           Apple Pay Domain Management
+          Apple Pay Domain Management
         </Text>
         <Box
           paddingX={2}
@@ -292,13 +295,15 @@ export const ApplePayDomainsSection = ({
         borderWidth={1}
         borderColor="info1"
       >
-        <Text size={2} fontWeight="medium" marginBottom={1}>
-          ℹ️ Apple Pay Domain Verification
+        <Text size={2} fontWeight="medium" marginBottom={2}>
+          Apple Pay Domain Verification
+        </Text>
+        <Text size={2} color="default2" marginBottom={2}>
+          After registering a domain, Apple will verify ownership. The verification process
+          is automatic and typically completes within a few minutes.
         </Text>
         <Text size={2} color="default2">
-          After registering a domain, Apple will verify ownership. The verification process is
-          automatic and typically completes within a few minutes. Ensure your domain is accessible
-          and properly configured for Apple Pay to work correctly.
+          Ensure your domain is accessible and properly configured for Apple Pay to work correctly.
         </Text>
       </Box>
     </Box>
