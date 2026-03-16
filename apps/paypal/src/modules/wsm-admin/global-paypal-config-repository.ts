@@ -204,7 +204,7 @@ export class GlobalPayPalConfigRepository {
       const query = `
         INSERT INTO wsm_global_paypal_config (client_id, client_secret, partner_merchant_id, partner_fee_percent, bn_code, webhook_id, webhook_url, environment, is_active)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
-        ON CONFLICT (environment) WHERE is_active = TRUE
+        ON CONFLICT ON CONSTRAINT unique_wsm_global_config_environment
         DO UPDATE SET
           client_id = EXCLUDED.client_id,
           client_secret = EXCLUDED.client_secret,

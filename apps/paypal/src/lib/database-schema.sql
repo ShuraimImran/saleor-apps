@@ -152,8 +152,8 @@ CREATE INDEX IF NOT EXISTS idx_wsm_global_config_environment
   ON wsm_global_paypal_config(environment);
 
 -- Unique constraint: one config per environment (allows one SANDBOX + one LIVE)
-CREATE UNIQUE INDEX IF NOT EXISTS idx_wsm_global_config_unique_env
-  ON wsm_global_paypal_config(environment) WHERE is_active = TRUE;
+ALTER TABLE wsm_global_paypal_config DROP CONSTRAINT IF EXISTS unique_wsm_global_config_environment;
+ALTER TABLE wsm_global_paypal_config ADD CONSTRAINT unique_wsm_global_config_environment UNIQUE (environment);
 
 -- Trigger to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_wsm_global_config_timestamp()
@@ -184,7 +184,9 @@ ALTER TABLE wsm_global_paypal_config ADD COLUMN IF NOT EXISTS webhook_url TEXT;
 -- Allows one SANDBOX + one LIVE global config simultaneously
 -- Each tenant can independently select their environment
 ALTER TABLE paypal_tenant_config ADD COLUMN IF NOT EXISTS environment TEXT NOT NULL DEFAULT 'SANDBOX' CHECK (environment IN ('SANDBOX', 'LIVE'));
-CREATE UNIQUE INDEX IF NOT EXISTS idx_wsm_global_config_unique_env ON wsm_global_paypal_config(environment) WHERE is_active = TRUE;
+DROP INDEX IF EXISTS idx_wsm_global_config_unique_env;
+ALTER TABLE wsm_global_paypal_config DROP CONSTRAINT IF EXISTS unique_wsm_global_config_environment;
+ALTER TABLE wsm_global_paypal_config ADD CONSTRAINT unique_wsm_global_config_environment UNIQUE (environment);
 CREATE INDEX IF NOT EXISTS idx_wsm_global_config_environment ON wsm_global_paypal_config(environment);
 
 -- PayPal Customer Vault Table

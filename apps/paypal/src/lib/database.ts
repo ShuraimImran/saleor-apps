@@ -184,10 +184,13 @@ export const initializeDatabase = async (): Promise<void> => {
 
     -- Drop old single-active index if it exists (allowed only one active config total)
     DROP INDEX IF EXISTS idx_wsm_global_paypal_config_active;
+    -- Drop partial unique index if it exists (PostgreSQL ON CONFLICT doesn't support partial indexes)
+    DROP INDEX IF EXISTS idx_wsm_global_config_unique_env;
 
-    -- Allow one active config per environment (one SANDBOX + one LIVE)
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_wsm_global_config_unique_env
-      ON wsm_global_paypal_config(environment) WHERE is_active = TRUE;
+    -- Allow one config per environment (one SANDBOX + one LIVE)
+    -- Uses a plain unique constraint so ON CONFLICT works
+    ALTER TABLE wsm_global_paypal_config DROP CONSTRAINT IF EXISTS unique_wsm_global_config_environment;
+    ALTER TABLE wsm_global_paypal_config ADD CONSTRAINT unique_wsm_global_config_environment UNIQUE (environment);
 
     CREATE INDEX IF NOT EXISTS idx_wsm_global_config_environment
       ON wsm_global_paypal_config(environment);
