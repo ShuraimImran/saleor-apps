@@ -374,7 +374,7 @@ export const MerchantConnectionSection = () => {
 
     if (isPending) {
       return (
-        <Box paddingX={3} paddingY={1} borderRadius={4} __backgroundColor="#EF4444">
+        <Box paddingX={3} paddingY={1} borderRadius={4} __backgroundColor="#D97706">
           <Text size={2} fontWeight="medium" __color="#FFFFFF">
             Onboarding not completed
           </Text>
@@ -445,16 +445,22 @@ export const MerchantConnectionSection = () => {
           borderColor="warning1"
           __backgroundColor="#FFFBEB"
         >
-          <Text size={3} fontWeight="bold" color="warning1" marginBottom={3}>
-            Complete PayPal Onboarding
-          </Text>
-          <Text size={3} color="default2" marginBottom={4}>
-            You have started the connection process but have not completed the PayPal
-            onboarding yet. Please complete the setup in the PayPal window that was opened.
-          </Text>
-          <Text size={3} color="default2" marginBottom={4}>
-            If you closed the window, you can click the button below to restart the process.
-          </Text>
+          <Box marginBottom={4}>
+            <Text size={3} fontWeight="bold" color="warning1">
+              Complete PayPal Onboarding
+            </Text>
+          </Box>
+          <Box marginBottom={3}>
+            <Text size={3} color="default2">
+              You have started the connection process but have not completed the PayPal
+              onboarding yet. Please complete the setup in the PayPal window that was opened.
+            </Text>
+          </Box>
+          <Box marginBottom={5}>
+            <Text size={3} color="default2">
+              If you closed the window, you can click the button below to restart the process.
+            </Text>
+          </Box>
           <Button
             variant="primary"
             size="small"
@@ -503,41 +509,39 @@ export const MerchantConnectionSection = () => {
         </Box>
       </Box>
 
-      {/* Payment Methods - only show when not pending */}
-      {!isPending && (
-        <Box
-          padding={5}
-          borderRadius={4}
-          borderWidth={1}
-          borderColor="default1"
-          __backgroundColor="#FAFAFA"
-        >
-          <Text size={4} marginBottom={4} fontWeight="medium">
-            Payment Methods
-          </Text>
-          <Box display="flex" flexWrap="wrap" gap={3}>
-            <PaymentMethodBadge
-              label="PayPal Buttons"
-              enabled={merchantStatus.paymentMethods?.paypalButtons || false}
-            />
-            <PaymentMethodBadge
-              label="Card Processing"
-              enabled={merchantStatus.paymentMethods?.advancedCardProcessing || false}
-            />
-            <PaymentMethodBadge
-              label="Apple Pay"
-              enabled={merchantStatus.paymentMethods?.applePay || false}
-            />
-            <PaymentMethodBadge
-              label="Google Pay"
-              enabled={merchantStatus.paymentMethods?.googlePay || false}
-            />
-          </Box>
+      {/* Payment Methods */}
+      <Box
+        padding={5}
+        borderRadius={4}
+        borderWidth={1}
+        borderColor="default1"
+        __backgroundColor="#FAFAFA"
+      >
+        <Text size={4} marginBottom={4} fontWeight="medium">
+          Payment Methods
+        </Text>
+        <Box display="flex" flexWrap="wrap" gap={3}>
+          <PaymentMethodBadge
+            label="PayPal Buttons"
+            enabled={merchantStatus.paymentMethods?.paypalButtons || false}
+          />
+          <PaymentMethodBadge
+            label="Card Processing"
+            enabled={merchantStatus.paymentMethods?.advancedCardProcessing || false}
+          />
+          <PaymentMethodBadge
+            label="Apple Pay"
+            enabled={merchantStatus.paymentMethods?.applePay || false}
+          />
+          <PaymentMethodBadge
+            label="Google Pay"
+            enabled={merchantStatus.paymentMethods?.googlePay || false}
+          />
         </Box>
-      )}
+      </Box>
 
-      {/* Apple Pay Domain Management - only show when not pending */}
-      {!isPending && trackingId && (
+      {/* Apple Pay Domain Management */}
+      {trackingId && (
         <ApplePayDomainsSection
           trackingId={trackingId}
           applePayEnabled={merchantStatus.paymentMethods?.applePay || false}
