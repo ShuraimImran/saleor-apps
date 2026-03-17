@@ -5,6 +5,7 @@ import { getPool } from "@/lib/database";
 import { PayPalTenantConfigRepository } from "@/modules/app-config/repositories/paypal-tenant-config-repository";
 import { publicProcedure } from "@/modules/trpc/public-procedure";
 
+import { GlobalPayPalConfigRepository } from "../global-paypal-config-repository";
 import { wsmAdminAuthSchema } from "./wsm-admin-input-schemas";
 
 /**
@@ -71,6 +72,19 @@ export class SetTenantLiveAccessHandler {
       )
       .mutation(async ({ input }) => {
         validateSuperAdminKey(input.secretKey);
+
+        // If enabling live, check that LIVE global config exists
+        if (input.liveEnabled) {
+          const globalConfigRepo = GlobalPayPalConfigRepository.create(getPool());
+          const liveConfigResult = await globalConfigRepo.getConfigByEnvironment("LIVE");
+
+          if (liveConfigResult.isErr() || !liveConfigResult.value) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Cannot enable live access: No LIVE PayPal configuration found. Please configure production credentials first.",
+            });
+          }
+        }
 
         const repository = PayPalTenantConfigRepository.create(getPool());
         const result = await repository.setLiveEnabled({
