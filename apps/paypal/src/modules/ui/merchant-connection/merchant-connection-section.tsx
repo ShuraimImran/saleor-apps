@@ -261,14 +261,18 @@ export const MerchantConnectionSection = () => {
           borderColor="default1"
           __backgroundColor="#FAFAFA"
         >
-          <Text size={4} marginBottom={4} fontWeight="medium">
-            Get Started with PayPal
-          </Text>
-          <Text size={3} color="default2" marginBottom={5}>
-            Connect your PayPal merchant account to enable payment processing for your store.
-          </Text>
+          <Box marginBottom={5}>
+            <Text size={4} fontWeight="medium">
+              Get Started with PayPal
+            </Text>
+          </Box>
+          <Box marginBottom={5}>
+            <Text size={3} color="default2">
+              Connect your PayPal merchant account to enable payment processing for your store.
+            </Text>
+          </Box>
 
-          <Box display="flex" flexDirection="column" gap={2} marginBottom={5}>
+          <Box display="flex" flexDirection="column" gap={2} marginTop={3} marginBottom={5}>
             <Text size={3} fontWeight="medium">
               PayPal Account Email
             </Text>
@@ -316,7 +320,18 @@ export const MerchantConnectionSection = () => {
   const getStatusBadge = () => {
     if (isCompleted && merchantStatus.paymentsReceivable) {
       return (
-        <Box paddingX={3} paddingY={1} borderRadius={4} __backgroundColor="#10B981">
+        <Box
+          paddingX={4}
+          paddingY={2}
+          __borderRadius="20px"
+          __backgroundColor="#0D9488"
+          display="flex"
+          alignItems="center"
+          gap={2}
+        >
+          <Text size={2} fontWeight="bold" __color="#FFFFFF">
+            +
+          </Text>
           <Text size={2} fontWeight="medium" __color="#FFFFFF">
             Ready to receive payments
           </Text>
@@ -463,37 +478,91 @@ export const MerchantConnectionSection = () => {
 
       {/* Account status card */}
       <Box
-        padding={6}
         borderRadius={4}
         borderWidth={1}
-        borderColor={getBorderColor()}
-        __backgroundColor={getBgColor()}
+        borderColor="default1"
+        __overflow="hidden"
       >
-        <Text size={5} marginBottom={4} fontWeight="bold" __color={getHeaderColor()}>
-          {getHeaderText()}
-        </Text>
-        <Box display="flex" flexDirection="column" gap={3}>
-          <Box display="flex" alignItems="center" gap={2}>
-            <Text size={3} fontWeight="medium" __color="#6B7280">
-              Email:
-            </Text>
-            <Text size={3} fontWeight="medium">
-              {merchantStatus.merchantEmail || "Not provided"}
+        {/* Gradient header */}
+        <Box
+          padding={5}
+          style={{
+            background: "linear-gradient(135deg, #0D9488, #14B8A6, #2DD4BF)",
+          }}
+        >
+          <Box display="flex" alignItems="center" gap={3} marginBottom={2}>
+            <Box
+              __width="32px"
+              __height="32px"
+              __borderRadius="50%"
+              __backgroundColor="rgba(255,255,255,0.25)"
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+            >
+              <Text __color="#FFFFFF" fontWeight="bold">
+                {isCompleted && merchantStatus.paymentsReceivable ? "+" : "~"}
+              </Text>
+            </Box>
+            <Text size={5} fontWeight="bold" __color="#FFFFFF">
+              {getHeaderText()}
             </Text>
           </Box>
-          <Box display="flex" alignItems="center" gap={2}>
-            <Text size={3} fontWeight="medium" __color="#6B7280">
-              Tracking ID:
-            </Text>
-            <Text size={2} __color="#374151">
-              {merchantStatus.trackingId}
-            </Text>
-          </Box>
-          <Box display="flex" alignItems="center" gap={2}>
-            <Text size={3} fontWeight="medium" __color="#6B7280">
-              Status:
-            </Text>
-            {getStatusBadge()}
+          <Text size={3} __color="rgba(255,255,255,0.85)">
+            {isCompleted && merchantStatus.paymentsReceivable
+              ? "Your account is ready to accept payments"
+              : isPending
+                ? "Complete the onboarding process to start accepting payments"
+                : "Your account is being verified by PayPal"}
+          </Text>
+        </Box>
+
+        {/* Details section */}
+        <Box __backgroundColor="#FFFFFF" padding={5}>
+          <Box display="flex" flexDirection="column" gap={4}>
+            {/* Email */}
+            <Box
+              padding={4}
+              borderRadius={4}
+              borderWidth={1}
+              borderColor="default1"
+              __backgroundColor="#FAFAFA"
+            >
+              <Box display="flex" alignItems="center" gap={2} marginBottom={1}>
+                <Text size={2} fontWeight="medium" __color="#6B7280">
+                  Email Address
+                </Text>
+              </Box>
+              <Text size={3} fontWeight="medium">
+                {merchantStatus.merchantEmail || "Not provided"}
+              </Text>
+            </Box>
+
+            {/* Tracking ID */}
+            <Box
+              padding={4}
+              borderRadius={4}
+              borderWidth={1}
+              borderColor="default1"
+              __backgroundColor="#FAFAFA"
+            >
+              <Box display="flex" alignItems="center" gap={2} marginBottom={1}>
+                <Text size={2} fontWeight="medium" __color="#6B7280">
+                  Tracking ID
+                </Text>
+              </Box>
+              <Text size={3} fontWeight="medium" __color="#374151">
+                {merchantStatus.trackingId}
+              </Text>
+            </Box>
+
+            {/* Status */}
+            <Box display="flex" justifyContent="space-between" alignItems="center" paddingTop={2}>
+              <Text size={3} fontWeight="medium" __color="#6B7280">
+                Status
+              </Text>
+              {getStatusBadge()}
+            </Box>
           </Box>
         </Box>
       </Box>
