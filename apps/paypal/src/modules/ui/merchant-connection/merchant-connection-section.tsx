@@ -654,19 +654,20 @@ export const MerchantConnectionSection = () => {
             </Text>
           </Box>
 
-          {/* Status */}
-          <Box display="flex" justifyContent="space-between" alignItems="center" paddingX={5} paddingY={4}>
-            <Text size={3} fontWeight="medium" __color="#6B7280">
-              Status
-            </Text>
-            {getStatusBadge()}
-          </Box>
         </Box>
+      </Box>
+
+      {/* Status - outside the card to align with outer edges */}
+      <Box display="flex" justifyContent="space-between" alignItems="center">
+        <Text size={3} fontWeight="medium" __color="#6B7280">
+          Status
+        </Text>
+        {getStatusBadge()}
       </Box>
 
       {/* Payment Methods */}
       <Box>
-        <Text size={4} marginBottom={4} fontWeight="medium">
+        <Text size={4} marginBottom={5} fontWeight="medium">
           Payment Methods
         </Text>
         <Box
@@ -734,7 +735,7 @@ const PaymentMethodBadge = ({ label, enabled }: { label: string; enabled: boolea
       borderRadius={4}
       borderWidth={1}
       borderColor={enabled ? "success1" : "default1"}
-      __backgroundColor={enabled ? "#F0FDF4" : "#F9FAFB"}
+      __backgroundColor={enabled ? "#F0FDFA" : "#F9FAFB"}
       display="flex"
       alignItems="center"
       justifyContent="space-between"
