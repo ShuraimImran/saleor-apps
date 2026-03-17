@@ -257,6 +257,7 @@ export const initializeDatabase = async (): Promise<void> => {
       status_check_error TEXT,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW(),
+      CONSTRAINT unique_tenant_onboarding UNIQUE (saleor_api_url),
       CONSTRAINT unique_tracking_id_per_instance UNIQUE (saleor_api_url, tracking_id),
       CONSTRAINT unique_merchant_id_per_instance UNIQUE (saleor_api_url, paypal_merchant_id)
     );
@@ -283,6 +284,27 @@ export const initializeDatabase = async (): Promise<void> => {
         WHERE table_name='paypal_merchant_onboarding' AND column_name='environment'
       ) THEN
         ALTER TABLE paypal_merchant_onboarding ADD COLUMN environment TEXT NOT NULL DEFAULT 'SANDBOX' CHECK (environment IN ('SANDBOX', 'LIVE'));
+      END IF;
+    END $$;
+
+    -- Enforce one onboarding record per tenant: clean up duplicates, keep best record
+    DELETE FROM paypal_merchant_onboarding
+    WHERE id NOT IN (
+      SELECT DISTINCT ON (saleor_api_url) id
+      FROM paypal_merchant_onboarding
+      ORDER BY saleor_api_url,
+        paypal_merchant_id IS NOT NULL DESC,
+        CASE onboarding_status WHEN 'COMPLETED' THEN 4 WHEN 'IN_PROGRESS' THEN 3 WHEN 'PENDING' THEN 2 ELSE 1 END DESC,
+        created_at DESC
+    );
+
+    -- Add unique constraint: one onboarding record per tenant
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'unique_tenant_onboarding'
+      ) THEN
+        ALTER TABLE paypal_merchant_onboarding ADD CONSTRAINT unique_tenant_onboarding UNIQUE (saleor_api_url);
       END IF;
     END $$;
 

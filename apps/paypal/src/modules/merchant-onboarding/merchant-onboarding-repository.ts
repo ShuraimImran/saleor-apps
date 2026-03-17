@@ -192,6 +192,34 @@ export class PostgresMerchantOnboardingRepository implements IMerchantOnboarding
           partner_referral_id, action_url, return_url, environment, onboarding_status
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING')
+        ON CONFLICT ON CONSTRAINT unique_tenant_onboarding
+        DO UPDATE SET
+          tracking_id = EXCLUDED.tracking_id,
+          merchant_email = EXCLUDED.merchant_email,
+          merchant_country = EXCLUDED.merchant_country,
+          partner_referral_id = EXCLUDED.partner_referral_id,
+          action_url = EXCLUDED.action_url,
+          return_url = EXCLUDED.return_url,
+          environment = EXCLUDED.environment,
+          onboarding_status = 'PENDING',
+          paypal_merchant_id = NULL,
+          merchant_client_id = NULL,
+          merchant_oauth_email = NULL,
+          onboarding_started_at = NULL,
+          onboarding_completed_at = NULL,
+          primary_email_confirmed = FALSE,
+          payments_receivable = FALSE,
+          oauth_integrated = FALSE,
+          paypal_buttons_enabled = FALSE,
+          acdc_enabled = FALSE,
+          apple_pay_enabled = FALSE,
+          google_pay_enabled = FALSE,
+          vaulting_enabled = FALSE,
+          subscribed_products = '[]',
+          active_capabilities = '[]',
+          last_status_check = NULL,
+          status_check_error = NULL,
+          updated_at = NOW()
         RETURNING *
       `;
 

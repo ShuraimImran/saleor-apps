@@ -129,6 +129,34 @@ export const MerchantConnectionSection = () => {
     }
   }, [appBridgeState]);
 
+  // Query Saleor metadata to check if PayPal config exists
+  const saleorConfigs = trpcClient.appConfig.getPayPalConfigsList.useQuery(undefined, { retry: false });
+
+  // Auto-refresh merchant status when needed
+  const [autoRefreshDone, setAutoRefreshDone] = useState(false);
+
+  useEffect(() => {
+    if (autoRefreshDone || !merchantStatus || !trackingId || isRefreshing) {
+      return;
+    }
+
+    const hasPaypalMerchantId = !!merchantStatus.paypalMerchantId;
+    const isInProgressWithMerchantId =
+      merchantStatus.onboardingStatus === "IN_PROGRESS" && hasPaypalMerchantId;
+    const isCompletedButNoMetadata =
+      merchantStatus.onboardingStatus === "COMPLETED" &&
+      saleorConfigs.data !== undefined &&
+      (!saleorConfigs.data || saleorConfigs.data.length === 0);
+
+    if (isInProgressWithMerchantId || isCompletedButNoMetadata) {
+      console.log("Auto-refreshing merchant status", {
+        reason: isInProgressWithMerchantId ? "IN_PROGRESS with merchant ID" : "COMPLETED but no Saleor metadata",
+      });
+      setAutoRefreshDone(true);
+      refreshStatus({ trackingId });
+    }
+  }, [merchantStatus, trackingId, saleorConfigs.data, autoRefreshDone, isRefreshing]);
+
   const handleConnectPayPal = () => {
     if (!appBridge) {
       setError("AppBridge not available. Please refresh the page and try again.");

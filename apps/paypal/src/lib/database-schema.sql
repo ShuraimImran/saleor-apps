@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS paypal_merchant_onboarding (
   updated_at TIMESTAMP DEFAULT NOW(),
 
   -- Constraints
+  CONSTRAINT unique_tenant_onboarding UNIQUE (saleor_api_url),
   CONSTRAINT unique_tracking_id_per_instance UNIQUE (saleor_api_url, tracking_id),
   CONSTRAINT unique_merchant_id_per_instance UNIQUE (saleor_api_url, paypal_merchant_id)
 );

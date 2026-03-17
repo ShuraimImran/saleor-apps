@@ -44,10 +44,7 @@ export class DeleteMerchantOnboardingTrpcHandler {
           const repository = PostgresMerchantOnboardingRepository.create(pool);
 
           // Validate merchant exists before deletion
-          const existingResult = await repository.getByTrackingId(
-            saleorApiUrl.value,
-            input.trackingId
-          );
+          const existingResult = await repository.getBySaleorApiUrl(saleorApiUrl.value);
 
           if (existingResult.isErr()) {
             captureException(existingResult.error);
@@ -65,7 +62,7 @@ export class DeleteMerchantOnboardingTrpcHandler {
           }
 
           // Delete the merchant record
-          const deleteResult = await repository.delete(saleorApiUrl.value, input.trackingId);
+          const deleteResult = await repository.delete(saleorApiUrl.value, existingResult.value.trackingId);
 
           if (deleteResult.isErr()) {
             captureException(deleteResult.error);
