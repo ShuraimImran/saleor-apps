@@ -176,6 +176,7 @@ export const MerchantConnectionSection = () => {
       setError(
         "Production access is not enabled for this tenant. Please contact your WSM administrator to enable live mode."
       );
+      setTimeout(() => setError(null), 2500);
 
       return;
     }
@@ -185,6 +186,7 @@ export const MerchantConnectionSection = () => {
       setError(
         `Cannot switch to ${newEnv} mode while a merchant is connected in ${onboardingEnvironment} mode. Please disconnect the current merchant first.`
       );
+      setTimeout(() => setError(null), 2500);
 
       return;
     }
@@ -425,18 +427,17 @@ export const MerchantConnectionSection = () => {
       return (
         <Box
           paddingX={4}
+          paddingY={2}
           __borderRadius="20px"
           __backgroundColor="#0D9488"
           display="flex"
           alignItems="center"
-          justifyContent="center"
           gap={2}
-          __height="36px"
         >
-          <Text __color="#FFFFFF" fontWeight="bold" __fontSize="14px" __lineHeight="1">
+          <Text __color="#FFFFFF" fontWeight="bold" __fontSize="13px">
             {"\u2713"}
           </Text>
-          <Text size={2} fontWeight="medium" __color="#FFFFFF" __lineHeight="1">
+          <Text size={2} fontWeight="medium" __color="#FFFFFF">
             Ready to receive payments
           </Text>
         </Box>

@@ -135,11 +135,14 @@ export const ApplePayDomainsSection = ({
         </Text>
         <Box
           paddingX={3}
-          paddingY={1}
           __borderRadius="20px"
           __backgroundColor="#0D9488"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          __height="26px"
         >
-          <Text size={1} fontWeight="medium" __color="#FFFFFF">
+          <Text fontWeight="medium" __color="#FFFFFF" __fontSize="11px" __lineHeight="1">
             ENABLED
           </Text>
         </Box>
@@ -295,16 +298,22 @@ export const ApplePayDomainsSection = ({
         borderWidth={1}
         borderColor="info1"
       >
-        <Text size={2} fontWeight="medium" marginBottom={2}>
-          Apple Pay Domain Verification
-        </Text>
-        <Text size={2} color="default2" marginBottom={2}>
-          After registering a domain, Apple will verify ownership. The verification process
-          is automatic and typically completes within a few minutes.
-        </Text>
-        <Text size={2} color="default2">
-          Ensure your domain is accessible and properly configured for Apple Pay to work correctly.
-        </Text>
+        <Box marginBottom={3}>
+          <Text size={2} fontWeight="medium">
+            Apple Pay Domain Verification
+          </Text>
+        </Box>
+        <Box marginBottom={3}>
+          <Text size={2} color="default2">
+            After registering a domain, Apple will verify ownership. The verification process
+            is automatic and typically completes within a few minutes.
+          </Text>
+        </Box>
+        <Box>
+          <Text size={2} color="default2">
+            Ensure your domain is accessible and properly configured for Apple Pay to work correctly.
+          </Text>
+        </Box>
       </Box>
     </Box>
   );
