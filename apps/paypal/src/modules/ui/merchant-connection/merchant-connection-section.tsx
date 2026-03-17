@@ -196,9 +196,6 @@ export const MerchantConnectionSection = () => {
 
   const environmentToggle = (
     <Box
-      padding={5}
-      borderRadius={4}
-      __backgroundColor="#FFFFFF"
       marginBottom={2}
     >
       {/* Header row with title and badge */}
@@ -287,6 +284,20 @@ export const MerchantConnectionSection = () => {
         alignItems="center"
         gap={2}
       >
+        <Box
+          __width="20px"
+          __height="20px"
+          __minWidth="20px"
+          __borderRadius="50%"
+          style={{ border: "1.5px solid #0369A1" }}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <Text __color="#0369A1" fontWeight="bold" __fontSize="12px" __lineHeight="1">
+            i
+          </Text>
+        </Box>
         <Text size={2} __color="#0369A1">
           {environment === "LIVE"
             ? "Merchants will onboard with real PayPal accounts and process real payments."
@@ -303,7 +314,24 @@ export const MerchantConnectionSection = () => {
       borderWidth={1}
       borderColor="critical1"
       __backgroundColor="#FEF2F2"
+      display="flex"
+      alignItems="center"
+      gap={3}
     >
+      <Box
+        __width="22px"
+        __height="22px"
+        __minWidth="22px"
+        __borderRadius="50%"
+        style={{ border: "1.5px solid #DC2626" }}
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+      >
+        <Text __color="#DC2626" fontWeight="bold" __fontSize="13px" __lineHeight="1">
+          !
+        </Text>
+      </Box>
       <Text color="critical1" fontWeight="medium">
         {error}
       </Text>
@@ -637,17 +665,15 @@ export const MerchantConnectionSection = () => {
       </Box>
 
       {/* Payment Methods */}
-      <Box
-        padding={5}
-        borderRadius={4}
-        borderWidth={1}
-        borderColor="default1"
-        __backgroundColor="#FAFAFA"
-      >
+      <Box>
         <Text size={4} marginBottom={4} fontWeight="medium">
           Payment Methods
         </Text>
-        <Box display="flex" flexWrap="wrap" gap={3}>
+        <Box
+          display="grid"
+          __gridTemplateColumns="1fr 1fr"
+          gap={3}
+        >
           <PaymentMethodBadge
             label="PayPal Buttons"
             enabled={merchantStatus.paymentMethods?.paypalButtons || false}
@@ -707,28 +733,28 @@ const PaymentMethodBadge = ({ label, enabled }: { label: string; enabled: boolea
       paddingY={3}
       borderRadius={4}
       borderWidth={1}
-      borderColor={enabled ? "info1" : "default1"}
-      __backgroundColor={enabled ? "#EFF6FF" : "#F9FAFB"}
+      borderColor={enabled ? "success1" : "default1"}
+      __backgroundColor={enabled ? "#F0FDF4" : "#F9FAFB"}
       display="flex"
       alignItems="center"
-      gap={2}
+      justifyContent="space-between"
     >
+      <Text size={3} fontWeight="medium" __color={enabled ? "#374151" : "#9CA3AF"}>
+        {label}
+      </Text>
       <Box
-        __width="20px"
-        __height="20px"
+        __width="22px"
+        __height="22px"
         __borderRadius="50%"
-        __backgroundColor={enabled ? "#3B82F6" : "#E5E7EB"}
+        __backgroundColor={enabled ? "#10B981" : "#D1D5DB"}
         display="flex"
         alignItems="center"
         justifyContent="center"
       >
-        <Text size={1} __color="#FFFFFF" fontWeight="bold">
-          {enabled ? "+" : "-"}
+        <Text __color="#FFFFFF" fontWeight="bold" __fontSize="12px" __lineHeight="1">
+          {enabled ? "\u2713" : "\u2717"}
         </Text>
       </Box>
-      <Text size={3} fontWeight="medium" __color={enabled ? "#2563EB" : "#6B7280"}>
-        {label}
-      </Text>
     </Box>
   );
 };
