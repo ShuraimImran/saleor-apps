@@ -169,6 +169,16 @@ export const MerchantConnectionSection = () => {
   };
 
   const handleEnvironmentChange = (newEnv: PayPalEnvironment) => {
+    // Block switching if a merchant is onboarded on a different environment
+    if (merchantStatus && onboardingEnvironment && onboardingEnvironment !== newEnv) {
+      setError(
+        `Cannot switch to ${newEnv} mode while a merchant is connected in ${onboardingEnvironment} mode. Please disconnect the current merchant first.`
+      );
+
+      return;
+    }
+
+    setError(null);
     setEnvironment(newEnv);
     tenantConfigUpdate.mutate({
       softDescriptor: tenantConfig.data?.softDescriptor,
@@ -186,49 +196,103 @@ export const MerchantConnectionSection = () => {
 
   const environmentToggle = (
     <Box
-      padding={4}
+      padding={5}
       borderRadius={4}
-      borderWidth={1}
-      borderColor={environment === "LIVE" ? "success1" : "default1"}
-      __backgroundColor={environment === "LIVE" ? "#F0FDF4" : "#FAFAFA"}
+      __backgroundColor="#FFFFFF"
       marginBottom={2}
     >
-      <Text size={3} fontWeight="medium" marginBottom={2}>
-        PayPal Environment
-      </Text>
-      <Box display="flex" gap={2} alignItems="center">
-        <Button
-          size="small"
-          variant={environment === "SANDBOX" ? "primary" : "secondary"}
-          onClick={() => handleEnvironmentChange("SANDBOX")}
-          disabled={isLoading || tenantConfigUpdate.isLoading}
-        >
-          Sandbox
-        </Button>
-        <Button
-          size="small"
-          variant={environment === "LIVE" ? "primary" : "secondary"}
-          onClick={() => handleEnvironmentChange("LIVE")}
-          disabled={isLoading || tenantConfigUpdate.isLoading}
-        >
-          Live
-        </Button>
+      {/* Header row with title and badge */}
+      <Box display="flex" justifyContent="space-between" alignItems="center" marginBottom={4}>
+        <Text size={4} fontWeight="bold">
+          PayPal Environment
+        </Text>
         <Box
-          paddingX={2}
+          paddingX={3}
           paddingY={1}
-          borderRadius={4}
+          __borderRadius="16px"
           __backgroundColor={environment === "LIVE" ? "#D1FAE5" : "#FEF3C7"}
         >
-          <Text size={2} fontWeight="medium">
+          <Text size={2} fontWeight="bold" __color={environment === "LIVE" ? "#065F46" : "#92400E"}>
             {environment === "LIVE" ? "Production" : "Test Mode"}
           </Text>
         </Box>
       </Box>
-      <Text size={2} color="default2" marginTop={2}>
-        {environment === "LIVE"
-          ? "Merchants will onboard with real PayPal accounts and process real payments."
-          : "Merchants will onboard with PayPal sandbox accounts for testing."}
-      </Text>
+
+      {/* Toggle buttons */}
+      <Box
+        display="flex"
+        __borderRadius="9999px"
+        __backgroundColor="#F1F5F9"
+        __padding="4px"
+        marginBottom={4}
+      >
+        <Box
+          __flex="1"
+          paddingY={2}
+          display="flex"
+          justifyContent="center"
+          alignItems="center"
+          __cursor="pointer"
+          __borderRadius="9999px"
+          __backgroundColor={environment === "SANDBOX" ? "#1E293B" : "transparent"}
+          __transition="background-color 0.2s"
+          onClick={() => {
+            if (!isLoading && !tenantConfigUpdate.isLoading) {
+              handleEnvironmentChange("SANDBOX");
+            }
+          }}
+        >
+          <Text
+            size={3}
+            fontWeight="bold"
+            __color={environment === "SANDBOX" ? "#FFFFFF" : "#64748B"}
+          >
+            Sandbox
+          </Text>
+        </Box>
+        <Box
+          __flex="1"
+          paddingY={2}
+          display="flex"
+          justifyContent="center"
+          alignItems="center"
+          __cursor="pointer"
+          __borderRadius="9999px"
+          __backgroundColor={environment === "LIVE" ? "#1E293B" : "transparent"}
+          __transition="background-color 0.2s"
+          onClick={() => {
+            if (!isLoading && !tenantConfigUpdate.isLoading) {
+              handleEnvironmentChange("LIVE");
+            }
+          }}
+        >
+          <Text
+            size={3}
+            fontWeight="bold"
+            __color={environment === "LIVE" ? "#FFFFFF" : "#64748B"}
+          >
+            Live
+          </Text>
+        </Box>
+      </Box>
+
+      {/* Info message */}
+      <Box
+        padding={3}
+        borderRadius={4}
+        __backgroundColor="#F0F9FF"
+        borderWidth={1}
+        borderColor="info1"
+        display="flex"
+        alignItems="center"
+        gap={2}
+      >
+        <Text size={2} __color="#0369A1">
+          {environment === "LIVE"
+            ? "Merchants will onboard with real PayPal accounts and process real payments."
+            : "Merchants will onboard with PayPal sandbox accounts for testing."}
+        </Text>
+      </Box>
     </Box>
   );
 
@@ -491,28 +555,27 @@ export const MerchantConnectionSection = () => {
             background: "linear-gradient(135deg, #0D9488, #14B8A6, #2DD4BF)",
           }}
         >
-          <Box display="flex" gap={3}>
+          <Box display="flex" gap={2} alignItems="center">
             {/* Icon centered vertically between the two text lines */}
             <Box
-              __width="36px"
-              __height="36px"
-              __minWidth="36px"
+              __width="32px"
+              __height="32px"
+              __minWidth="32px"
               __borderRadius="50%"
               __backgroundColor="rgba(255,255,255,0.25)"
               display="flex"
               alignItems="center"
               justifyContent="center"
-              __marginTop="4px"
             >
-              <Text __color="#FFFFFF" fontWeight="bold" __fontSize="18px">
+              <Text __color="#FFFFFF" fontWeight="bold" __fontSize="16px">
                 {isCompleted && merchantStatus.paymentsReceivable ? "\u2713" : "\u2022\u2022\u2022"}
               </Text>
             </Box>
-            <Box display="flex" flexDirection="column" gap={1}>
-              <Text size={5} fontWeight="bold" __color="#FFFFFF">
+            <Box display="flex" flexDirection="column">
+              <Text size={5} fontWeight="bold" __color="#FFFFFF" __lineHeight="1.3">
                 {getHeaderText()}
               </Text>
-              <Text size={3} __color="rgba(255,255,255,0.85)">
+              <Text size={3} __color="rgba(255,255,255,0.85)" __lineHeight="1.3">
                 {isCompleted && merchantStatus.paymentsReceivable
                   ? "Your account is ready to accept payments"
                   : isPending
@@ -524,53 +587,51 @@ export const MerchantConnectionSection = () => {
         </Box>
 
         {/* Details section */}
-        <Box __backgroundColor="#FFFFFF" paddingY={4}>
-          <Box display="flex" flexDirection="column" gap={3}>
-            {/* Email */}
-            <Box
-              paddingX={5}
-              paddingY={4}
-              borderBottomWidth={1}
-              borderColor="default1"
-              __backgroundColor="#FAFAFA"
-              display="flex"
-              flexDirection="column"
-              gap={1}
-            >
-              <Text size={2} fontWeight="medium" __color="#6B7280">
-                Email Address
-              </Text>
-              <Text size={3} fontWeight="medium">
-                {merchantStatus.merchantEmail || "Not provided"}
-              </Text>
-            </Box>
+        <Box __backgroundColor="#FFFFFF">
+          {/* Email */}
+          <Box
+            paddingX={5}
+            paddingY={4}
+            borderBottomWidth={1}
+            borderColor="default1"
+            __backgroundColor="#FAFAFA"
+            display="flex"
+            flexDirection="column"
+            gap={1}
+          >
+            <Text size={2} fontWeight="medium" __color="#6B7280">
+              Email Address
+            </Text>
+            <Text size={3} fontWeight="medium">
+              {merchantStatus.merchantEmail || "Not provided"}
+            </Text>
+          </Box>
 
-            {/* Tracking ID */}
-            <Box
-              paddingX={5}
-              paddingY={4}
-              borderBottomWidth={1}
-              borderColor="default1"
-              __backgroundColor="#FAFAFA"
-              display="flex"
-              flexDirection="column"
-              gap={1}
-            >
-              <Text size={2} fontWeight="medium" __color="#6B7280">
-                Tracking ID
-              </Text>
-              <Text size={3} fontWeight="medium" __color="#374151">
-                {merchantStatus.trackingId}
-              </Text>
-            </Box>
+          {/* Tracking ID */}
+          <Box
+            paddingX={5}
+            paddingY={4}
+            borderBottomWidth={1}
+            borderColor="default1"
+            __backgroundColor="#FAFAFA"
+            display="flex"
+            flexDirection="column"
+            gap={1}
+          >
+            <Text size={2} fontWeight="medium" __color="#6B7280">
+              Tracking ID
+            </Text>
+            <Text size={3} fontWeight="medium" __color="#374151">
+              {merchantStatus.trackingId}
+            </Text>
+          </Box>
 
-            {/* Status */}
-            <Box display="flex" justifyContent="space-between" alignItems="center" paddingX={5} paddingTop={1}>
-              <Text size={3} fontWeight="medium" __color="#6B7280">
-                Status
-              </Text>
-              {getStatusBadge()}
-            </Box>
+          {/* Status */}
+          <Box display="flex" justifyContent="space-between" alignItems="center" paddingX={5} paddingY={4}>
+            <Text size={3} fontWeight="medium" __color="#6B7280">
+              Status
+            </Text>
+            {getStatusBadge()}
           </Box>
         </Box>
       </Box>
