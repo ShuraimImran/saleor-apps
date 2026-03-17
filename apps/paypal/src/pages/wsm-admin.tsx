@@ -543,11 +543,14 @@ const TenantRow = ({
             </Text>
             <Box
               paddingX={2}
-              paddingY={1}
               __borderRadius="12px"
               __backgroundColor={tenant.liveEnabled ? "#D1FAE5" : "#FEE2E2"}
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              __height="22px"
             >
-              <Text size={1} fontWeight="medium" __color={tenant.liveEnabled ? "#065F46" : "#991B1B"}>
+              <Text size={1} fontWeight="medium" __color={tenant.liveEnabled ? "#065F46" : "#991B1B"} __lineHeight="1">
                 {tenant.liveEnabled ? "Live Enabled" : "Sandbox Only"}
               </Text>
             </Box>
