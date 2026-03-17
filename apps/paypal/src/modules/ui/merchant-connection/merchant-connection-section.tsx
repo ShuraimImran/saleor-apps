@@ -52,20 +52,6 @@ export const MerchantConnectionSection = () => {
   const trackingId = merchantStatus?.trackingId || null;
 
   // Mutations
-  const { mutate: updateMerchantId } = trpcClient.merchantOnboarding.updateMerchantId.useMutation({
-    onSuccess: () => {
-      console.log("Merchant ID updated successfully");
-      refetchStatus();
-      // Clear the callback data
-      localStorage.removeItem("paypal_callback_data");
-    },
-    onError: (err) => {
-      console.error("Failed to update merchant ID:", err);
-      setError(`Failed to save PayPal connection: ${err.message}`);
-      // Keep callback data for retry
-    },
-  });
-
   const { mutate: createReferral, isLoading: isCreatingReferral } =
     trpcClient.merchantOnboarding.createMerchantReferral.useMutation({
       onSuccess: async (result) => {
@@ -122,7 +108,6 @@ export const MerchantConnectionSection = () => {
     trpcClient.merchantOnboarding.deleteMerchant.useMutation({
       onSuccess: () => {
         console.log("Merchant disconnected successfully");
-        localStorage.removeItem("paypal_callback_data");
         // Reload the page to get fresh data
         window.location.reload();
       },
@@ -141,41 +126,6 @@ export const MerchantConnectionSection = () => {
       sessionStorage.setItem("appId", appBridgeState.id);
     }
   }, [appBridgeState]);
-
-  // Check for callback data from PayPal return
-  useEffect(() => {
-    const callbackDataStr = localStorage.getItem("paypal_callback_data");
-
-    if (callbackDataStr && trackingId) {
-      try {
-        const callbackData = JSON.parse(callbackDataStr);
-        const { merchantIdInPayPal, timestamp } = callbackData;
-
-        console.log("Found PayPal callback data:", callbackData);
-
-        // Check if data is not too old (within last 5 minutes)
-        const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
-
-        if (timestamp && timestamp < fiveMinutesAgo) {
-          console.warn("Callback data is too old, ignoring");
-          localStorage.removeItem("paypal_callback_data");
-
-          return;
-        }
-
-        if (merchantIdInPayPal) {
-          console.log("Processing PayPal callback, updating merchant ID");
-          updateMerchantId({
-            trackingId,
-            paypalMerchantId: merchantIdInPayPal,
-          });
-        }
-      } catch (error) {
-        console.error("Error processing callback data:", error);
-        localStorage.removeItem("paypal_callback_data");
-      }
-    }
-  }, [trackingId]);
 
   const handleConnectPayPal = () => {
     if (!appBridge) {

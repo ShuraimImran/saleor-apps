@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 
 /**
  * Public callback page for PayPal merchant onboarding
- * This page receives the redirect from PayPal after merchant completes signup
- * It's publicly accessible (no Saleor auth required) and redirects back to dashboard
+ *
+ * This page receives the redirect from PayPal after merchant completes signup.
+ * It calls the server-side API to save the merchant ID directly, then shows
+ * a success message instructing the admin to return to the Saleor Dashboard.
  */
 const PayPalCallbackPage: NextPage = () => {
   const [status, setStatus] = useState<"processing" | "success" | "error">("processing");
@@ -17,34 +19,25 @@ const PayPalCallbackPage: NextPage = () => {
         // Get all parameters from URL
         const urlParams = new URLSearchParams(window.location.search);
         const merchantIdInPayPal = urlParams.get("merchantIdInPayPal");
-        const merchantId = urlParams.get("merchantId");
-        const isEmailConfirmed = urlParams.get("isEmailConfirmed");
-        const accountStatus = urlParams.get("accountStatus");
-        const permissionsGranted = urlParams.get("permissionsGranted");
-        const consentStatus = urlParams.get("consentStatus");
-        const riskStatus = urlParams.get("riskStatus");
+        const merchantId = urlParams.get("merchantId"); // This is the trackingId
 
         console.log("PayPal callback received:", {
           merchantIdInPayPal,
           merchantId,
-          isEmailConfirmed,
-          accountStatus,
-          permissionsGranted,
-          consentStatus,
-          riskStatus,
+          isEmailConfirmed: urlParams.get("isEmailConfirmed"),
+          accountStatus: urlParams.get("accountStatus"),
+          permissionsGranted: urlParams.get("permissionsGranted"),
+          consentStatus: urlParams.get("consentStatus"),
+          riskStatus: urlParams.get("riskStatus"),
         });
 
         if (!merchantIdInPayPal) {
           setStatus("error");
-          setMessage("Missing merchant ID from PayPal response");
+          setMessage("Missing merchant ID from PayPal response.");
 
           return;
         }
 
-        /*
-         * Get tracking ID from URL (PayPal returns it as merchantId parameter)
-         * The merchantId in the callback URL is the tracking_id that was sent to PayPal
-         */
         const trackingId = merchantId;
 
         if (!trackingId) {
@@ -54,30 +47,34 @@ const PayPalCallbackPage: NextPage = () => {
           return;
         }
 
-        console.log("Storing merchant ID for app to process:", {
-          trackingId,
-          merchantIdInPayPal,
+        // Call server-side API to save the merchant ID directly
+        const response = await fetch("/api/paypal-callback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            trackingId,
+            merchantIdInPayPal,
+          }),
         });
 
-        // Store the merchant ID in localStorage for the main app to pick up
-        localStorage.setItem("paypal_callback_data", JSON.stringify({
-          merchantIdInPayPal,
-          merchantId,
-          isEmailConfirmed,
-          accountStatus,
-          permissionsGranted,
-          consentStatus,
-          riskStatus,
-          timestamp: Date.now(),
-        }));
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+
+          console.error("Callback API error:", errorData);
+          setStatus("error");
+          setMessage(
+            `Failed to save PayPal connection: ${errorData.error || response.statusText}`
+          );
+
+          return;
+        }
+
+        const result = await response.json();
+
+        console.log("Callback API response:", result);
 
         setStatus("success");
-        setMessage("PayPal account connected successfully! Redirecting back to configuration...");
-
-        // Redirect back to the app configuration page after 1 second
-        setTimeout(() => {
-          window.location.href = "/";
-        }, 1000);
+        setMessage("PayPal account connected successfully!");
       } catch (error) {
         console.error("Error processing PayPal callback:", error);
         setStatus("error");
@@ -127,20 +124,35 @@ const PayPalCallbackPage: NextPage = () => {
         )}
 
         {status === "success" && (
-          <Text size={10} style={{ fontSize: "48px" }}>
-            ✓
+          <Text size={10} style={{ fontSize: "48px", color: "#10B981" }}>
+            +
           </Text>
         )}
 
         {status === "error" && (
           <Text size={10} style={{ fontSize: "48px", color: "#d32f2f" }}>
-            ✗
+            x
           </Text>
         )}
 
-        <Text size={5}>
-          <strong>{message}</strong>
+        <Text size={5} fontWeight="bold">
+          {message}
         </Text>
+
+        {status === "success" && (
+          <Box
+            padding={4}
+            borderRadius={4}
+            __backgroundColor="#EFF6FF"
+            borderWidth={1}
+            borderColor="info1"
+          >
+            <Text size={3} color="default2">
+              Return to your Saleor admin dashboard and refresh the page to see
+              your updated PayPal connection status.
+            </Text>
+          </Box>
+        )}
 
         {status === "error" && (
           <Text color="default2">
