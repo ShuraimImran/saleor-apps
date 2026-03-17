@@ -134,12 +134,12 @@ export const ApplePayDomainsSection = ({
           Apple Pay Domain Management
         </Text>
         <Box
-          paddingX={2}
-          paddingY={1}
-          borderRadius={3}
-          __backgroundColor="#3B82F6"
+          paddingX={4}
+          paddingY={2}
+          __borderRadius="20px"
+          __backgroundColor="#0D9488"
         >
-          <Text size={1} fontWeight="medium" __color="#FFFFFF">
+          <Text size={2} fontWeight="medium" __color="#FFFFFF">
             ENABLED
           </Text>
         </Box>

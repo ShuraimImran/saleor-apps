@@ -413,9 +413,9 @@ export const MerchantConnectionSection = () => {
     if (isCompleted && merchantStatus.paymentsReceivable) {
       return (
         <Box
-          paddingX={3}
-          paddingY={1}
-          __borderRadius="4px"
+          paddingX={4}
+          paddingY={2}
+          __borderRadius="20px"
           __backgroundColor="#0D9488"
         >
           <Text size={2} fontWeight="medium" __color="#FFFFFF">
