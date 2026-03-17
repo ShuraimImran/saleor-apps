@@ -524,17 +524,20 @@ export const MerchantConnectionSection = () => {
         </Box>
 
         {/* Details section */}
-        <Box __backgroundColor="#FFFFFF" paddingX={5} paddingY={4}>
+        <Box __backgroundColor="#FFFFFF" paddingY={4}>
           <Box display="flex" flexDirection="column" gap={3}>
             {/* Email */}
             <Box
-              padding={4}
-              borderRadius={4}
-              borderWidth={1}
+              paddingX={5}
+              paddingY={4}
+              borderBottomWidth={1}
               borderColor="default1"
               __backgroundColor="#FAFAFA"
+              display="flex"
+              flexDirection="column"
+              gap={1}
             >
-              <Text size={2} fontWeight="medium" __color="#6B7280" marginBottom={1}>
+              <Text size={2} fontWeight="medium" __color="#6B7280">
                 Email Address
               </Text>
               <Text size={3} fontWeight="medium">
@@ -544,13 +547,16 @@ export const MerchantConnectionSection = () => {
 
             {/* Tracking ID */}
             <Box
-              padding={4}
-              borderRadius={4}
-              borderWidth={1}
+              paddingX={5}
+              paddingY={4}
+              borderBottomWidth={1}
               borderColor="default1"
               __backgroundColor="#FAFAFA"
+              display="flex"
+              flexDirection="column"
+              gap={1}
             >
-              <Text size={2} fontWeight="medium" __color="#6B7280" marginBottom={1}>
+              <Text size={2} fontWeight="medium" __color="#6B7280">
                 Tracking ID
               </Text>
               <Text size={3} fontWeight="medium" __color="#374151">
@@ -559,7 +565,7 @@ export const MerchantConnectionSection = () => {
             </Box>
 
             {/* Status */}
-            <Box display="flex" justifyContent="space-between" alignItems="center" paddingTop={1}>
+            <Box display="flex" justifyContent="space-between" alignItems="center" paddingX={5} paddingTop={1}>
               <Text size={3} fontWeight="medium" __color="#6B7280">
                 Status
               </Text>
