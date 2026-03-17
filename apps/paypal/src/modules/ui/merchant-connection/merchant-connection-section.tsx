@@ -413,17 +413,11 @@ export const MerchantConnectionSection = () => {
     if (isCompleted && merchantStatus.paymentsReceivable) {
       return (
         <Box
-          paddingX={4}
-          paddingY={2}
-          __borderRadius="20px"
+          paddingX={3}
+          paddingY={1}
+          __borderRadius="4px"
           __backgroundColor="#0D9488"
-          display="flex"
-          alignItems="center"
-          gap={2}
         >
-          <Text size={2} fontWeight="bold" __color="#FFFFFF">
-            +
-          </Text>
           <Text size={2} fontWeight="medium" __color="#FFFFFF">
             Ready to receive payments
           </Text>
@@ -433,7 +427,7 @@ export const MerchantConnectionSection = () => {
 
     if (isPending) {
       return (
-        <Box paddingX={3} paddingY={1} borderRadius={4} __backgroundColor="#D97706">
+        <Box paddingX={3} paddingY={1} __borderRadius="4px" __backgroundColor="#D97706">
           <Text size={2} fontWeight="medium" __color="#FFFFFF">
             Onboarding not completed
           </Text>
@@ -443,7 +437,7 @@ export const MerchantConnectionSection = () => {
 
     if (isInProgress) {
       return (
-        <Box paddingX={3} paddingY={1} borderRadius={4} __backgroundColor="#F59E0B">
+        <Box paddingX={3} paddingY={1} __borderRadius="4px" __backgroundColor="#D97706">
           <Text size={2} fontWeight="medium" __color="#FFFFFF">
             Setup in progress
           </Text>
@@ -452,7 +446,7 @@ export const MerchantConnectionSection = () => {
     }
 
     return (
-      <Box paddingX={3} paddingY={1} borderRadius={4} __backgroundColor="#F59E0B">
+      <Box paddingX={3} paddingY={1} __borderRadius="4px" __backgroundColor="#D97706">
         <Text size={2} fontWeight="medium" __color="#FFFFFF">
           Pending verification
         </Text>
@@ -580,7 +574,9 @@ export const MerchantConnectionSection = () => {
           paddingX={5}
           paddingY={3}
           style={{
-            background: "linear-gradient(135deg, #0D9488, #14B8A6, #2DD4BF)",
+            background: isCompleted && merchantStatus.paymentsReceivable
+              ? "linear-gradient(135deg, #0D9488, #14B8A6, #2DD4BF)"
+              : "linear-gradient(135deg, #D97706, #F59E0B, #FBBF24)",
           }}
         >
           <Box display="flex" gap={2} alignItems="center">
