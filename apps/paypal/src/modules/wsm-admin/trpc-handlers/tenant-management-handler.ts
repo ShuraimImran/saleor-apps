@@ -9,6 +9,44 @@ import { GlobalPayPalConfigRepository } from "../global-paypal-config-repository
 import { wsmAdminAuthSchema } from "./wsm-admin-input-schemas";
 
 /**
+ * Set partner fee percent for a specific tenant
+ */
+export class SetTenantFeeHandler {
+  baseProcedure = publicProcedure;
+
+  getTrpcProcedure() {
+    return this.baseProcedure
+      .input(
+        wsmAdminAuthSchema.extend({
+          saleorApiUrl: z.string().min(1, "Saleor API URL is required"),
+          partnerFeePercent: z.number().min(0).max(100),
+        })
+      )
+      .mutation(async ({ input }) => {
+        validateSuperAdminKey(input.secretKey);
+
+        const repository = PayPalTenantConfigRepository.create(getPool());
+        const result = await repository.setPartnerFeePercent({
+          saleorApiUrl: input.saleorApiUrl,
+          partnerFeePercent: input.partnerFeePercent,
+        });
+
+        if (result.isErr()) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `Failed to update partner fee: ${result.error.message}`,
+          });
+        }
+
+        return {
+          success: true,
+          message: `Partner fee set to ${input.partnerFeePercent}% for ${input.saleorApiUrl}`,
+        };
+      });
+  }
+}
+
+/**
  * Validate WSM super admin secret key
  */
 function validateSuperAdminKey(secretKey: string) {

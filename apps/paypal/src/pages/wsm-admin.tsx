@@ -409,7 +409,7 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
     { enabled: !!secretKey, retry: false }
   );
 
-  const { mutate: setLiveAccess, isLoading: isUpdating } =
+  const { mutate: setLiveAccess, isLoading: isUpdatingAccess } =
     trpcClient.wsmAdmin.setTenantLiveAccess.useMutation({
       onSuccess: (result) => {
         setMessage({ type: "success", text: result.message });
@@ -419,6 +419,19 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
         setMessage({ type: "error", text: `Failed: ${err.message}` });
       },
     });
+
+  const { mutate: setTenantFee, isLoading: isUpdatingFee } =
+    trpcClient.wsmAdmin.setTenantFee.useMutation({
+      onSuccess: (result) => {
+        setMessage({ type: "success", text: result.message });
+        refetchTenants();
+      },
+      onError: (err: any) => {
+        setMessage({ type: "error", text: `Failed: ${err.message}` });
+      },
+    });
+
+  const isUpdating = isUpdatingAccess || isUpdatingFee;
 
   if (isLoadingTenants) {
     return <Text color="default2">Loading tenants...</Text>;
@@ -449,62 +462,128 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
         </Box>
       )}
 
-      {tenants.map((tenant) => {
-        // Extract a readable name from the saleor API URL
-        const tenantName = tenant.saleorApiUrl
-          .replace("https://", "")
-          .replace("/graphql/", "")
-          .replace("/graphql", "");
+      {tenants.map((tenant) => (
+        <TenantRow
+          key={tenant.saleorApiUrl}
+          tenant={tenant}
+          secretKey={secretKey}
+          isUpdating={isUpdating}
+          onToggleLive={() =>
+            setLiveAccess({
+              secretKey,
+              saleorApiUrl: tenant.saleorApiUrl,
+              liveEnabled: !tenant.liveEnabled,
+            })
+          }
+          onSaveFee={(fee) =>
+            setTenantFee({
+              secretKey,
+              saleorApiUrl: tenant.saleorApiUrl,
+              partnerFeePercent: fee,
+            })
+          }
+        />
+      ))}
+    </Box>
+  );
+};
 
-        return (
-          <Box
-            key={tenant.saleorApiUrl}
-            padding={4}
-            borderRadius={4}
-            borderWidth={1}
-            borderColor={tenant.liveEnabled ? "success1" : "default1"}
-            __backgroundColor={tenant.liveEnabled ? "#F0FDF4" : "#FFFFFF"}
-            display="flex"
-            justifyContent="space-between"
-            alignItems="center"
-          >
-            <Box display="flex" flexDirection="column" gap={1}>
-              <Text size={3} fontWeight="medium">
-                {tenantName}
-              </Text>
-              <Box display="flex" gap={2} alignItems="center">
-                <Text size={2} color="default2">
-                  Environment: {tenant.environment}
-                </Text>
-                <Box
-                  paddingX={2}
-                  paddingY={1}
-                  __borderRadius="12px"
-                  __backgroundColor={tenant.liveEnabled ? "#D1FAE5" : "#FEE2E2"}
-                >
-                  <Text size={1} fontWeight="medium" __color={tenant.liveEnabled ? "#065F46" : "#991B1B"}>
-                    {tenant.liveEnabled ? "Live Enabled" : "Sandbox Only"}
-                  </Text>
-                </Box>
-              </Box>
-            </Box>
-            <Button
-              size="small"
-              variant={tenant.liveEnabled ? "tertiary" : "primary"}
-              onClick={() =>
-                setLiveAccess({
-                  secretKey,
-                  saleorApiUrl: tenant.saleorApiUrl,
-                  liveEnabled: !tenant.liveEnabled,
-                })
-              }
-              disabled={isUpdating}
+const TenantRow = ({
+  tenant,
+  secretKey,
+  isUpdating,
+  onToggleLive,
+  onSaveFee,
+}: {
+  tenant: {
+    saleorApiUrl: string;
+    environment: string;
+    liveEnabled: boolean;
+    partnerFeePercent: number;
+  };
+  secretKey: string;
+  isUpdating: boolean;
+  onToggleLive: () => void;
+  onSaveFee: (fee: number) => void;
+}) => {
+  const [feeValue, setFeeValue] = useState(String(tenant.partnerFeePercent ?? 0));
+
+  const tenantName = tenant.saleorApiUrl
+    .replace("https://", "")
+    .replace("/graphql/", "")
+    .replace("/graphql", "");
+
+  const handleFeeBlur = () => {
+    const parsed = parseFloat(feeValue);
+
+    if (!isNaN(parsed) && parsed !== tenant.partnerFeePercent) {
+      onSaveFee(parsed);
+    }
+  };
+
+  return (
+    <Box
+      padding={4}
+      borderRadius={4}
+      borderWidth={1}
+      borderColor={tenant.liveEnabled ? "success1" : "default1"}
+      __backgroundColor={tenant.liveEnabled ? "#F0FDF4" : "#FFFFFF"}
+      display="flex"
+      flexDirection="column"
+      gap={3}
+    >
+      <Box display="flex" justifyContent="space-between" alignItems="center">
+        <Box display="flex" flexDirection="column" gap={1}>
+          <Text size={3} fontWeight="medium">
+            {tenantName}
+          </Text>
+          <Box display="flex" gap={2} alignItems="center">
+            <Text size={2} color="default2">
+              Environment: {tenant.environment}
+            </Text>
+            <Box
+              paddingX={2}
+              paddingY={1}
+              __borderRadius="12px"
+              __backgroundColor={tenant.liveEnabled ? "#D1FAE5" : "#FEE2E2"}
             >
-              {tenant.liveEnabled ? "Disable Live" : "Enable Live"}
-            </Button>
+              <Text size={1} fontWeight="medium" __color={tenant.liveEnabled ? "#065F46" : "#991B1B"}>
+                {tenant.liveEnabled ? "Live Enabled" : "Sandbox Only"}
+              </Text>
+            </Box>
           </Box>
-        );
-      })}
+        </Box>
+        <Button
+          size="small"
+          variant={tenant.liveEnabled ? "tertiary" : "primary"}
+          onClick={onToggleLive}
+          disabled={isUpdating}
+        >
+          {tenant.liveEnabled ? "Disable Live" : "Enable Live"}
+        </Button>
+      </Box>
+
+      <Box display="flex" alignItems="center" gap={2}>
+        <Text size={2} color="default2" __whiteSpace="nowrap">
+          Partner Fee:
+        </Text>
+        <Box __width="80px">
+          <Input
+            type="number"
+            size="small"
+            value={feeValue}
+            onChange={(e) => setFeeValue(e.target.value)}
+            onBlur={handleFeeBlur}
+            min="0"
+            max="100"
+            step="0.01"
+            disabled={isUpdating}
+          />
+        </Box>
+        <Text size={2} color="default2">
+          %
+        </Text>
+      </Box>
     </Box>
   );
 };

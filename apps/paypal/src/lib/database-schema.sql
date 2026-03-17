@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS paypal_tenant_config (
   soft_descriptor TEXT,
   environment TEXT NOT NULL DEFAULT 'SANDBOX' CHECK (environment IN ('SANDBOX', 'LIVE')),
   live_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  partner_fee_percent NUMERIC(5,2) NOT NULL DEFAULT 0.00,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );

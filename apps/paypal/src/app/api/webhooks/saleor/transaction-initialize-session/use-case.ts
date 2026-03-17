@@ -499,6 +499,23 @@ export class TransactionInitializeSessionUseCase {
           error: globalConfigResult.isErr() ? globalConfigResult.error : undefined,
         });
       }
+
+      // Override with tenant-specific fee if set
+      const { PayPalTenantConfigRepository } = await import("@/modules/app-config/repositories/paypal-tenant-config-repository");
+      const tenantConfigRepo = PayPalTenantConfigRepository.create(pool);
+      const tenantConfigResult = await tenantConfigRepo.getBySaleorApiUrl(authData.saleorApiUrl);
+
+      if (tenantConfigResult.isOk() && tenantConfigResult.value) {
+        const tenantFee = tenantConfigResult.value.partnerFeePercent;
+
+        if (tenantFee > 0) {
+          partnerFeePercent = tenantFee;
+          this.logger.debug("Using tenant-specific partner fee", {
+            tenantFee,
+            saleorApiUrl: authData.saleorApiUrl,
+          });
+        }
+      }
     } catch (error) {
       this.logger.warn("Failed to fetch global config", {
         error,

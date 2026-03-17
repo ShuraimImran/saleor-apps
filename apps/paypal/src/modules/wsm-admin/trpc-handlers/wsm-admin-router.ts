@@ -2,7 +2,7 @@ import { router } from "@/modules/trpc/trpc-server";
 
 import { GetGlobalConfigHandler } from "./get-global-config-handler";
 import { SetGlobalConfigHandler } from "./set-global-config-handler";
-import { ListTenantsHandler, SetTenantLiveAccessHandler } from "./tenant-management-handler";
+import { ListTenantsHandler, SetTenantFeeHandler, SetTenantLiveAccessHandler } from "./tenant-management-handler";
 import { TestCredentialsHandler } from "./test-credentials-handler";
 
 /**
@@ -16,4 +16,5 @@ export const wsmAdminRouter = router({
   testCredentials: new TestCredentialsHandler().getTrpcProcedure(),
   listTenants: new ListTenantsHandler().getTrpcProcedure(),
   setTenantLiveAccess: new SetTenantLiveAccessHandler().getTrpcProcedure(),
+  setTenantFee: new SetTenantFeeHandler().getTrpcProcedure(),
 });

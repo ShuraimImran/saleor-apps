@@ -8,6 +8,7 @@ type PayPalTenantConfig = {
   softDescriptor?: string | null;
   environment: PayPalEnvironment;
   liveEnabled: boolean;
+  partnerFeePercent: number;
 };
 
 const logger = createLogger("PayPalTenantConfigRepository");
@@ -28,7 +29,7 @@ export class PayPalTenantConfigRepository {
   ): Promise<Result<PayPalTenantConfig | null, Error>> {
     try {
       const query = `
-        SELECT soft_descriptor, environment, live_enabled
+        SELECT soft_descriptor, environment, live_enabled, partner_fee_percent
         FROM paypal_tenant_config
         WHERE saleor_api_url = $1
         LIMIT 1
@@ -43,6 +44,7 @@ export class PayPalTenantConfigRepository {
         softDescriptor: result.rows[0].soft_descriptor ?? undefined,
         environment: (result.rows[0].environment as PayPalEnvironment) ?? "SANDBOX",
         liveEnabled: result.rows[0].live_enabled ?? false,
+        partnerFeePercent: parseFloat(result.rows[0].partner_fee_percent) || 0,
       });
     } catch (error) {
       logger.error("Failed to fetch PayPal tenant config", {
@@ -58,16 +60,18 @@ export class PayPalTenantConfigRepository {
     softDescriptor?: string | null;
     environment?: PayPalEnvironment;
     liveEnabled?: boolean;
+    partnerFeePercent?: number;
   }): Promise<Result<void, Error>> {
     try {
       const query = `
-        INSERT INTO paypal_tenant_config (saleor_api_url, soft_descriptor, environment, live_enabled)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO paypal_tenant_config (saleor_api_url, soft_descriptor, environment, live_enabled, partner_fee_percent)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (saleor_api_url)
         DO UPDATE SET
           soft_descriptor = EXCLUDED.soft_descriptor,
           environment = EXCLUDED.environment,
           live_enabled = EXCLUDED.live_enabled,
+          partner_fee_percent = EXCLUDED.partner_fee_percent,
           updated_at = NOW()
       `;
 
@@ -76,6 +80,7 @@ export class PayPalTenantConfigRepository {
         args.softDescriptor ?? null,
         args.environment ?? "SANDBOX",
         args.liveEnabled ?? false,
+        args.partnerFeePercent ?? 0,
       ]);
 
       return ok(undefined);
@@ -119,15 +124,46 @@ export class PayPalTenantConfigRepository {
     }
   }
 
+  async setPartnerFeePercent(args: {
+    saleorApiUrl: string;
+    partnerFeePercent: number;
+  }): Promise<Result<void, Error>> {
+    try {
+      const query = `
+        UPDATE paypal_tenant_config
+        SET partner_fee_percent = $1, updated_at = NOW()
+        WHERE saleor_api_url = $2
+      `;
+
+      const result = await this.pool.query(query, [args.partnerFeePercent, args.saleorApiUrl]);
+
+      if (result.rowCount === 0) {
+        return this.upsert({
+          saleorApiUrl: args.saleorApiUrl,
+          partnerFeePercent: args.partnerFeePercent,
+        });
+      }
+
+      return ok(undefined);
+    } catch (error) {
+      logger.error("Failed to set partner_fee_percent", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return err(error instanceof Error ? error : new Error("Failed to set partner_fee_percent"));
+    }
+  }
+
   async listAll(): Promise<Result<Array<{
     saleorApiUrl: string;
     environment: PayPalEnvironment;
     liveEnabled: boolean;
+    partnerFeePercent: number;
     softDescriptor?: string | null;
   }>, Error>> {
     try {
       const query = `
-        SELECT saleor_api_url, environment, live_enabled, soft_descriptor
+        SELECT saleor_api_url, environment, live_enabled, partner_fee_percent, soft_descriptor
         FROM paypal_tenant_config
         ORDER BY saleor_api_url
       `;
@@ -138,6 +174,7 @@ export class PayPalTenantConfigRepository {
         saleorApiUrl: row.saleor_api_url,
         environment: (row.environment as PayPalEnvironment) ?? "SANDBOX",
         liveEnabled: row.live_enabled ?? false,
+        partnerFeePercent: parseFloat(row.partner_fee_percent) || 0,
         softDescriptor: row.soft_descriptor,
       })));
     } catch (error) {
