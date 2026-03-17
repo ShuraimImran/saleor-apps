@@ -414,11 +414,18 @@ export const MerchantConnectionSection = () => {
       return (
         <Box
           paddingX={4}
-          paddingY={2}
           __borderRadius="20px"
           __backgroundColor="#0D9488"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          gap={2}
+          __height="36px"
         >
-          <Text size={2} fontWeight="medium" __color="#FFFFFF">
+          <Text __color="#FFFFFF" fontWeight="bold" __fontSize="14px" __lineHeight="1">
+            {"\u2713"}
+          </Text>
+          <Text size={2} fontWeight="medium" __color="#FFFFFF" __lineHeight="1">
             Ready to receive payments
           </Text>
         </Box>
