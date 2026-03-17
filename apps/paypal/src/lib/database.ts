@@ -99,6 +99,7 @@ export const initializeDatabase = async (): Promise<void> => {
       saleor_api_url TEXT NOT NULL UNIQUE,
       soft_descriptor TEXT,
       environment TEXT NOT NULL DEFAULT 'SANDBOX' CHECK (environment IN ('SANDBOX', 'LIVE')),
+      live_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     );
@@ -179,6 +180,13 @@ export const initializeDatabase = async (): Promise<void> => {
         WHERE table_name='paypal_tenant_config' AND column_name='environment'
       ) THEN
         ALTER TABLE paypal_tenant_config ADD COLUMN environment TEXT NOT NULL DEFAULT 'SANDBOX' CHECK (environment IN ('SANDBOX', 'LIVE'));
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='paypal_tenant_config' AND column_name='live_enabled'
+      ) THEN
+        ALTER TABLE paypal_tenant_config ADD COLUMN live_enabled BOOLEAN NOT NULL DEFAULT FALSE;
       END IF;
     END $$;
 

@@ -376,6 +376,135 @@ const WsmAdminPage: NextPage = () => {
           />
         </Box>
       </Layout.AppSection>
+      <Layout.AppSection
+        marginBottom={8}
+        heading="Tenant Management"
+        sideContent={
+          <Box display="flex" flexDirection="column" gap={4}>
+            <Text>
+              Manage which tenants have access to Live (production) mode.
+              By default, all tenants are restricted to Sandbox only.
+            </Text>
+            <Text>
+              Enable live access for a tenant when they are ready to process real payments.
+            </Text>
+          </Box>
+        }
+      >
+        <TenantManagementSection secretKey={secretKey} />
+      </Layout.AppSection>
+    </Box>
+  );
+};
+
+const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const {
+    data: tenantsData,
+    refetch: refetchTenants,
+    isLoading: isLoadingTenants,
+  } = trpcClient.wsmAdmin.listTenants.useQuery(
+    { secretKey },
+    { enabled: !!secretKey, retry: false }
+  );
+
+  const { mutate: setLiveAccess, isLoading: isUpdating } =
+    trpcClient.wsmAdmin.setTenantLiveAccess.useMutation({
+      onSuccess: (result) => {
+        setMessage({ type: "success", text: result.message });
+        refetchTenants();
+      },
+      onError: (err: any) => {
+        setMessage({ type: "error", text: `Failed: ${err.message}` });
+      },
+    });
+
+  if (isLoadingTenants) {
+    return <Text color="default2">Loading tenants...</Text>;
+  }
+
+  const tenants = tenantsData?.tenants ?? [];
+
+  if (tenants.length === 0) {
+    return (
+      <Box padding={4} borderRadius={4} borderWidth={1} borderColor="default1">
+        <Text color="default2">No tenants found. Tenants will appear here once they access the PayPal app.</Text>
+      </Box>
+    );
+  }
+
+  return (
+    <Box display="flex" flexDirection="column" gap={4}>
+      {message && (
+        <Box
+          padding={3}
+          borderRadius={4}
+          borderWidth={1}
+          borderColor={message.type === "success" ? "success1" : "critical1"}
+        >
+          <Text size={2} color={message.type === "success" ? "success1" : "critical1"}>
+            {message.text}
+          </Text>
+        </Box>
+      )}
+
+      {tenants.map((tenant) => {
+        // Extract a readable name from the saleor API URL
+        const tenantName = tenant.saleorApiUrl
+          .replace("https://", "")
+          .replace("/graphql/", "")
+          .replace("/graphql", "");
+
+        return (
+          <Box
+            key={tenant.saleorApiUrl}
+            padding={4}
+            borderRadius={4}
+            borderWidth={1}
+            borderColor={tenant.liveEnabled ? "success1" : "default1"}
+            __backgroundColor={tenant.liveEnabled ? "#F0FDF4" : "#FFFFFF"}
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+          >
+            <Box display="flex" flexDirection="column" gap={1}>
+              <Text size={3} fontWeight="medium">
+                {tenantName}
+              </Text>
+              <Box display="flex" gap={2} alignItems="center">
+                <Text size={2} color="default2">
+                  Environment: {tenant.environment}
+                </Text>
+                <Box
+                  paddingX={2}
+                  paddingY={1}
+                  __borderRadius="12px"
+                  __backgroundColor={tenant.liveEnabled ? "#D1FAE5" : "#FEE2E2"}
+                >
+                  <Text size={1} fontWeight="medium" __color={tenant.liveEnabled ? "#065F46" : "#991B1B"}>
+                    {tenant.liveEnabled ? "Live Enabled" : "Sandbox Only"}
+                  </Text>
+                </Box>
+              </Box>
+            </Box>
+            <Button
+              size="small"
+              variant={tenant.liveEnabled ? "tertiary" : "primary"}
+              onClick={() =>
+                setLiveAccess({
+                  secretKey,
+                  saleorApiUrl: tenant.saleorApiUrl,
+                  liveEnabled: !tenant.liveEnabled,
+                })
+              }
+              disabled={isUpdating}
+            >
+              {tenant.liveEnabled ? "Disable Live" : "Enable Live"}
+            </Button>
+          </Box>
+        );
+      })}
     </Box>
   );
 };

@@ -7,6 +7,7 @@ import { PayPalEnvironment } from "@/modules/wsm-admin/global-paypal-config";
 type PayPalTenantConfig = {
   softDescriptor?: string | null;
   environment: PayPalEnvironment;
+  liveEnabled: boolean;
 };
 
 const logger = createLogger("PayPalTenantConfigRepository");
@@ -27,7 +28,7 @@ export class PayPalTenantConfigRepository {
   ): Promise<Result<PayPalTenantConfig | null, Error>> {
     try {
       const query = `
-        SELECT soft_descriptor, environment
+        SELECT soft_descriptor, environment, live_enabled
         FROM paypal_tenant_config
         WHERE saleor_api_url = $1
         LIMIT 1
@@ -41,6 +42,7 @@ export class PayPalTenantConfigRepository {
       return ok({
         softDescriptor: result.rows[0].soft_descriptor ?? undefined,
         environment: (result.rows[0].environment as PayPalEnvironment) ?? "SANDBOX",
+        liveEnabled: result.rows[0].live_enabled ?? false,
       });
     } catch (error) {
       logger.error("Failed to fetch PayPal tenant config", {
@@ -55,15 +57,17 @@ export class PayPalTenantConfigRepository {
     saleorApiUrl: string;
     softDescriptor?: string | null;
     environment?: PayPalEnvironment;
+    liveEnabled?: boolean;
   }): Promise<Result<void, Error>> {
     try {
       const query = `
-        INSERT INTO paypal_tenant_config (saleor_api_url, soft_descriptor, environment)
-        VALUES ($1, $2, $3)
+        INSERT INTO paypal_tenant_config (saleor_api_url, soft_descriptor, environment, live_enabled)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (saleor_api_url)
         DO UPDATE SET
           soft_descriptor = EXCLUDED.soft_descriptor,
           environment = EXCLUDED.environment,
+          live_enabled = EXCLUDED.live_enabled,
           updated_at = NOW()
       `;
 
@@ -71,6 +75,7 @@ export class PayPalTenantConfigRepository {
         args.saleorApiUrl,
         args.softDescriptor ?? null,
         args.environment ?? "SANDBOX",
+        args.liveEnabled ?? false,
       ]);
 
       return ok(undefined);
@@ -80,6 +85,67 @@ export class PayPalTenantConfigRepository {
       });
 
       return err(error instanceof Error ? error : new Error("Failed to upsert PayPal tenant config"));
+    }
+  }
+
+  async setLiveEnabled(args: {
+    saleorApiUrl: string;
+    liveEnabled: boolean;
+  }): Promise<Result<void, Error>> {
+    try {
+      const query = `
+        UPDATE paypal_tenant_config
+        SET live_enabled = $1, updated_at = NOW()
+        WHERE saleor_api_url = $2
+      `;
+
+      const result = await this.pool.query(query, [args.liveEnabled, args.saleorApiUrl]);
+
+      if (result.rowCount === 0) {
+        // Tenant doesn't exist yet, create it
+        return this.upsert({
+          saleorApiUrl: args.saleorApiUrl,
+          liveEnabled: args.liveEnabled,
+        });
+      }
+
+      return ok(undefined);
+    } catch (error) {
+      logger.error("Failed to set live_enabled", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return err(error instanceof Error ? error : new Error("Failed to set live_enabled"));
+    }
+  }
+
+  async listAll(): Promise<Result<Array<{
+    saleorApiUrl: string;
+    environment: PayPalEnvironment;
+    liveEnabled: boolean;
+    softDescriptor?: string | null;
+  }>, Error>> {
+    try {
+      const query = `
+        SELECT saleor_api_url, environment, live_enabled, soft_descriptor
+        FROM paypal_tenant_config
+        ORDER BY saleor_api_url
+      `;
+
+      const result = await this.pool.query(query);
+
+      return ok(result.rows.map((row) => ({
+        saleorApiUrl: row.saleor_api_url,
+        environment: (row.environment as PayPalEnvironment) ?? "SANDBOX",
+        liveEnabled: row.live_enabled ?? false,
+        softDescriptor: row.soft_descriptor,
+      })));
+    } catch (error) {
+      logger.error("Failed to list tenant configs", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return err(error instanceof Error ? error : new Error("Failed to list tenant configs"));
     }
   }
 }

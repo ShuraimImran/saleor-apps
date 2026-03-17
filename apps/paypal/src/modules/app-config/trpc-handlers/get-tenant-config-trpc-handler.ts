@@ -41,6 +41,7 @@ export class GetTenantConfigTrpcHandler {
       return {
         softDescriptor: result.value?.softDescriptor ?? undefined,
         environment: result.value?.environment ?? "SANDBOX",
+        liveEnabled: result.value?.liveEnabled ?? false,
       };
     });
   }

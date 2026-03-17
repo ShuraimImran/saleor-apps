@@ -13,6 +13,7 @@ export const MerchantConnectionSection = () => {
   const [error, setError] = useState<string | null>(null);
   const [merchantEmail, setMerchantEmail] = useState<string>("");
   const [environment, setEnvironment] = useState<PayPalEnvironment>("SANDBOX");
+  const [liveEnabled, setLiveEnabled] = useState(false);
 
   // Load tenant config to get current environment
   const tenantConfig = trpcClient.appConfig.getTenantConfig.useQuery(undefined, { retry: false });
@@ -28,6 +29,7 @@ export const MerchantConnectionSection = () => {
   useEffect(() => {
     if (tenantConfig.data) {
       setEnvironment((tenantConfig.data.environment as PayPalEnvironment) ?? "SANDBOX");
+      setLiveEnabled(tenantConfig.data.liveEnabled ?? false);
     }
   }, [tenantConfig.data]);
 
@@ -169,6 +171,15 @@ export const MerchantConnectionSection = () => {
   };
 
   const handleEnvironmentChange = (newEnv: PayPalEnvironment) => {
+    // Block switching to LIVE if not enabled by admin
+    if (newEnv === "LIVE" && !liveEnabled) {
+      setError(
+        "Production access is not enabled for this tenant. Please contact your WSM administrator to enable live mode."
+      );
+
+      return;
+    }
+
     // Block switching if a merchant is onboarded on a different environment
     if (merchantStatus && onboardingEnvironment && onboardingEnvironment !== newEnv) {
       setError(
