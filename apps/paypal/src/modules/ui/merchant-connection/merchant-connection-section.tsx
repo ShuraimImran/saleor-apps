@@ -485,41 +485,47 @@ export const MerchantConnectionSection = () => {
       >
         {/* Gradient header */}
         <Box
-          padding={5}
+          paddingX={5}
+          paddingY={3}
           style={{
             background: "linear-gradient(135deg, #0D9488, #14B8A6, #2DD4BF)",
           }}
         >
-          <Box display="flex" alignItems="center" gap={3} marginBottom={2}>
+          <Box display="flex" gap={3}>
+            {/* Icon centered vertically between the two text lines */}
             <Box
-              __width="32px"
-              __height="32px"
+              __width="36px"
+              __height="36px"
+              __minWidth="36px"
               __borderRadius="50%"
               __backgroundColor="rgba(255,255,255,0.25)"
               display="flex"
               alignItems="center"
               justifyContent="center"
+              __marginTop="4px"
             >
-              <Text __color="#FFFFFF" fontWeight="bold">
-                {isCompleted && merchantStatus.paymentsReceivable ? "+" : "~"}
+              <Text __color="#FFFFFF" fontWeight="bold" __fontSize="18px">
+                {isCompleted && merchantStatus.paymentsReceivable ? "\u2713" : "\u2022\u2022\u2022"}
               </Text>
             </Box>
-            <Text size={5} fontWeight="bold" __color="#FFFFFF">
-              {getHeaderText()}
-            </Text>
+            <Box display="flex" flexDirection="column" gap={1}>
+              <Text size={5} fontWeight="bold" __color="#FFFFFF">
+                {getHeaderText()}
+              </Text>
+              <Text size={3} __color="rgba(255,255,255,0.85)">
+                {isCompleted && merchantStatus.paymentsReceivable
+                  ? "Your account is ready to accept payments"
+                  : isPending
+                    ? "Complete the onboarding process to start accepting payments"
+                    : "Your account is being verified by PayPal"}
+              </Text>
+            </Box>
           </Box>
-          <Text size={3} __color="rgba(255,255,255,0.85)">
-            {isCompleted && merchantStatus.paymentsReceivable
-              ? "Your account is ready to accept payments"
-              : isPending
-                ? "Complete the onboarding process to start accepting payments"
-                : "Your account is being verified by PayPal"}
-          </Text>
         </Box>
 
         {/* Details section */}
-        <Box __backgroundColor="#FFFFFF" padding={5}>
-          <Box display="flex" flexDirection="column" gap={4}>
+        <Box __backgroundColor="#FFFFFF" paddingX={5} paddingY={4}>
+          <Box display="flex" flexDirection="column" gap={3}>
             {/* Email */}
             <Box
               padding={4}
@@ -528,11 +534,9 @@ export const MerchantConnectionSection = () => {
               borderColor="default1"
               __backgroundColor="#FAFAFA"
             >
-              <Box display="flex" alignItems="center" gap={2} marginBottom={1}>
-                <Text size={2} fontWeight="medium" __color="#6B7280">
-                  Email Address
-                </Text>
-              </Box>
+              <Text size={2} fontWeight="medium" __color="#6B7280" marginBottom={1}>
+                Email Address
+              </Text>
               <Text size={3} fontWeight="medium">
                 {merchantStatus.merchantEmail || "Not provided"}
               </Text>
@@ -546,18 +550,16 @@ export const MerchantConnectionSection = () => {
               borderColor="default1"
               __backgroundColor="#FAFAFA"
             >
-              <Box display="flex" alignItems="center" gap={2} marginBottom={1}>
-                <Text size={2} fontWeight="medium" __color="#6B7280">
-                  Tracking ID
-                </Text>
-              </Box>
+              <Text size={2} fontWeight="medium" __color="#6B7280" marginBottom={1}>
+                Tracking ID
+              </Text>
               <Text size={3} fontWeight="medium" __color="#374151">
                 {merchantStatus.trackingId}
               </Text>
             </Box>
 
             {/* Status */}
-            <Box display="flex" justifyContent="space-between" alignItems="center" paddingTop={2}>
+            <Box display="flex" justifyContent="space-between" alignItems="center" paddingTop={1}>
               <Text size={3} fontWeight="medium" __color="#6B7280">
                 Status
               </Text>
