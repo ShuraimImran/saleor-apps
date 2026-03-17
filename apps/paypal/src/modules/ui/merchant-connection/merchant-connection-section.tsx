@@ -181,6 +181,8 @@ export const MerchantConnectionSection = () => {
   const isPending = merchantStatus?.onboardingStatus === "PENDING";
   const isInProgress = merchantStatus?.onboardingStatus === "IN_PROGRESS";
   const isCompleted = merchantStatus?.onboardingStatus === "COMPLETED";
+  const onboardingEnvironment = merchantStatus?.onboardingEnvironment as PayPalEnvironment | undefined;
+  const hasEnvironmentMismatch = onboardingEnvironment && onboardingEnvironment !== environment;
 
   const environmentToggle = (
     <Box
@@ -385,6 +387,43 @@ export const MerchantConnectionSection = () => {
       {errorBanner}
 
       {environmentToggle}
+
+      {/* Environment mismatch warning */}
+      {hasEnvironmentMismatch && (
+        <Box
+          padding={5}
+          borderRadius={4}
+          borderWidth={1}
+          borderColor="critical1"
+          __backgroundColor="#FEF2F2"
+        >
+          <Box marginBottom={3}>
+            <Text size={3} fontWeight="bold" color="critical1">
+              Environment Mismatch
+            </Text>
+          </Box>
+          <Box marginBottom={3}>
+            <Text size={3} color="default2">
+              This merchant was onboarded in <strong>{onboardingEnvironment}</strong> mode,
+              but the tenant is now set to <strong>{environment}</strong> mode.
+            </Text>
+          </Box>
+          <Box marginBottom={4}>
+            <Text size={3} color="default2">
+              To use {environment} mode, disconnect the current merchant and re-onboard
+              with a {environment === "LIVE" ? "real" : "sandbox"} PayPal account.
+            </Text>
+          </Box>
+          <Button
+            variant="primary"
+            size="small"
+            onClick={handleDisconnectClick}
+            disabled={isLoading}
+          >
+            {isDeleting ? "Disconnecting..." : "Disconnect and Re-onboard"}
+          </Button>
+        </Box>
+      )}
 
       {/* Pending onboarding warning - shown prominently */}
       {isPending && (

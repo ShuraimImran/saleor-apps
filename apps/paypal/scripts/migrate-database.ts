@@ -60,6 +60,7 @@ async function main() {
     console.log("   • wsm_global_paypal_config.webhook_id");
     console.log("   • wsm_global_paypal_config.webhook_url");
     console.log("   • paypal_tenant_config.environment (SANDBOX/LIVE)");
+    console.log("   • paypal_merchant_onboarding.environment (SANDBOX/LIVE)");
     console.log("   • paypal_merchant_onboarding.merchant_client_id");
     console.log("   • paypal_merchant_onboarding.merchant_oauth_email");
     console.log("\nIndexes created:");

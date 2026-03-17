@@ -5,6 +5,7 @@ import { Pool } from "pg";
 import { PaymentMethodReadiness } from "../paypal/partner-referrals/types";
 import { PayPalMerchantId } from "../paypal/paypal-merchant-id";
 import { PayPalPartnerReferralId } from "../paypal/paypal-partner-referral-id";
+import { PayPalEnvironment } from "../wsm-admin/global-paypal-config";
 
 /**
  * Merchant onboarding status
@@ -24,6 +25,7 @@ export interface MerchantOnboardingRecord {
   merchantCountry?: string;
   merchantClientId?: string;
   merchantOauthEmail?: string;
+  environment: PayPalEnvironment;
   onboardingStatus: OnboardingStatus;
   onboardingStartedAt?: Date;
   onboardingCompletedAt?: Date;
@@ -56,6 +58,7 @@ export interface CreateMerchantOnboardingRequest {
   partnerReferralId?: PayPalPartnerReferralId;
   actionUrl?: string;
   returnUrl?: string;
+  environment?: PayPalEnvironment;
 }
 
 /**
@@ -156,6 +159,7 @@ export class PostgresMerchantOnboardingRepository implements IMerchantOnboarding
       merchantCountry: row.merchant_country,
       merchantClientId: row.merchant_client_id,
       merchantOauthEmail: row.merchant_oauth_email,
+      environment: (row.environment as PayPalEnvironment) || "SANDBOX",
       onboardingStatus: row.onboarding_status as OnboardingStatus,
       onboardingStartedAt: row.onboarding_started_at,
       onboardingCompletedAt: row.onboarding_completed_at,
@@ -185,9 +189,9 @@ export class PostgresMerchantOnboardingRepository implements IMerchantOnboarding
       const query = `
         INSERT INTO paypal_merchant_onboarding (
           saleor_api_url, tracking_id, merchant_email, merchant_country,
-          partner_referral_id, action_url, return_url, onboarding_status
+          partner_referral_id, action_url, return_url, environment, onboarding_status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING')
         RETURNING *
       `;
 
@@ -199,6 +203,7 @@ export class PostgresMerchantOnboardingRepository implements IMerchantOnboarding
         request.partnerReferralId || null,
         request.actionUrl || null,
         request.returnUrl || null,
+        request.environment || "SANDBOX",
       ];
 
       const result = await this.pool.query(query, values);

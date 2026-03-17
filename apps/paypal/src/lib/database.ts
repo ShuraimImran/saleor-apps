@@ -221,6 +221,7 @@ export const initializeDatabase = async (): Promise<void> => {
       merchant_country TEXT,
       merchant_client_id TEXT,                -- Merchant OAuth client ID
       merchant_oauth_email TEXT,              -- Merchant OAuth email
+      environment TEXT NOT NULL DEFAULT 'SANDBOX' CHECK (environment IN ('SANDBOX', 'LIVE')),
       onboarding_status TEXT NOT NULL DEFAULT 'PENDING',
       onboarding_started_at TIMESTAMP,
       onboarding_completed_at TIMESTAMP,
@@ -259,6 +260,13 @@ export const initializeDatabase = async (): Promise<void> => {
         WHERE table_name='paypal_merchant_onboarding' AND column_name='merchant_oauth_email'
       ) THEN
         ALTER TABLE paypal_merchant_onboarding ADD COLUMN merchant_oauth_email TEXT;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='paypal_merchant_onboarding' AND column_name='environment'
+      ) THEN
+        ALTER TABLE paypal_merchant_onboarding ADD COLUMN environment TEXT NOT NULL DEFAULT 'SANDBOX' CHECK (environment IN ('SANDBOX', 'LIVE'));
       END IF;
     END $$;
 

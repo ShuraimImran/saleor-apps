@@ -74,7 +74,12 @@ const PayPalCallbackPage: NextPage = () => {
         console.log("Callback API response:", result);
 
         setStatus("success");
-        setMessage("PayPal account connected successfully!");
+        setMessage("PayPal account connected successfully! Redirecting...");
+
+        // Redirect to app landing page after a short delay
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 1500);
       } catch (error) {
         console.error("Error processing PayPal callback:", error);
         setStatus("error");
@@ -148,8 +153,7 @@ const PayPalCallbackPage: NextPage = () => {
             borderColor="info1"
           >
             <Text size={3} color="default2">
-              Return to your Saleor admin dashboard and refresh the page to see
-              your updated PayPal connection status.
+              Your PayPal account has been linked. You will be redirected shortly.
             </Text>
           </Box>
         )}

@@ -70,6 +70,7 @@ export class GetMerchantStatusTrpcHandler {
           return {
             trackingId: record.trackingId,
             merchantEmail: record.merchantEmail,
+            onboardingEnvironment: record.environment,
             onboardingStatus: record.onboardingStatus,
             actionUrl: record.actionUrl,
             primaryEmailConfirmed: record.primaryEmailConfirmed,

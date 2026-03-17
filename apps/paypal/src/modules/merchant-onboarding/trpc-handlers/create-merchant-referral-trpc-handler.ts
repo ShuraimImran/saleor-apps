@@ -176,6 +176,7 @@ export class CreateMerchantReferralTrpcHandler {
           partnerReferralId: referralResponse.partner_referral_id,
           actionUrl: actionLink.href,
           returnUrl: input.returnUrl,
+          environment: tenantEnv,
         });
 
         if (createResult.isErr()) {

@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS paypal_merchant_onboarding (
   merchant_email TEXT,                            -- Merchant email address
   merchant_country TEXT,                          -- ISO 3166-1 alpha-2 country code
 
+  -- Environment used for onboarding
+  environment TEXT NOT NULL DEFAULT 'SANDBOX' CHECK (environment IN ('SANDBOX', 'LIVE')),
+
   -- Onboarding Status
   onboarding_status TEXT NOT NULL DEFAULT 'PENDING',  -- PENDING, IN_PROGRESS, COMPLETED, FAILED
   onboarding_started_at TIMESTAMP,                -- When merchant clicked signup link
