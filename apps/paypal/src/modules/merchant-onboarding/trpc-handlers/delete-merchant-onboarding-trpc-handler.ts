@@ -1,8 +1,11 @@
+import { createGraphQLClient } from "@saleor/apps-shared/create-graphql-client";
 import { captureException } from "@sentry/nextjs";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { getPool } from "@/lib/database";
+import { createSettingsManager } from "@/lib/metadata-manager";
+import { PayPalMultiConfigMetadataManager } from "@/modules/paypal/configuration/paypal-multi-config-metadata-manager";
 import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
 
@@ -70,6 +73,30 @@ export class DeleteMerchantOnboardingTrpcHandler {
               code: "INTERNAL_SERVER_ERROR",
               message: "Failed to delete merchant onboarding record",
             });
+          }
+
+          // Clean up Saleor metadata (PayPal configs created during onboarding)
+          if (ctx.appToken && ctx.appId) {
+            try {
+              const settingsManager = createSettingsManager(
+                createGraphQLClient({
+                  saleorApiUrl: ctx.saleorApiUrl,
+                  token: ctx.appToken,
+                }),
+                ctx.appId
+              );
+              const metadataManager = new PayPalMultiConfigMetadataManager(settingsManager);
+              const configsResult = await metadataManager.getAllConfigs();
+
+              if (configsResult.isOk()) {
+                for (const config of configsResult.value) {
+                  await metadataManager.deleteConfig(config.id);
+                }
+              }
+            } catch (error) {
+              // Log but don't fail the disconnect — DB record is already deleted
+              captureException(error);
+            }
           }
 
           return {

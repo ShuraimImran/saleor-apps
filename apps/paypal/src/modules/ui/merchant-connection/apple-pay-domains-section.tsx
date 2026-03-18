@@ -104,16 +104,22 @@ export const ApplePayDomainsSection = ({
         borderColor="default1"
         __backgroundColor="#FAFAFA"
       >
-        <Text size={4} marginBottom={4} fontWeight="medium">
-          Apple Pay Domain Management
-        </Text>
-        <Text size={3} color="default2" marginBottom={2}>
-          Apple Pay is not enabled for your account.
-        </Text>
-        <Text size={3} color="default2">
-          To use Apple Pay, ensure your PayPal account has Apple Pay capabilities enabled.
-          Contact PayPal support or check your account settings.
-        </Text>
+        <Box marginBottom={4}>
+          <Text size={4} fontWeight="medium">
+            Apple Pay Domain Management
+          </Text>
+        </Box>
+        <Box marginBottom={3}>
+          <Text size={3} color="default2">
+            Apple Pay is not enabled for your account.
+          </Text>
+        </Box>
+        <Box>
+          <Text size={3} color="default2">
+            To use Apple Pay, ensure your PayPal account has Apple Pay capabilities enabled.
+            Contact PayPal support or check your account settings.
+          </Text>
+        </Box>
       </Box>
     );
   }

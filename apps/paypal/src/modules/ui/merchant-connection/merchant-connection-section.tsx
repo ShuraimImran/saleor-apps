@@ -141,6 +141,8 @@ export const MerchantConnectionSection = () => {
     }
 
     const hasPaypalMerchantId = !!merchantStatus.paypalMerchantId;
+    const isPendingNeedsCheck =
+      merchantStatus.onboardingStatus === "PENDING";
     const isInProgressWithMerchantId =
       merchantStatus.onboardingStatus === "IN_PROGRESS" && hasPaypalMerchantId;
     const isCompletedButNoMetadata =
@@ -148,10 +150,14 @@ export const MerchantConnectionSection = () => {
       saleorConfigs.data !== undefined &&
       (!saleorConfigs.data || saleorConfigs.data.length === 0);
 
-    if (isInProgressWithMerchantId || isCompletedButNoMetadata) {
-      console.log("Auto-refreshing merchant status", {
-        reason: isInProgressWithMerchantId ? "IN_PROGRESS with merchant ID" : "COMPLETED but no Saleor metadata",
-      });
+    if (isPendingNeedsCheck || isInProgressWithMerchantId || isCompletedButNoMetadata) {
+      const reason = isPendingNeedsCheck
+        ? "PENDING - checking if merchant completed onboarding on PayPal"
+        : isInProgressWithMerchantId
+          ? "IN_PROGRESS with merchant ID"
+          : "COMPLETED but no Saleor metadata";
+
+      console.log("Auto-refreshing merchant status", { reason });
       setAutoRefreshDone(true);
       refreshStatus({ trackingId });
     }
@@ -474,8 +480,20 @@ export const MerchantConnectionSection = () => {
 
     if (isPending) {
       return (
-        <Box paddingX={3} paddingY={1} __borderRadius="4px" __backgroundColor="#3B82F6">
-          <Text size={2} fontWeight="medium" __color="#FFFFFF">
+        <Box
+          paddingX={3}
+          __borderRadius="4px"
+          __backgroundColor="#3B82F6"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          gap={2}
+          __height="28px"
+        >
+          <Text __color="#FFFFFF" fontWeight="bold" __fontSize="12px" __lineHeight="1">
+            {"\u25CB"}
+          </Text>
+          <Text size={2} fontWeight="medium" __color="#FFFFFF" __lineHeight="1">
             Onboarding not completed
           </Text>
         </Box>
@@ -582,10 +600,26 @@ export const MerchantConnectionSection = () => {
           borderColor="warning1"
           __backgroundColor="#FFFBEB"
         >
-          <Box marginBottom={4}>
+          <Box marginBottom={4} display="flex" alignItems="center" justifyContent="space-between">
             <Text size={3} fontWeight="bold" color="warning1">
               Complete PayPal Onboarding
             </Text>
+            <Box
+              display="flex"
+              alignItems="center"
+              gap={1}
+              __cursor={isRefreshing ? "default" : "pointer"}
+              __opacity={isRefreshing ? "0.5" : "1"}
+              onClick={() => {
+                if (!isRefreshing && trackingId) {
+                  refreshStatus({ trackingId });
+                }
+              }}
+            >
+              <Text size={2} __color="#92400E" fontWeight="medium">
+                {isRefreshing ? "Checking..." : "\u21BB Refresh Status"}
+              </Text>
+            </Box>
           </Box>
           <Box marginBottom={3}>
             <Text size={3} color="default2">
