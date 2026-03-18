@@ -724,11 +724,9 @@ export const MerchantConnectionSection = () => {
             <Text size={3} fontWeight="medium">
               {merchantStatus.merchantEmail || "Not provided"}
             </Text>
-            {!isCompleted && (
-              <Text size={1} __color="#9CA3AF">
-                Email provided during setup. The merchant may have used a different email on PayPal.
-              </Text>
-            )}
+            <Text size={1} __color="#9CA3AF">
+              Email provided during setup. The merchant may have used a different email on PayPal.
+            </Text>
           </Box>
 
           {/* Tracking ID */}

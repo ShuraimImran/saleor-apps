@@ -205,16 +205,21 @@ export class RefreshMerchantStatusTrpcHandler {
             );
 
             if (vaultingCapability?.status === "ACTIVE") {
+              // Check scopes from oauth_integrations (not from capability object)
+              const oauthScopes: string[] = [];
+
+              for (const integration of status.oauth_integrations || []) {
+                for (const thirdParty of integration.oauth_third_party || []) {
+                  if (thirdParty.scopes) {
+                    oauthScopes.push(...thirdParty.scopes);
+                  }
+                }
+              }
+
               const hasRequiredScopes =
-                vaultingCapability.scopes?.includes(
-                  "https://uri.paypal.com/services/billing-agreements"
-                ) &&
-                vaultingCapability.scopes?.includes(
-                  "https://uri.paypal.com/services/vault/payment-tokens/read"
-                ) &&
-                vaultingCapability.scopes?.includes(
-                  "https://uri.paypal.com/services/vault/payment-tokens/readwrite"
-                );
+                oauthScopes.includes("https://uri.paypal.com/services/billing-agreements") &&
+                oauthScopes.includes("https://uri.paypal.com/services/vault/payment-tokens/read") &&
+                oauthScopes.includes("https://uri.paypal.com/services/vault/payment-tokens/readwrite");
 
               if (hasRequiredScopes) {
                 readiness.vaulting = true;
@@ -345,6 +350,10 @@ export class RefreshMerchantStatusTrpcHandler {
                   }
                 }
               }
+              // Invalidate PayPal config cache so storefront picks up new config immediately
+              const { paypalConfigCache } = await import("@/modules/paypal/configuration/paypal-config-cache");
+
+              paypalConfigCache.invalidateAll(ctx.saleorApiUrl);
             } catch (error) {
               // Log error but don't fail the entire operation
               captureException(error);

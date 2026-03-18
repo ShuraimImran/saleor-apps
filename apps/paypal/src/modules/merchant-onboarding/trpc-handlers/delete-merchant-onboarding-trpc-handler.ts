@@ -93,6 +93,11 @@ export class DeleteMerchantOnboardingTrpcHandler {
                   await metadataManager.deleteConfig(config.id);
                 }
               }
+
+              // Invalidate PayPal config cache so storefront stops using old config
+              const { paypalConfigCache } = await import("@/modules/paypal/configuration/paypal-config-cache");
+
+              paypalConfigCache.invalidateAll(ctx.saleorApiUrl);
             } catch (error) {
               // Log but don't fail the disconnect — DB record is already deleted
               captureException(error);
