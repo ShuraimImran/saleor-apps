@@ -474,7 +474,7 @@ export const MerchantConnectionSection = () => {
 
     if (isPending) {
       return (
-        <Box paddingX={3} paddingY={1} __borderRadius="4px" __backgroundColor="#D97706">
+        <Box paddingX={3} paddingY={1} __borderRadius="4px" __backgroundColor="#3B82F6">
           <Text size={2} fontWeight="medium" __color="#FFFFFF">
             Onboarding not completed
           </Text>
@@ -623,7 +623,9 @@ export const MerchantConnectionSection = () => {
           style={{
             background: isCompleted && merchantStatus.paymentsReceivable
               ? "linear-gradient(135deg, #0D9488, #14B8A6, #2DD4BF)"
-              : "linear-gradient(135deg, #D97706, #F59E0B, #FBBF24)",
+              : isPending
+                ? "linear-gradient(135deg, #1E40AF, #3B82F6, #60A5FA)"
+                : "linear-gradient(135deg, #D97706, #F59E0B, #FBBF24)",
           }}
         >
           <Box display="flex" gap={2} alignItems="center">
