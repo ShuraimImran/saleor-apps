@@ -83,6 +83,9 @@ export const MerchantConnectionSection = () => {
           });
 
           console.log("AppBridge redirect dispatched successfully");
+
+          // Refetch status to show the PENDING state immediately
+          refetchStatus();
         } catch (error) {
           console.error("AppBridge redirect failed:", error);
           setError(
@@ -103,6 +106,7 @@ export const MerchantConnectionSection = () => {
       },
       onError: (err) => {
         setError(`Failed to refresh status: ${err.message}`);
+        setTimeout(() => setError(null), 3000);
       },
     });
 
@@ -240,6 +244,7 @@ export const MerchantConnectionSection = () => {
   const isCompleted = merchantStatus?.onboardingStatus === "COMPLETED";
   const onboardingEnvironment = merchantStatus?.onboardingEnvironment as PayPalEnvironment | undefined;
   const hasEnvironmentMismatch = onboardingEnvironment && onboardingEnvironment !== environment;
+  const canProcessPayments = merchantStatus?.primaryEmailConfirmed && merchantStatus?.paymentsReceivable;
 
   const environmentToggle = (
     <Box
@@ -744,8 +749,40 @@ export const MerchantConnectionSection = () => {
         {getStatusBadge()}
       </Box>
 
+      {/* Email confirmation warning */}
+      {!merchantStatus.primaryEmailConfirmed && !isPending && (
+        <Box
+          padding={4}
+          borderRadius={4}
+          borderWidth={1}
+          borderColor="warning1"
+          __backgroundColor="#FFFBEB"
+          display="flex"
+          alignItems="center"
+          gap={3}
+        >
+          <Box
+            __width="22px"
+            __height="22px"
+            __minWidth="22px"
+            __borderRadius="50%"
+            style={{ border: "1.5px solid #D97706" }}
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+          >
+            <Text __color="#D97706" fontWeight="bold" __fontSize="13px" __lineHeight="1">
+              !
+            </Text>
+          </Box>
+          <Text size={2} __color="#92400E" fontWeight="medium">
+            Please confirm your primary email address on PayPal to start receiving payments.
+          </Text>
+        </Box>
+      )}
+
       {/* Payment Methods */}
-      <Box>
+      <Box __opacity={canProcessPayments ? "1" : "0.5"}>
         <Text size={4} marginBottom={5} fontWeight="medium">
           Payment Methods
         </Text>
@@ -756,19 +793,19 @@ export const MerchantConnectionSection = () => {
         >
           <PaymentMethodBadge
             label="PayPal Buttons"
-            enabled={merchantStatus.paymentMethods?.paypalButtons || false}
+            enabled={canProcessPayments ? (merchantStatus.paymentMethods?.paypalButtons || false) : false}
           />
           <PaymentMethodBadge
             label="Card Processing"
-            enabled={merchantStatus.paymentMethods?.advancedCardProcessing || false}
+            enabled={canProcessPayments ? (merchantStatus.paymentMethods?.advancedCardProcessing || false) : false}
           />
           <PaymentMethodBadge
             label="Apple Pay"
-            enabled={merchantStatus.paymentMethods?.applePay || false}
+            enabled={canProcessPayments ? (merchantStatus.paymentMethods?.applePay || false) : false}
           />
           <PaymentMethodBadge
             label="Google Pay"
-            enabled={merchantStatus.paymentMethods?.googlePay || false}
+            enabled={canProcessPayments ? (merchantStatus.paymentMethods?.googlePay || false) : false}
           />
         </Box>
       </Box>
@@ -777,7 +814,7 @@ export const MerchantConnectionSection = () => {
       {trackingId && (
         <ApplePayDomainsSection
           trackingId={trackingId}
-          applePayEnabled={merchantStatus.paymentMethods?.applePay || false}
+          applePayEnabled={canProcessPayments ? (merchantStatus.paymentMethods?.applePay || false) : false}
         />
       )}
 
