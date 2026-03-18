@@ -245,6 +245,7 @@ export interface ShowSellerStatusResponse {
   capabilities?: SellerCapability[];
 
   // Account status flags (PayPal returns these in snake_case)
+  primary_email?: string;
   primary_email_confirmed?: boolean;
   payments_receivable?: boolean;
 

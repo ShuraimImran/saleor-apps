@@ -229,6 +229,13 @@ export class RefreshMerchantStatusTrpcHandler {
             });
           }
 
+          // Update merchant email from PayPal if available (merchant may have used a different email)
+          if (status.primary_email && status.primary_email !== record.merchantEmail) {
+            await repository.update(saleorApiUrl.value, input.trackingId, {
+              merchantEmail: status.primary_email,
+            });
+          }
+
           // Store raw products and capabilities for debugging and auditing
           await repository.update(saleorApiUrl.value, input.trackingId, {
             subscribedProducts: status.products || [],

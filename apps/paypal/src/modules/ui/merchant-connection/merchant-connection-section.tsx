@@ -145,8 +145,15 @@ export const MerchantConnectionSection = () => {
     }
 
     const hasPaypalMerchantId = !!merchantStatus.paypalMerchantId;
+
+    // Skip auto-refresh for freshly created PENDING records (within last 30 seconds)
+    const recordAge = merchantStatus.createdAt
+      ? Date.now() - new Date(merchantStatus.createdAt).getTime()
+      : Infinity;
+    const isFreshRecord = recordAge < 30000;
+
     const isPendingNeedsCheck =
-      merchantStatus.onboardingStatus === "PENDING";
+      merchantStatus.onboardingStatus === "PENDING" && !isFreshRecord;
     const isInProgressWithMerchantId =
       merchantStatus.onboardingStatus === "IN_PROGRESS" && hasPaypalMerchantId;
     const isCompletedButNoMetadata =
@@ -717,6 +724,11 @@ export const MerchantConnectionSection = () => {
             <Text size={3} fontWeight="medium">
               {merchantStatus.merchantEmail || "Not provided"}
             </Text>
+            {!isCompleted && (
+              <Text size={1} __color="#9CA3AF">
+                Email provided during setup. The merchant may have used a different email on PayPal.
+              </Text>
+            )}
           </Box>
 
           {/* Tracking ID */}

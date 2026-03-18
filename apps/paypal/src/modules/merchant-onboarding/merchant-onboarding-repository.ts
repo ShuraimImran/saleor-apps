@@ -66,6 +66,7 @@ export interface CreateMerchantOnboardingRequest {
  */
 export interface UpdateMerchantOnboardingRequest {
   paypalMerchantId?: PayPalMerchantId;
+  merchantEmail?: string;
   merchantClientId?: string;
   merchantOauthEmail?: string;
   onboardingStatus?: OnboardingStatus;
@@ -338,6 +339,11 @@ export class PostgresMerchantOnboardingRepository implements IMerchantOnboarding
       if (updates.paypalMerchantId !== undefined) {
         setClause.push(`paypal_merchant_id = $${paramIndex++}`);
         values.push(updates.paypalMerchantId);
+      }
+
+      if (updates.merchantEmail !== undefined) {
+        setClause.push(`merchant_email = $${paramIndex++}`);
+        values.push(updates.merchantEmail);
       }
 
       if (updates.merchantClientId !== undefined) {
