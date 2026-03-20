@@ -23,6 +23,7 @@ export const MerchantConnectionSection = () => {
     },
     onError: (err: any) => {
       setError(`Failed to update environment: ${err.message}`);
+      setTimeout(() => setError(null), 3000);
     },
   });
 
