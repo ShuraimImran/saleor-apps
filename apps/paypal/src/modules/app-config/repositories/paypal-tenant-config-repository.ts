@@ -70,8 +70,8 @@ export class PayPalTenantConfigRepository {
         DO UPDATE SET
           soft_descriptor = EXCLUDED.soft_descriptor,
           environment = EXCLUDED.environment,
-          live_enabled = EXCLUDED.live_enabled,
-          partner_fee_percent = EXCLUDED.partner_fee_percent,
+          live_enabled = COALESCE(EXCLUDED.live_enabled, paypal_tenant_config.live_enabled),
+          partner_fee_percent = COALESCE(EXCLUDED.partner_fee_percent, paypal_tenant_config.partner_fee_percent),
           updated_at = NOW()
       `;
 
@@ -79,8 +79,8 @@ export class PayPalTenantConfigRepository {
         args.saleorApiUrl,
         args.softDescriptor ?? null,
         args.environment ?? "SANDBOX",
-        args.liveEnabled ?? false,
-        args.partnerFeePercent ?? 0,
+        args.liveEnabled ?? null,
+        args.partnerFeePercent ?? null,
       ]);
 
       return ok(undefined);
