@@ -128,7 +128,7 @@ export class PaymentGatewayInitializeSessionUseCase {
             const readiness = readinessResult.value;
 
             paymentMethodReadiness = {
-              applePay: readiness.applePay,
+              applePay: false, // TODO: Re-enable when ready for production Apple Pay (was: readiness.applePay)
               googlePay: readiness.googlePay,
               paypalButtons: readiness.paypalButtons,
               advancedCardProcessing: readiness.advancedCardProcessing,

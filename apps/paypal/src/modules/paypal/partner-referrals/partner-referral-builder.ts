@@ -307,7 +307,7 @@ export class PartnerReferralBuilder {
     return new PartnerReferralBuilder()
       .withPPCP()
       .withPaymentMethods()
-      .withApplePay()
+      // .withApplePay() // TODO: Re-enable when ready for production Apple Pay
       .withGooglePay()
       .withAdvancedVaulting();
   }

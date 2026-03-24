@@ -19,6 +19,7 @@
     "migrate": "pnpm tsx --env-file-if-exists=.env ./scripts/run-webhooks-migration.ts",
     "migrate:database": "pnpm tsx --env-file-if-exists=.env ./scripts/migrate-database.ts",
     "migrate:dry-run": "pnpm tsx --env-file-if-exists=.env ./scripts/run-webhooks-migration.ts --dry-run",
+    "reset-admin-password": "pnpm tsx --env-file-if-exists=.env ./scripts/reset-admin-password.ts",
     "start": "next start -p 3005",
     "test": "pnpm run test:unit",
     "test:ci": "pnpm run test:unit --coverage",

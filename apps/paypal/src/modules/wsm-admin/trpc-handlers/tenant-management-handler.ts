@@ -7,7 +7,7 @@ import { PostgresMerchantOnboardingRepository } from "@/modules/merchant-onboard
 import { publicProcedure } from "@/modules/trpc/public-procedure";
 
 import { GlobalPayPalConfigRepository } from "../global-paypal-config-repository";
-import { wsmAdminAuthSchema } from "./wsm-admin-input-schemas";
+import { validateWsmAdminAuth } from "../wsm-admin-procedure";
 
 /**
  * Set partner fee percent for a specific tenant
@@ -18,13 +18,13 @@ export class SetTenantFeeHandler {
   getTrpcProcedure() {
     return this.baseProcedure
       .input(
-        wsmAdminAuthSchema.extend({
+        z.object({
           saleorApiUrl: z.string().min(1, "Saleor API URL is required"),
           partnerFeePercent: z.number().min(0).max(100),
         })
       )
-      .mutation(async ({ input }) => {
-        validateSuperAdminKey(input.secretKey);
+      .mutation(async ({ input, ctx }) => {
+        validateWsmAdminAuth(ctx.cookieHeader);
 
         const repository = PayPalTenantConfigRepository.create(getPool());
         const result = await repository.setPartnerFeePercent({
@@ -48,27 +48,6 @@ export class SetTenantFeeHandler {
 }
 
 /**
- * Validate WSM super admin secret key
- */
-function validateSuperAdminKey(secretKey: string) {
-  const expectedKey = process.env.SUPER_ADMIN_SECRET_KEY;
-
-  if (!expectedKey) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Super admin key not configured on server",
-    });
-  }
-
-  if (secretKey !== expectedKey) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "Invalid super admin secret key",
-    });
-  }
-}
-
-/**
  * List all tenants with their environment and live access status
  */
 export class ListTenantsHandler {
@@ -77,15 +56,15 @@ export class ListTenantsHandler {
   getTrpcProcedure() {
     return this.baseProcedure
       .input(
-        wsmAdminAuthSchema.extend({
+        z.object({
           search: z.string().optional(),
           filter: z.enum(["ALL", "SANDBOX", "LIVE"]).optional(),
           page: z.number().min(1).optional(),
           pageSize: z.number().min(1).max(100).optional(),
         })
       )
-      .query(async ({ input }) => {
-        validateSuperAdminKey(input.secretKey);
+      .query(async ({ input, ctx }) => {
+        validateWsmAdminAuth(ctx.cookieHeader);
 
         const repository = PayPalTenantConfigRepository.create(getPool());
         const result = await repository.listAll({
@@ -116,14 +95,14 @@ export class SetTenantLiveAccessHandler {
   getTrpcProcedure() {
     return this.baseProcedure
       .input(
-        wsmAdminAuthSchema.extend({
+        z.object({
           saleorApiUrl: z.string().min(1, "Saleor API URL is required"),
           liveEnabled: z.boolean(),
           force: z.boolean().optional(),
         })
       )
-      .mutation(async ({ input }) => {
-        validateSuperAdminKey(input.secretKey);
+      .mutation(async ({ input, ctx }) => {
+        validateWsmAdminAuth(ctx.cookieHeader);
 
         // If enabling live, check that LIVE global config exists
         if (input.liveEnabled) {
@@ -161,10 +140,8 @@ export class SetTenantLiveAccessHandler {
 
             // If force=true, disconnect the merchant and reset environment
             if (hasActiveLiveMerchant && input.force) {
-              // Delete the merchant onboarding record
               await onboardingRepo.delete(input.saleorApiUrl, merchant.trackingId);
 
-              // Invalidate PayPal config cache
               const { paypalConfigCache } = await import("@/modules/paypal/configuration/paypal-config-cache");
 
               paypalConfigCache.invalidateAll(input.saleorApiUrl);

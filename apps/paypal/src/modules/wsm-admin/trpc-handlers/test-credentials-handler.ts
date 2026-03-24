@@ -1,32 +1,11 @@
-import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { getPool } from "@/lib/database";
 import { publicProcedure } from "@/modules/trpc/public-procedure";
 
 import { GlobalPayPalConfigRepository } from "../global-paypal-config-repository";
+import { validateWsmAdminAuth } from "../wsm-admin-procedure";
 import { testCredentialsInputSchema } from "./wsm-admin-input-schemas";
-
-/**
- * Validate WSM super admin secret key
- */
-function validateSuperAdminKey(secretKey: string) {
-  const expectedKey = process.env.SUPER_ADMIN_SECRET_KEY;
-
-  if (!expectedKey) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Super admin key not configured on server",
-    });
-  }
-
-  if (secretKey !== expectedKey) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "Invalid super admin secret key",
-    });
-  }
-}
 
 /**
  * Test PayPal credentials (WSM admin only)
@@ -35,9 +14,8 @@ export class TestCredentialsHandler {
   baseProcedure = publicProcedure;
 
   getTrpcProcedure() {
-    return this.baseProcedure.input(testCredentialsInputSchema).mutation(async ({ input }: { input: z.infer<typeof testCredentialsInputSchema> }) => {
-      // Validate super admin authentication
-      validateSuperAdminKey(input.secretKey);
+    return this.baseProcedure.input(testCredentialsInputSchema).mutation(async ({ input, ctx }: { input: z.infer<typeof testCredentialsInputSchema>; ctx: any }) => {
+      validateWsmAdminAuth(ctx.cookieHeader);
 
       const repository = GlobalPayPalConfigRepository.create(getPool());
 

@@ -5,34 +5,13 @@ import { publicProcedure } from "@/modules/trpc/public-procedure";
 
 import { GlobalPayPalConfig } from "../global-paypal-config";
 import { GlobalPayPalConfigRepository } from "../global-paypal-config-repository";
-import { wsmAdminAuthSchema } from "./wsm-admin-input-schemas";
-
-/**
- * Validate WSM super admin secret key
- */
-function validateSuperAdminKey(secretKey: string) {
-  const expectedKey = process.env.SUPER_ADMIN_SECRET_KEY;
-
-  if (!expectedKey) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Super admin key not configured on server",
-    });
-  }
-
-  if (secretKey !== expectedKey) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "Invalid super admin secret key",
-    });
-  }
-}
+import { validateWsmAdminAuth } from "../wsm-admin-procedure";
 
 function maskConfig(config: GlobalPayPalConfig) {
   return {
     id: config.id,
     clientId: config.clientId,
-    clientSecret: "***" + config.clientSecret.slice(-4), // Mask for security
+    clientSecret: "***" + config.clientSecret.slice(-4),
     partnerMerchantId: config.partnerMerchantId,
     partnerFeePercent: config.partnerFeePercent,
     bnCode: config.bnCode,
@@ -52,12 +31,10 @@ export class GetGlobalConfigHandler {
   baseProcedure = publicProcedure;
 
   getTrpcProcedure() {
-    return this.baseProcedure.input(wsmAdminAuthSchema).query(async ({ input }: { input: { secretKey: string } }) => {
-      // Validate super admin authentication
-      validateSuperAdminKey(input.secretKey);
+    return this.baseProcedure.query(async ({ ctx }) => {
+      validateWsmAdminAuth(ctx.cookieHeader);
 
       const repository = GlobalPayPalConfigRepository.create(getPool());
-
       const configsResult = await repository.getAllConfigs();
 
       if (configsResult.isErr()) {
@@ -75,7 +52,6 @@ export class GetGlobalConfigHandler {
         configured: configs.length > 0,
         sandboxConfig: sandboxConfig ? maskConfig(sandboxConfig) : null,
         liveConfig: liveConfig ? maskConfig(liveConfig) : null,
-        // Backward compat: return first config as "config"
         config: configs.length > 0 ? maskConfig(configs[0]) : null,
       };
     });

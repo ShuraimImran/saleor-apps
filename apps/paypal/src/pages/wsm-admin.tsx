@@ -1,7 +1,6 @@
 import { Layout } from "@saleor/apps-ui";
 import { Box, Button, Input,Text } from "@saleor/macaw-ui";
 import { NextPage } from "next";
-import { useRouter } from "next/router";
 import { useEffect,useState } from "react";
 
 import { trpcClient } from "@/modules/trpc/trpc-client";
@@ -25,14 +24,30 @@ const emptyForm: ConfigFormState = {
   bnCode: "",
 };
 
+const ConfigRow = ({ label, value }: { label: string; value: string }) => (
+  <Box
+    display="flex"
+    alignItems="center"
+    paddingX={4}
+    paddingY={3}
+    borderBottomWidth={1}
+    borderColor="default1"
+  >
+    <Box __width="160px" __minWidth="160px">
+      <Text size={2} __color="#6B7280">{label}:</Text>
+    </Box>
+    <Box __flex="1" __overflow="hidden">
+      <Text size={2} fontWeight="medium" __wordBreak="break-all">{value}</Text>
+    </Box>
+  </Box>
+);
+
 const EnvironmentConfigPanel = ({
   environment,
-  secretKey,
   existingConfig,
   onSaved,
 }: {
   environment: PayPalEnvironment;
-  secretKey: string;
   existingConfig: {
     clientId: string;
     clientSecret: string;
@@ -47,10 +62,10 @@ const EnvironmentConfigPanel = ({
 }) => {
   const [form, setForm] = useState<ConfigFormState>(emptyForm);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
 
   const isLive = environment === "LIVE";
-  const label = isLive ? "Live (Production)" : "Sandbox (Test)";
-  const borderColor = isLive ? "success1" : "default1";
+  const label = isLive ? "Live (Production) Configuration" : "Sandbox (Test) Configuration";
 
   const { mutate: testCredentials, isLoading: isTestingCredentials } =
     trpcClient.wsmAdmin.testCredentials.useMutation({
@@ -68,6 +83,7 @@ const EnvironmentConfigPanel = ({
         if (result.success) {
           setMessage({ type: "success", text: result.message });
           setForm(emptyForm);
+          setIsEditing(false);
           onSaved();
         }
       },
@@ -84,7 +100,7 @@ const EnvironmentConfigPanel = ({
     }
 
     setMessage(null);
-    testCredentials({ secretKey, clientId: form.clientId, clientSecret: form.clientSecret, environment });
+    testCredentials({ clientId: form.clientId, clientSecret: form.clientSecret, environment });
   };
 
   const handleSave = () => {
@@ -96,8 +112,7 @@ const EnvironmentConfigPanel = ({
 
     setMessage(null);
     saveConfig({
-      secretKey,
-      clientId: form.clientId,
+          clientId: form.clientId,
       clientSecret: form.clientSecret,
       partnerMerchantId: form.partnerMerchantId || undefined,
       partnerFeePercent: form.partnerFeePercent ? parseFloat(form.partnerFeePercent) : undefined,
@@ -108,84 +123,68 @@ const EnvironmentConfigPanel = ({
 
   return (
     <Box
-      padding={4}
       borderRadius={4}
       borderWidth={1}
-      borderColor={borderColor}
-      display="flex"
-      flexDirection="column"
-      gap={4}
+      borderColor="default1"
+      __backgroundColor="#FFFFFF"
+      __overflow="hidden"
     >
-      <Box display="flex" justifyContent="space-between" alignItems="center">
-        <Text size={4} fontWeight="bold">
-          {label}
-        </Text>
-        {existingConfig ? (
-          <Box
-            paddingX={2}
-            paddingY={1}
-            borderRadius={4}
-            __backgroundColor={isLive ? "#D1FAE5" : "#FEF3C7"}
+      {/* Header */}
+      <Box
+        paddingX={5}
+        paddingY={4}
+        display="flex"
+        justifyContent="space-between"
+        alignItems="center"
+        borderBottomWidth={1}
+        borderColor="default1"
+      >
+        <Box display="flex" alignItems="center" gap={3}>
+          <Text size={4} fontWeight="bold">
+            {label}
+          </Text>
+          {existingConfig ? (
+            <Box
+              paddingX={3}
+              paddingY={1}
+              __borderRadius="9999px"
+              __backgroundColor="#0D9488"
+              display="flex"
+              alignItems="center"
+              gap={1}
+            >
+              <Text size={1} fontWeight="bold" __color="#FFFFFF" __lineHeight="1">{"\u2022"}</Text>
+              <Text size={1} fontWeight="medium" __color="#FFFFFF" __lineHeight="1">Configured</Text>
+            </Box>
+          ) : (
+            <Box
+              paddingX={3}
+              paddingY={1}
+              __borderRadius="9999px"
+              __backgroundColor="#FEE2E2"
+            >
+              <Text size={1} fontWeight="medium" __color="#991B1B" __lineHeight="1">Not Configured</Text>
+            </Box>
+          )}
+        </Box>
+        {!isEditing && (
+          <Button
+            variant="primary"
+            size="small"
+            onClick={() => setIsEditing(true)}
           >
-            <Text size={2} fontWeight="medium">
-              {isLive ? "Configured" : "Configured"}
-            </Text>
-          </Box>
-        ) : (
-          <Box paddingX={2} paddingY={1} borderRadius={4} __backgroundColor="#FEE2E2">
-            <Text size={2} fontWeight="medium">
-              Not Configured
-            </Text>
-          </Box>
+            {existingConfig ? "Update Configuration" : "Configure"}
+          </Button>
         )}
       </Box>
 
-      {existingConfig && (
-        <Box
-          padding={3}
-          borderRadius={4}
-          __backgroundColor={isLive ? "#F0FDF4" : "#FFFBEB"}
-        >
-          <Box display="flex" flexDirection="column" gap={1}>
-            <Text size={2}>
-              <strong>Client ID:</strong> {existingConfig.clientId}
-            </Text>
-            <Text size={2}>
-              <strong>Client Secret:</strong> {existingConfig.clientSecret}
-            </Text>
-            {existingConfig.partnerMerchantId && (
-              <Text size={2}>
-                <strong>Partner Merchant ID:</strong> {existingConfig.partnerMerchantId}
-              </Text>
-            )}
-            {existingConfig.partnerFeePercent !== null && existingConfig.partnerFeePercent !== undefined && (
-              <Text size={2}>
-                <strong>Partner Fee:</strong> {existingConfig.partnerFeePercent}%
-              </Text>
-            )}
-            {existingConfig.bnCode && (
-              <Text size={2}>
-                <strong>BN Code:</strong> {existingConfig.bnCode}
-              </Text>
-            )}
-            {existingConfig.webhookId && (
-              <Text size={2}>
-                <strong>Webhook:</strong> Registered ({existingConfig.webhookId.slice(0, 12)}...)
-              </Text>
-            )}
-            <Text size={1} color="default2">
-              Last updated: {new Date(existingConfig.updatedAt).toLocaleString()}
-            </Text>
-          </Box>
-        </Box>
-      )}
-
+      {/* Message */}
       {message && (
         <Box
-          padding={3}
-          borderRadius={4}
-          borderWidth={1}
+          padding={4}
+          borderBottomWidth={1}
           borderColor={message.type === "success" ? "success1" : "critical1"}
+          __backgroundColor={message.type === "success" ? "#F0FDF4" : "#FEF2F2"}
         >
           <Text size={2} color={message.type === "success" ? "success1" : "critical1"}>
             {message.text}
@@ -193,149 +192,367 @@ const EnvironmentConfigPanel = ({
         </Box>
       )}
 
-      <Text size={3} fontWeight="medium">
-        {existingConfig ? "Update" : "Set"} Credentials
-      </Text>
+      {/* Current config view */}
+      {existingConfig && !isEditing && (
+        <Box>
+          <Box paddingX={5} paddingY={3} borderBottomWidth={1} borderColor="default1">
+            <Text size={1} fontWeight="bold" __color="#6B7280" __letterSpacing="0.05em">
+              CURRENT CONFIGURATION
+            </Text>
+          </Box>
 
-      <Box>
-        <Text marginBottom={1} size={2}>Partner Client ID</Text>
-        <Input
-          type="text"
-          size="small"
-          value={form.clientId}
-          onChange={(e) => setForm((f) => ({ ...f, clientId: e.target.value }))}
-          placeholder="AYSq3RDGsmBLJE-otTkBtM..."
-        />
-      </Box>
+          <Box borderWidth={1} borderColor="default1" __margin="16px 20px" borderRadius={4}>
+            <ConfigRow label="Client ID" value={existingConfig.clientId} />
+            <ConfigRow label="Client Secret" value={existingConfig.clientSecret} />
+            {existingConfig.partnerMerchantId && (
+              <ConfigRow label="Partner Merchant ID" value={existingConfig.partnerMerchantId} />
+            )}
+            <ConfigRow
+              label="Partner Fee"
+              value={`${existingConfig.partnerFeePercent ?? 0}%`}
+            />
+            {existingConfig.bnCode && (
+              <ConfigRow label="BN Code" value={existingConfig.bnCode} />
+            )}
+            {existingConfig.webhookId && (
+              <ConfigRow label="Webhook" value={`***${existingConfig.webhookId.slice(-4)}`} />
+            )}
+          </Box>
 
-      <Box>
-        <Text marginBottom={1} size={2}>Partner Client Secret</Text>
-        <Input
-          type="password"
-          size="small"
-          value={form.clientSecret}
-          onChange={(e) => setForm((f) => ({ ...f, clientSecret: e.target.value }))}
-          placeholder="EHnHq7t06p..."
-        />
-      </Box>
+          <Box paddingX={5} paddingY={3} display="flex" justifyContent="space-between" alignItems="center">
+            <Text size={1} __color="#9CA3AF">
+              Last updated: {new Date(existingConfig.updatedAt).toLocaleString()}
+            </Text>
+            <Button
+              variant="secondary"
+              size="small"
+              onClick={handleTest}
+              disabled={isTestingCredentials}
+            >
+              {isTestingCredentials ? "Testing..." : "Test Credentials"}
+            </Button>
+          </Box>
+        </Box>
+      )}
 
-      <Box>
-        <Text marginBottom={1} size={2}>Partner Merchant ID (Optional)</Text>
-        <Input
-          type="text"
-          size="small"
-          value={form.partnerMerchantId}
-          onChange={(e) => setForm((f) => ({ ...f, partnerMerchantId: e.target.value }))}
-          placeholder="ABCDEFGHIJKLM"
-        />
-      </Box>
+      {/* Edit form */}
+      {isEditing && (
+        <Box padding={5}>
+          <Box
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            marginBottom={5}
+            borderBottomWidth={1}
+            borderColor="default1"
+            paddingBottom={3}
+          >
+            <Text size={1} fontWeight="bold" __color="#6B7280" __letterSpacing="0.05em">
+              UPDATE CREDENTIALS
+            </Text>
+          </Box>
 
-      <Box>
-        <Text marginBottom={1} size={2}>Partner Fee Percent (Optional)</Text>
-        <Input
-          type="number"
-          size="small"
-          value={form.partnerFeePercent}
-          onChange={(e) => setForm((f) => ({ ...f, partnerFeePercent: e.target.value }))}
-          placeholder="2.00"
-          min="0"
-          max="100"
-          step="0.01"
-        />
-      </Box>
+          <Box display="flex" flexDirection="column" gap={4}>
+            <Box>
+              <Text size={2} fontWeight="medium" __color="#1E40AF" marginBottom={2}>
+                Partner Client ID
+              </Text>
+              <Input
+                type="text"
+                value={form.clientId}
+                onChange={(e) => setForm((f) => ({ ...f, clientId: e.target.value }))}
+                placeholder="Enter partner client ID"
+              />
+            </Box>
 
-      <Box>
-        <Text marginBottom={1} size={2}>BN Code (Optional)</Text>
-        <Input
-          type="text"
-          size="small"
-          value={form.bnCode}
-          onChange={(e) => setForm((f) => ({ ...f, bnCode: e.target.value }))}
-          placeholder="YourPartnerName_SP"
-        />
-      </Box>
+            <Box>
+              <Text size={2} fontWeight="medium" __color="#1E40AF" marginBottom={2}>
+                Partner Client Secret
+              </Text>
+              <Input
+                type="text"
+                value={form.clientSecret}
+                onChange={(e) => setForm((f) => ({ ...f, clientSecret: e.target.value }))}
+                placeholder="Enter partner client secret"
+              />
+            </Box>
 
-      <Box display="flex" gap={2}>
-        <Button
-          variant="secondary"
-          size="small"
-          onClick={handleTest}
-          disabled={isTestingCredentials || isSavingConfig || !form.clientId || !form.clientSecret}
-        >
-          {isTestingCredentials ? "Testing..." : "Test Credentials"}
-        </Button>
+            <Box>
+              <Text size={2} fontWeight="medium" marginBottom={2}>
+                Partner Merchant ID <Text size={1} __color="#9CA3AF">(Optional)</Text>
+              </Text>
+              <Input
+                type="text"
+                value={form.partnerMerchantId}
+                onChange={(e) => setForm((f) => ({ ...f, partnerMerchantId: e.target.value }))}
+                placeholder="Enter partner merchant ID"
+              />
+            </Box>
+
+            <Box>
+              <Text size={2} fontWeight="medium" marginBottom={2}>
+                Partner Fee Percent <Text size={1} __color="#9CA3AF">(Optional)</Text>
+              </Text>
+              <Box display="flex" alignItems="center" gap={2}>
+                <Box __flex="1">
+                  <Input
+                    type="number"
+                    value={form.partnerFeePercent}
+                    onChange={(e) => setForm((f) => ({ ...f, partnerFeePercent: e.target.value }))}
+                    placeholder="0.00"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                  />
+                </Box>
+                <Text size={2} color="default2">%</Text>
+              </Box>
+            </Box>
+
+            <Box>
+              <Text size={2} fontWeight="medium" marginBottom={2}>
+                BN Code <Text size={1} __color="#9CA3AF">(Optional)</Text>
+              </Text>
+              <Input
+                type="text"
+                value={form.bnCode}
+                onChange={(e) => setForm((f) => ({ ...f, bnCode: e.target.value }))}
+                placeholder="Enter BN code"
+              />
+            </Box>
+
+            <Box display="flex" gap={3} marginTop={2}>
+              <Box __flex="1">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setIsEditing(false);
+                    setForm(emptyForm);
+                    setMessage(null);
+                  }}
+                  disabled={isSavingConfig}
+                  style={{ width: "100%" }}
+                >
+                  Cancel
+                </Button>
+              </Box>
+              <Box __flex="1">
+                <Button
+                  variant="primary"
+                  onClick={handleSave}
+                  disabled={isTestingCredentials || isSavingConfig || !form.clientId || !form.clientSecret}
+                  style={{ width: "100%" }}
+                >
+                  {isSavingConfig ? "Saving..." : "Save Configuration"}
+                </Button>
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+      )}
+
+      {/* Not configured - show form directly */}
+      {!existingConfig && !isEditing && (
+        <Box padding={5}>
+          <Text size={3} color="default2">
+            No configuration found. Click "Configure" to set up {isLive ? "production" : "sandbox"} credentials.
+          </Text>
+        </Box>
+      )}
+    </Box>
+  );
+};
+
+const LoginForm = ({ onLogin }: { onLogin: () => void }) => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      setError("Please enter email and password");
+
+      return;
+    }
+
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/wsm-admin/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || "Login failed");
+        setIsLoading(false);
+
+        return;
+      }
+
+      onLogin();
+    } catch (err) {
+      setError("Network error. Please try again.");
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Box
+      display="flex"
+      justifyContent="center"
+      alignItems="center"
+      style={{ minHeight: "100vh" }}
+      __backgroundColor="#F8FAFC"
+    >
+      <Box
+        padding={8}
+        borderRadius={4}
+        borderWidth={1}
+        borderColor="default1"
+        __backgroundColor="#FFFFFF"
+        __maxWidth="420px"
+        __width="100%"
+        display="flex"
+        flexDirection="column"
+        gap={5}
+      >
+        <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
+          <Text size={6} fontWeight="bold">WSM Admin</Text>
+          <Text size={3} color="default2">Sign in to manage PayPal configuration</Text>
+        </Box>
+
+        {error && (
+          <Box
+            padding={3}
+            borderRadius={4}
+            __backgroundColor="#FEF2F2"
+            borderWidth={1}
+            borderColor="critical1"
+            display="flex"
+            alignItems="center"
+            gap={2}
+          >
+            <Text size={2} color="critical1">{error}</Text>
+          </Box>
+        )}
+
+        <Box display="flex" flexDirection="column" gap={2}>
+          <Text size={2} fontWeight="medium">Email</Text>
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === "Enter") handleLogin();
+            }}
+            placeholder="admin@example.com"
+            disabled={isLoading}
+          />
+        </Box>
+
+        <Box display="flex" flexDirection="column" gap={2}>
+          <Text size={2} fontWeight="medium">Password</Text>
+          <Input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === "Enter") handleLogin();
+            }}
+            placeholder="Enter your password"
+            disabled={isLoading}
+          />
+        </Box>
+
         <Button
           variant="primary"
-          size="small"
-          onClick={handleSave}
-          disabled={isTestingCredentials || isSavingConfig || !form.clientId || !form.clientSecret}
+          onClick={handleLogin}
+          disabled={isLoading || !email || !password}
+          style={{ width: "100%" }}
         >
-          {isSavingConfig ? "Saving..." : "Save Configuration"}
+          {isLoading ? "Signing in..." : "Sign In"}
         </Button>
+
+        <Text size={1} color="default2" style={{ textAlign: "center" }}>
+          Session expires after 15 minutes of inactivity
+        </Text>
       </Box>
     </Box>
   );
 };
 
 const WsmAdminPage: NextPage = () => {
-  const router = useRouter();
-  const [secretKey, setSecretKey] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [adminEmail, setAdminEmail] = useState("");
 
-  // Get secret key from URL parameter
+  // Check existing session on load
   useEffect(() => {
-    const keyFromUrl = router.query.key as string;
+    const checkSession = async () => {
+      try {
+        const response = await fetch("/api/wsm-admin/auth");
+        const data = await response.json();
 
-    if (keyFromUrl) {
-      setSecretKey(keyFromUrl);
-    }
-  }, [router.query.key]);
+        if (data.authenticated) {
+          setIsAuthenticated(true);
+          setAdminEmail(data.email);
+        } else {
+          setIsAuthenticated(false);
+        }
+      } catch {
+        setIsAuthenticated(false);
+      }
+    };
 
-  // Query global config
+    checkSession();
+  }, []);
+
+  const handleLogout = async () => {
+    await fetch("/api/wsm-admin/auth", { method: "DELETE" });
+    setIsAuthenticated(false);
+    setAdminEmail("");
+  };
+
+  // Query global config (only when authenticated)
   const {
     data: configData,
     refetch: refetchConfig,
     isLoading: isLoadingConfig,
-    error: configError,
   } = trpcClient.wsmAdmin.getGlobalConfig.useQuery(
-    { secretKey },
+    undefined,
     {
-      enabled: !!secretKey,
+      enabled: isAuthenticated === true,
       retry: false,
     }
   );
 
-  if (!secretKey) {
+  if (isAuthenticated === null) {
     return (
-      <Box padding={8}>
-        <Text size={5} fontWeight="bold">
-          WSM Super Admin
-        </Text>
-        <Text marginTop={4} color="default2">
-          Please provide secret key via URL: /wsm-admin?key=YOUR_SECRET_KEY
-        </Text>
+      <Box display="flex" justifyContent="center" alignItems="center" style={{ minHeight: "100vh" }}>
+        <Text size={4} color="default2">Loading...</Text>
       </Box>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <LoginForm
+        onLogin={() => {
+          setIsAuthenticated(true);
+        }}
+      />
     );
   }
 
   if (isLoadingConfig) {
     return (
       <Box padding={8}>
-        <Text size={5} fontWeight="bold">
-          Authenticating...
-        </Text>
-      </Box>
-    );
-  }
-
-  if (configError) {
-    return (
-      <Box padding={8}>
-        <Text size={5} fontWeight="bold">
-          Authentication Failed
-        </Text>
-        <Text marginTop={4} color="critical1">
-          Invalid secret key or server error
-        </Text>
+        <Text size={5} fontWeight="bold">Loading configuration...</Text>
       </Box>
     );
   }
@@ -343,6 +560,13 @@ const WsmAdminPage: NextPage = () => {
   return (
     <Box>
       <AppHeader />
+      {/* Logout bar */}
+      <Box paddingX={8} paddingY={2} display="flex" justifyContent="flex-end" alignItems="center" gap={3}>
+        <Text size={2} color="default2">{adminEmail}</Text>
+        <Button size="small" variant="tertiary" onClick={handleLogout}>
+          Logout
+        </Button>
+      </Box>
       <Layout.AppSection
         marginBottom={8}
         heading="WSM Global PayPal Configuration"
@@ -364,13 +588,11 @@ const WsmAdminPage: NextPage = () => {
         <Box display="flex" flexDirection="column" gap={6}>
           <EnvironmentConfigPanel
             environment="SANDBOX"
-            secretKey={secretKey}
             existingConfig={configData?.sandboxConfig ?? null}
             onSaved={() => refetchConfig()}
           />
           <EnvironmentConfigPanel
             environment="LIVE"
-            secretKey={secretKey}
             existingConfig={configData?.liveConfig ?? null}
             onSaved={() => refetchConfig()}
           />
@@ -391,13 +613,13 @@ const WsmAdminPage: NextPage = () => {
           </Box>
         }
       >
-        <TenantManagementSection secretKey={secretKey} />
+        <TenantManagementSection />
       </Layout.AppSection>
     </Box>
   );
 };
 
-const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
+const TenantManagementSection = () => {
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -412,8 +634,8 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
     refetch: refetchTenants,
     isLoading: isLoadingTenants,
   } = trpcClient.wsmAdmin.listTenants.useQuery(
-    { secretKey, search: search || undefined, filter, page, pageSize },
-    { enabled: !!secretKey, retry: false, keepPreviousData: true }
+    { search: search || undefined, filter, page, pageSize },
+    { retry: false, keepPreviousData: true }
   );
 
   const { mutate: setLiveAccess, isLoading: isUpdatingAccess } =
@@ -576,8 +798,7 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
               variant="primary"
               onClick={() => {
                 setLiveAccess({
-                  secretKey,
-                  saleorApiUrl: confirmDisable,
+                                  saleorApiUrl: confirmDisable,
                   liveEnabled: false,
                   force: true,
                 });
@@ -627,29 +848,25 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
             <TenantRow
               key={tenant.saleorApiUrl}
               tenant={tenant}
-              secretKey={secretKey}
               isUpdating={isUpdating}
               onToggleLive={() => {
                 if (tenant.liveEnabled) {
                   // Try disabling — will return ACTIVE_LIVE_MERCHANT if merchant exists
                   setConfirmDisable(tenant.saleorApiUrl);
                   setLiveAccess({
-                    secretKey,
-                    saleorApiUrl: tenant.saleorApiUrl,
+                                      saleorApiUrl: tenant.saleorApiUrl,
                     liveEnabled: false,
                   });
                 } else {
                   setLiveAccess({
-                    secretKey,
-                    saleorApiUrl: tenant.saleorApiUrl,
+                                      saleorApiUrl: tenant.saleorApiUrl,
                     liveEnabled: true,
                   });
                 }
               }}
               onSaveFee={(fee) =>
                 setTenantFee({
-                  secretKey,
-                  saleorApiUrl: tenant.saleorApiUrl,
+                                  saleorApiUrl: tenant.saleorApiUrl,
                   partnerFeePercent: fee,
                 })
               }
@@ -743,7 +960,6 @@ const LiveAccessTag = ({ liveEnabled }: { liveEnabled: boolean }) => (
 
 const TenantRow = ({
   tenant,
-  secretKey,
   isUpdating,
   onToggleLive,
   onSaveFee,
@@ -756,7 +972,6 @@ const TenantRow = ({
     merchantStatus: string;
     merchantEnvironment?: string | null;
   };
-  secretKey: string;
   isUpdating: boolean;
   onToggleLive: () => void;
   onSaveFee: (fee: number) => void;

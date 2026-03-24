@@ -13,6 +13,7 @@ export const createTrpcContextAppRouter = async ({ req }: FetchCreateContextFnOp
     apiClient: null as Client | null,
     configRepo: paypalConfigRepo as PayPalConfigRepo,
     appUrl: req.headers.get("origin"),
+    cookieHeader: req.headers.get("cookie"),
   };
 };
 

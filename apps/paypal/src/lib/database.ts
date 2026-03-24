@@ -329,6 +329,31 @@ export const initializeDatabase = async (): Promise<void> => {
       FOR EACH ROW
       EXECUTE FUNCTION update_merchant_onboarding_timestamp();
 
+    -- WSM Admin Users Table
+    CREATE TABLE IF NOT EXISTS wsm_admin_users (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wsm_admin_users_email ON wsm_admin_users(email);
+
+    CREATE OR REPLACE FUNCTION update_wsm_admin_users_timestamp()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.updated_at = NOW();
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DROP TRIGGER IF EXISTS trigger_update_wsm_admin_users_timestamp ON wsm_admin_users;
+    CREATE TRIGGER trigger_update_wsm_admin_users_timestamp
+      BEFORE UPDATE ON wsm_admin_users
+      FOR EACH ROW
+      EXECUTE FUNCTION update_wsm_admin_users_timestamp();
+
     -- PayPal Customer Vault Table
     -- Maps Saleor customers to PayPal vault customers for card vaulting
     CREATE TABLE IF NOT EXISTS paypal_customer_vault (

@@ -8,30 +8,10 @@ import { PayPalWebhookManager } from "@/modules/paypal/paypal-webhook-manager";
 import { publicProcedure } from "@/modules/trpc/public-procedure";
 
 import { GlobalPayPalConfigRepository } from "../global-paypal-config-repository";
+import { validateWsmAdminAuth } from "../wsm-admin-procedure";
 import { setGlobalConfigInputSchema } from "./wsm-admin-input-schemas";
 
 const logger = createLogger("SetGlobalConfigHandler");
-
-/**
- * Validate WSM super admin secret key
- */
-function validateSuperAdminKey(secretKey: string) {
-  const expectedKey = process.env.SUPER_ADMIN_SECRET_KEY;
-
-  if (!expectedKey) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Super admin key not configured on server",
-    });
-  }
-
-  if (secretKey !== expectedKey) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "Invalid super admin secret key",
-    });
-  }
-}
 
 /**
  * Get the webhook URL for PayPal platform events
@@ -66,9 +46,8 @@ export class SetGlobalConfigHandler {
   baseProcedure = publicProcedure;
 
   getTrpcProcedure() {
-    return this.baseProcedure.input(setGlobalConfigInputSchema).mutation(async ({ input }: { input: z.infer<typeof setGlobalConfigInputSchema> }) => {
-      // Validate super admin authentication
-      validateSuperAdminKey(input.secretKey);
+    return this.baseProcedure.input(setGlobalConfigInputSchema).mutation(async ({ input, ctx }: { input: z.infer<typeof setGlobalConfigInputSchema>; ctx: any }) => {
+      validateWsmAdminAuth(ctx.cookieHeader);
 
       const repository = GlobalPayPalConfigRepository.create(getPool());
 

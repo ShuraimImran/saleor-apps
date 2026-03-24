@@ -8,7 +8,7 @@ import { TestCredentialsHandler } from "./test-credentials-handler";
 /**
  * WSM Admin Router
  * Routes for super admin configuration of global PayPal credentials
- * Protected by SUPER_ADMIN_SECRET_KEY environment variable
+ * Protected by JWT cookie authentication
  */
 export const wsmAdminRouter = router({
   getGlobalConfig: new GetGlobalConfigHandler().getTrpcProcedure(),
