@@ -475,6 +475,7 @@ export class PostgresMerchantOnboardingRepository implements IMerchantOnboarding
       googlePayEnabled: readiness.googlePay,
       vaultingEnabled: readiness.vaulting,
       lastStatusCheck: new Date(),
+      statusCheckError: "",
     });
   }
 
