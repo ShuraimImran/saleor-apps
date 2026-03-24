@@ -160,6 +160,7 @@ const EnvironmentConfigPanel = ({
       borderColor="default1"
       __backgroundColor="#FFFFFF"
       __overflow="hidden"
+      __boxShadow="0 1px 3px 0 rgba(0, 0, 0, 0.08)"
     >
       {/* Header */}
       <Box
@@ -238,7 +239,8 @@ const EnvironmentConfigPanel = ({
             borderColor="default1"
             __margin="16px 20px"
             borderRadius={4}
-            __backgroundColor="#FAFAFA"
+            __backgroundColor="#F3F4F6"
+            __boxShadow="0 1px 3px 0 rgba(0, 0, 0, 0.05)"
           >
             <ConfigRow label="Client ID" value={existingConfig.clientId} />
             <ConfigRow label="Client Secret" value={existingConfig.clientSecret} />
@@ -446,7 +448,7 @@ const LoginForm = ({ onLogin }: { onLogin: () => void }) => {
       display="flex"
       justifyContent="center"
       alignItems="center"
-      style={{ height: "100vh", overflow: "hidden" }}
+      style={{ height: "100vh", overflow: "hidden", margin: "-40px", padding: "40px" }}
       __backgroundColor="#F8FAFC"
     >
       <Box
