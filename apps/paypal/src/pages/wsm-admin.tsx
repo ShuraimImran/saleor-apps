@@ -399,13 +399,19 @@ const WsmAdminPage: NextPage = () => {
 
 const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [filter, setFilter] = useState<"ALL" | "SANDBOX" | "LIVE">("ALL");
+  const [page, setPage] = useState(1);
+  const [confirmDisable, setConfirmDisable] = useState<string | null>(null); // saleorApiUrl to confirm
+  const pageSize = 10;
 
   const {
     data: tenantsData,
     refetch: refetchTenants,
     isLoading: isLoadingTenants,
   } = trpcClient.wsmAdmin.listTenants.useQuery(
-    { secretKey },
+    { secretKey, search: search || undefined, filter, page, pageSize },
     { enabled: !!secretKey, retry: false }
   );
 
@@ -413,10 +419,16 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
     trpcClient.wsmAdmin.setTenantLiveAccess.useMutation({
       onSuccess: (result) => {
         setMessage({ type: "success", text: result.message });
+        setConfirmDisable(null);
         refetchTenants();
       },
       onError: (err: any) => {
-        setMessage({ type: "error", text: `Failed: ${err.message}` });
+        if (err.message === "ACTIVE_LIVE_MERCHANT") {
+          // confirmDisable is already set by onToggleLive — show confirmation dialog
+        } else {
+          setConfirmDisable(null);
+          setMessage({ type: "error", text: `Failed: ${err.message}` });
+        }
       },
     });
 
@@ -438,17 +450,112 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
   }
 
   const tenants = tenantsData?.tenants ?? [];
+  const total = tenantsData?.total ?? 0;
+  const totalPages = Math.ceil(total / pageSize);
 
-  if (tenants.length === 0) {
-    return (
-      <Box padding={4} borderRadius={4} borderWidth={1} borderColor="default1">
-        <Text color="default2">No tenants found. Tenants will appear here once they access the PayPal app.</Text>
-      </Box>
-    );
-  }
+  const handleSearch = () => {
+    setSearch(searchInput);
+    setPage(1);
+  };
 
   return (
     <Box display="flex" flexDirection="column" gap={4}>
+      {/* Search bar */}
+      <Box display="flex" gap={2} alignItems="flex-end">
+        <Box __flex="1">
+          <Input
+            type="text"
+            size="small"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === "Enter") handleSearch();
+            }}
+            placeholder="Search tenants by URL..."
+          />
+        </Box>
+        <Button size="small" variant="secondary" onClick={handleSearch}>
+          Search
+        </Button>
+        {search && (
+          <Button
+            size="small"
+            variant="tertiary"
+            onClick={() => {
+              setSearchInput("");
+              setSearch("");
+              setPage(1);
+            }}
+          >
+            Clear
+          </Button>
+        )}
+      </Box>
+
+      {/* Filter buttons */}
+      <Box display="flex" gap={2}>
+        {(["ALL", "SANDBOX", "LIVE"] as const).map((f) => (
+          <Button
+            key={f}
+            size="small"
+            variant={filter === f ? "primary" : "secondary"}
+            onClick={() => {
+              setFilter(f);
+              setPage(1);
+            }}
+          >
+            {f === "ALL" ? "All" : f === "SANDBOX" ? "Sandbox" : "Live"}
+          </Button>
+        ))}
+      </Box>
+
+      {/* Confirmation dialog for disabling live with active merchant */}
+      {confirmDisable && (
+        <Box
+          padding={4}
+          borderRadius={4}
+          borderWidth={1}
+          borderColor="warning1"
+          __backgroundColor="#FFFBEB"
+          display="flex"
+          flexDirection="column"
+          gap={3}
+        >
+          <Text size={3} fontWeight="bold" color="warning1">
+            Active Production Merchant Detected
+          </Text>
+          <Text size={2} color="default2">
+            This tenant has an active production merchant connected. Disabling live access will
+            disconnect the merchant and switch the tenant to Sandbox mode. This action cannot be undone.
+          </Text>
+          <Box display="flex" gap={2}>
+            <Button
+              size="small"
+              variant="primary"
+              onClick={() => {
+                setLiveAccess({
+                  secretKey,
+                  saleorApiUrl: confirmDisable,
+                  liveEnabled: false,
+                  force: true,
+                });
+              }}
+              disabled={isUpdatingAccess}
+            >
+              {isUpdatingAccess ? "Disabling..." : "Confirm Disable Live"}
+            </Button>
+            <Button
+              size="small"
+              variant="tertiary"
+              onClick={() => setConfirmDisable(null)}
+              disabled={isUpdatingAccess}
+            >
+              Cancel
+            </Button>
+          </Box>
+        </Box>
+      )}
+
       {message && (
         <Box
           padding={3}
@@ -462,28 +569,81 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
         </Box>
       )}
 
-      {tenants.map((tenant) => (
-        <TenantRow
-          key={tenant.saleorApiUrl}
-          tenant={tenant}
-          secretKey={secretKey}
-          isUpdating={isUpdating}
-          onToggleLive={() =>
-            setLiveAccess({
-              secretKey,
-              saleorApiUrl: tenant.saleorApiUrl,
-              liveEnabled: !tenant.liveEnabled,
-            })
-          }
-          onSaveFee={(fee) =>
-            setTenantFee({
-              secretKey,
-              saleorApiUrl: tenant.saleorApiUrl,
-              partnerFeePercent: fee,
-            })
-          }
-        />
-      ))}
+      {isLoadingTenants ? (
+        <Text color="default2">Loading tenants...</Text>
+      ) : tenants.length === 0 ? (
+        <Box padding={4} borderRadius={4} borderWidth={1} borderColor="default1">
+          <Text color="default2">
+            {search
+              ? `No tenants found matching "${search}".`
+              : "No tenants found. Tenants will appear here once they install the PayPal app."}
+          </Text>
+        </Box>
+      ) : (
+        <>
+          <Text size={2} color="default2">
+            Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, total)} of {total} tenants
+          </Text>
+
+          {tenants.map((tenant) => (
+            <TenantRow
+              key={tenant.saleorApiUrl}
+              tenant={tenant}
+              secretKey={secretKey}
+              isUpdating={isUpdating}
+              onToggleLive={() => {
+                if (tenant.liveEnabled) {
+                  // Try disabling — will return ACTIVE_LIVE_MERCHANT if merchant exists
+                  setConfirmDisable(tenant.saleorApiUrl);
+                  setLiveAccess({
+                    secretKey,
+                    saleorApiUrl: tenant.saleorApiUrl,
+                    liveEnabled: false,
+                  });
+                } else {
+                  setLiveAccess({
+                    secretKey,
+                    saleorApiUrl: tenant.saleorApiUrl,
+                    liveEnabled: true,
+                  });
+                }
+              }}
+              onSaveFee={(fee) =>
+                setTenantFee({
+                  secretKey,
+                  saleorApiUrl: tenant.saleorApiUrl,
+                  partnerFeePercent: fee,
+                })
+              }
+            />
+          ))}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <Box display="flex" justifyContent="space-between" alignItems="center">
+              <Button
+                size="small"
+                variant="secondary"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+              >
+                Previous
+              </Button>
+              <Text size={2} color="default2">
+                Page {page} of {totalPages}
+              </Text>
+              <Button
+                size="small"
+                variant="secondary"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+              >
+                Next
+              </Button>
+            </Box>
+          )}
+        </>
+      )}
     </Box>
   );
 };
@@ -500,6 +660,8 @@ const TenantRow = ({
     environment: string;
     liveEnabled: boolean;
     partnerFeePercent: number;
+    merchantStatus: string;
+    merchantEnvironment?: string | null;
   };
   secretKey: string;
   isUpdating: boolean;
@@ -537,7 +699,7 @@ const TenantRow = ({
           <Text size={3} fontWeight="medium">
             {tenantName}
           </Text>
-          <Box display="flex" gap={2} alignItems="center">
+          <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
             <Text size={2} color="default2">
               Environment: {tenant.environment}
             </Text>
@@ -552,6 +714,44 @@ const TenantRow = ({
             >
               <Text size={1} fontWeight="medium" __color={tenant.liveEnabled ? "#065F46" : "#991B1B"} __lineHeight="1">
                 {tenant.liveEnabled ? "Live Enabled" : "Sandbox Only"}
+              </Text>
+            </Box>
+            <Box
+              paddingX={2}
+              __borderRadius="12px"
+              __backgroundColor={
+                tenant.merchantStatus === "COMPLETED" ? "#DBEAFE"
+                : tenant.merchantStatus === "IN_PROGRESS" ? "#FEF3C7"
+                : tenant.merchantStatus === "PENDING" ? "#E0E7FF"
+                : tenant.merchantStatus === "FAILED" ? "#FEE2E2"
+                : "#F3F4F6"
+              }
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              __height="22px"
+            >
+              <Text
+                size={1}
+                fontWeight="medium"
+                __lineHeight="1"
+                __color={
+                  tenant.merchantStatus === "COMPLETED" ? "#1E40AF"
+                  : tenant.merchantStatus === "IN_PROGRESS" ? "#92400E"
+                  : tenant.merchantStatus === "PENDING" ? "#3730A3"
+                  : tenant.merchantStatus === "FAILED" ? "#991B1B"
+                  : "#6B7280"
+                }
+              >
+                {tenant.merchantStatus === "COMPLETED"
+                  ? `Merchant Connected${tenant.merchantEnvironment ? ` (${tenant.merchantEnvironment})` : ""}`
+                  : tenant.merchantStatus === "IN_PROGRESS"
+                    ? "Merchant Verifying"
+                    : tenant.merchantStatus === "PENDING"
+                      ? "Merchant Pending"
+                      : tenant.merchantStatus === "FAILED"
+                        ? "Merchant Failed"
+                        : "No Merchant"}
               </Text>
             </Box>
           </Box>

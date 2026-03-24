@@ -156,36 +156,104 @@ export class PayPalTenantConfigRepository {
     }
   }
 
-  async listAll(): Promise<Result<Array<{
-    saleorApiUrl: string;
-    environment: PayPalEnvironment;
-    liveEnabled: boolean;
-    partnerFeePercent: number;
-    softDescriptor?: string | null;
-  }>, Error>> {
+  async listAll(options?: {
+    search?: string;
+    filter?: "ALL" | "SANDBOX" | "LIVE";
+    page?: number;
+    pageSize?: number;
+  }): Promise<Result<{
+    tenants: Array<{
+      saleorApiUrl: string;
+      environment: PayPalEnvironment;
+      liveEnabled: boolean;
+      partnerFeePercent: number;
+      softDescriptor?: string | null;
+      merchantStatus: "NONE" | "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED";
+      merchantEnvironment?: PayPalEnvironment | null;
+    }>;
+    total: number;
+    page: number;
+    pageSize: number;
+  }, Error>> {
     try {
+      const page = options?.page ?? 1;
+      const pageSize = options?.pageSize ?? 10;
+      const offset = (page - 1) * pageSize;
+      const search = options?.search?.trim() || "";
+      const filter = options?.filter || "ALL";
+
+      const params: (string | number)[] = [];
+      let paramIndex = 1;
+
+      let whereClause = `
+        WHERE apl.is_active = TRUE
+          AND apl.tenant NOT LIKE '%localhost%'
+          AND apl.tenant NOT LIKE '%127.0.0.1%'
+      `;
+
+      if (search) {
+        whereClause += ` AND apl.tenant ILIKE $${paramIndex}`;
+        params.push(`%${search}%`);
+        paramIndex++;
+      }
+
+      if (filter === "LIVE") {
+        whereClause += ` AND tc.environment = 'LIVE'`;
+      } else if (filter === "SANDBOX") {
+        // Include tenants with SANDBOX or no config (defaults to SANDBOX)
+        whereClause += ` AND (tc.environment = 'SANDBOX' OR tc.environment IS NULL)`;
+      }
+
+      // Count total
+      const countQuery = `
+        SELECT COUNT(*) AS total FROM (
+          SELECT DISTINCT ON (apl.tenant) apl.tenant
+          FROM saleor_app_configuration apl
+          LEFT JOIN paypal_tenant_config tc ON tc.saleor_api_url = apl.tenant
+          ${whereClause}
+          ORDER BY apl.tenant
+        ) sub
+      `;
+      const countResult = await this.pool.query(countQuery, params);
+      const total = parseInt(countResult.rows[0].total, 10);
+
+      // Fetch page
+      const offsetParamIndex = paramIndex++;
+      const limitParamIndex = paramIndex++;
+
       const query = `
-        SELECT
+        SELECT DISTINCT ON (apl.tenant)
           apl.tenant AS saleor_api_url,
           COALESCE(tc.environment, 'SANDBOX') AS environment,
           COALESCE(tc.live_enabled, FALSE) AS live_enabled,
           COALESCE(tc.partner_fee_percent, 0) AS partner_fee_percent,
-          tc.soft_descriptor
+          tc.soft_descriptor,
+          mo.onboarding_status AS merchant_status,
+          mo.environment AS merchant_environment
         FROM saleor_app_configuration apl
         LEFT JOIN paypal_tenant_config tc ON tc.saleor_api_url = apl.tenant
-        WHERE apl.is_active = TRUE
+        LEFT JOIN paypal_merchant_onboarding mo ON mo.saleor_api_url = apl.tenant
+        ${whereClause}
         ORDER BY apl.tenant
+        OFFSET $${offsetParamIndex} LIMIT $${limitParamIndex}
       `;
 
-      const result = await this.pool.query(query);
+      const result = await this.pool.query(query, [...params, offset, pageSize]);
 
-      return ok(result.rows.map((row) => ({
-        saleorApiUrl: row.saleor_api_url,
-        environment: (row.environment as PayPalEnvironment) ?? "SANDBOX",
-        liveEnabled: row.live_enabled ?? false,
-        partnerFeePercent: parseFloat(row.partner_fee_percent) || 0,
-        softDescriptor: row.soft_descriptor,
-      })));
+      return ok({
+        tenants: result.rows.map((row) => ({
+          saleorApiUrl: row.saleor_api_url,
+          environment: (row.environment as PayPalEnvironment) ?? "SANDBOX",
+          liveEnabled: row.live_enabled ?? false,
+          partnerFeePercent: parseFloat(row.partner_fee_percent) || 0,
+          softDescriptor: row.soft_descriptor,
+          merchantStatus: (row.merchant_status as "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED") || "NONE",
+          merchantEnvironment: (row.merchant_environment as PayPalEnvironment) || null,
+        })),
+        total,
+        page,
+        pageSize,
+      });
     } catch (error) {
       logger.error("Failed to list tenant configs", {
         error: error instanceof Error ? error.message : String(error),
