@@ -413,7 +413,7 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
     isLoading: isLoadingTenants,
   } = trpcClient.wsmAdmin.listTenants.useQuery(
     { secretKey, search: search || undefined, filter, page, pageSize },
-    { enabled: !!secretKey, retry: false }
+    { enabled: !!secretKey, retry: false, keepPreviousData: true }
   );
 
   const { mutate: setLiveAccess, isLoading: isUpdatingAccess } =
@@ -470,20 +470,29 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
   return (
     <Box display="flex" flexDirection="column" gap={4}>
       {/* Search bar */}
-      <Box display="flex" gap={2} alignItems="flex-end">
+      <Box
+        padding={3}
+        borderRadius={4}
+        borderWidth={1}
+        borderColor="default1"
+        __backgroundColor="#FFFFFF"
+        display="flex"
+        gap={2}
+        alignItems="center"
+      >
+        <Text __color="#9CA3AF" __fontSize="16px">&#x1F50D;</Text>
         <Box __flex="1">
           <Input
             type="text"
             size="small"
             value={searchInput}
             onChange={(e) => handleSearchInputChange(e.target.value)}
-            placeholder="Search tenants by URL..."
+            placeholder="Search tenants by domain..."
           />
         </Box>
         {searchInput && (
-          <Button
-            size="small"
-            variant="tertiary"
+          <Box
+            __cursor="pointer"
             onClick={() => {
               setSearchInput("");
               setSearch("");
@@ -493,26 +502,59 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
               }
             }}
           >
-            Clear
-          </Button>
+            <Text __color="#9CA3AF" fontWeight="bold" __fontSize="14px">x</Text>
+          </Box>
         )}
       </Box>
 
-      {/* Filter buttons */}
-      <Box display="flex" gap={2}>
-        {(["ALL", "SANDBOX", "LIVE"] as const).map((f) => (
-          <Button
-            key={f}
-            size="small"
-            variant={filter === f ? "primary" : "secondary"}
-            onClick={() => {
-              setFilter(f);
-              setPage(1);
-            }}
-          >
-            {f === "ALL" ? "All" : f === "SANDBOX" ? "Sandbox" : "Live"}
-          </Button>
+      {/* Filter tabs and count */}
+      <Box display="flex" justifyContent="space-between" alignItems="center">
+        <Box
+          display="flex"
+          __borderRadius="9999px"
+          __backgroundColor="#F1F5F9"
+          __padding="3px"
+        >
+          {(["ALL", "SANDBOX", "LIVE"] as const).map((f) => (
+            <Box
+              key={f}
+              paddingX={4}
+              paddingY={1}
+              __borderRadius="9999px"
+              __backgroundColor={filter === f ? "#1E293B" : "transparent"}
+              __cursor="pointer"
+              __transition="background-color 0.2s"
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              onClick={() => {
+                setFilter(f);
+                setPage(1);
+              }}
+            >
+              <Text
+                size={2}
+                fontWeight="bold"
+                __color={filter === f ? "#FFFFFF" : "#64748B"}
+              >
+                {f === "ALL" ? "All" : f === "SANDBOX" ? "Sandbox" : "Live"}
+              </Text>
+            </Box>
         ))}
+        </Box>
+        {total > 0 && (
+          <Box
+            paddingX={3}
+            paddingY={1}
+            __borderRadius="9999px"
+            borderWidth={1}
+            borderColor="default1"
+          >
+            <Text size={2} color="default2">
+              Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, total)} of {total} tenants
+            </Text>
+          </Box>
+        )}
       </Box>
 
       {/* Confirmation dialog for disabling live with active merchant */}
@@ -575,9 +617,9 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
         </Box>
       )}
 
-      {isLoadingTenants ? (
+      {isLoadingTenants && tenants.length === 0 ? (
         <Text color="default2">Loading tenants...</Text>
-      ) : tenants.length === 0 ? (
+      ) : tenants.length === 0 && !isLoadingTenants ? (
         <Box padding={4} borderRadius={4} borderWidth={1} borderColor="default1">
           <Text color="default2">
             {search
@@ -587,10 +629,6 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
         </Box>
       ) : (
         <>
-          <Text size={2} color="default2">
-            Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, total)} of {total} tenants
-          </Text>
-
           {tenants.map((tenant) => (
             <TenantRow
               key={tenant.saleorApiUrl}
@@ -654,6 +692,61 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
   );
 };
 
+const MerchantStatusTag = ({ status, environment }: { status: string; environment?: string | null }) => {
+  const getConfig = () => {
+    switch (status) {
+      case "COMPLETED":
+        return { bg: "#1E40AF", color: "#FFFFFF", label: `Merchant Connected${environment ? ` (${environment})` : ""}` };
+      case "IN_PROGRESS":
+        return { bg: "#D97706", color: "#FFFFFF", label: "Merchant Verifying" };
+      case "PENDING":
+        return { bg: "#D97706", color: "#FFFFFF", label: "Merchant Pending" };
+      case "FAILED":
+        return { bg: "#DC2626", color: "#FFFFFF", label: "Merchant Failed" };
+      default:
+        return { bg: "#E5E7EB", color: "#374151", label: "No Merchant" };
+    }
+  };
+
+  const config = getConfig();
+
+  return (
+    <Box
+      paddingX={3}
+      paddingY={1}
+      __borderRadius="9999px"
+      __backgroundColor={config.bg}
+      display="flex"
+      alignItems="center"
+      justifyContent="center"
+    >
+      <Text size={1} fontWeight="medium" __color={config.color} __lineHeight="1">
+        {config.label}
+      </Text>
+    </Box>
+  );
+};
+
+const LiveAccessTag = ({ liveEnabled }: { liveEnabled: boolean }) => (
+  <Box
+    paddingX={3}
+    paddingY={1}
+    __borderRadius="9999px"
+    __backgroundColor={liveEnabled ? "#0D9488" : "#DC2626"}
+    display="flex"
+    alignItems="center"
+    justifyContent="center"
+    gap={1}
+  >
+    {liveEnabled && (
+      <Text size={1} fontWeight="bold" __color="#FFFFFF" __lineHeight="1">{"\u2713"}</Text>
+    )}
+    <Text size={1} fontWeight="medium" __color="#FFFFFF" __lineHeight="1">
+      {liveEnabled ? "Live Enabled" : "Sandbox Only"}
+    </Text>
+  </Box>
+);
+
 const TenantRow = ({
   tenant,
   secretKey,
@@ -691,107 +784,116 @@ const TenantRow = ({
 
   return (
     <Box
-      padding={4}
       borderRadius={4}
       borderWidth={1}
-      borderColor={tenant.liveEnabled ? "success1" : "default1"}
-      __backgroundColor={tenant.liveEnabled ? "#F0FDF4" : "#FFFFFF"}
-      display="flex"
-      flexDirection="column"
-      gap={3}
+      borderColor="default1"
+      __backgroundColor="#FFFFFF"
+      __overflow="hidden"
     >
-      <Box display="flex" justifyContent="space-between" alignItems="center">
-        <Box display="flex" flexDirection="column" gap={1}>
-          <Text size={3} fontWeight="medium">
-            {tenantName}
-          </Text>
-          <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
-            <Text size={2} color="default2">
-              Environment: {tenant.environment}
-            </Text>
-            <Box
-              paddingX={2}
-              __borderRadius="12px"
-              __backgroundColor={tenant.liveEnabled ? "#D1FAE5" : "#FEE2E2"}
-              display="flex"
-              alignItems="center"
-              justifyContent="center"
-              __height="22px"
-            >
-              <Text size={1} fontWeight="medium" __color={tenant.liveEnabled ? "#065F46" : "#991B1B"} __lineHeight="1">
-                {tenant.liveEnabled ? "Live Enabled" : "Sandbox Only"}
+      <Box display="flex">
+        {/* Left colored border */}
+        <Box
+          __width="4px"
+          __minWidth="4px"
+          __backgroundColor={tenant.liveEnabled ? "#0D9488" : "#E5E7EB"}
+        />
+
+        {/* Content */}
+        <Box padding={5} __flex="1" display="flex" flexDirection="column" gap={4}>
+          {/* Header row: name + button */}
+          <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+            <Box display="flex" flexDirection="column" gap={2}>
+              <Text size={4} fontWeight="bold">
+                {tenantName}
               </Text>
+              <Box display="flex" gap={2} alignItems="center">
+                <Text size={1} fontWeight="medium" __color="#6B7280" __letterSpacing="0.05em">
+                  ENVIRONMENT:
+                </Text>
+                {tenant.environment === "LIVE" ? (
+                  <Box
+                    paddingX={2}
+                    paddingY={1}
+                    __borderRadius="4px"
+                    __backgroundColor="#0D9488"
+                  >
+                    <Text size={1} fontWeight="bold" __color="#FFFFFF" __lineHeight="1">
+                      LIVE
+                    </Text>
+                  </Box>
+                ) : (
+                  <Text size={1} fontWeight="bold" __color="#374151">
+                    SANDBOX
+                  </Text>
+                )}
+              </Box>
             </Box>
             <Box
-              paddingX={2}
-              __borderRadius="12px"
-              __backgroundColor={
-                tenant.merchantStatus === "COMPLETED" ? "#DBEAFE"
-                : tenant.merchantStatus === "IN_PROGRESS" ? "#FEF3C7"
-                : tenant.merchantStatus === "PENDING" ? "#E0E7FF"
-                : tenant.merchantStatus === "FAILED" ? "#FEE2E2"
-                : "#F3F4F6"
-              }
+              paddingX={4}
+              paddingY={2}
+              __borderRadius="9999px"
+              __backgroundColor={tenant.liveEnabled ? "#FFFFFF" : "#1E293B"}
+              __cursor="pointer"
+              borderWidth={1}
+              borderColor={tenant.liveEnabled ? "default1" : "default1"}
               display="flex"
               alignItems="center"
               justifyContent="center"
-              __height="22px"
+              onClick={() => {
+                if (!isUpdating) onToggleLive();
+              }}
+              __opacity={isUpdating ? "0.5" : "1"}
             >
               <Text
-                size={1}
+                size={2}
                 fontWeight="medium"
-                __lineHeight="1"
-                __color={
-                  tenant.merchantStatus === "COMPLETED" ? "#1E40AF"
-                  : tenant.merchantStatus === "IN_PROGRESS" ? "#92400E"
-                  : tenant.merchantStatus === "PENDING" ? "#3730A3"
-                  : tenant.merchantStatus === "FAILED" ? "#991B1B"
-                  : "#6B7280"
-                }
+                __color={tenant.liveEnabled ? "#374151" : "#FFFFFF"}
               >
-                {tenant.merchantStatus === "COMPLETED"
-                  ? `Merchant Connected${tenant.merchantEnvironment ? ` (${tenant.merchantEnvironment})` : ""}`
-                  : tenant.merchantStatus === "IN_PROGRESS"
-                    ? "Merchant Verifying"
-                    : tenant.merchantStatus === "PENDING"
-                      ? "Merchant Pending"
-                      : tenant.merchantStatus === "FAILED"
-                        ? "Merchant Failed"
-                        : "No Merchant"}
+                {tenant.liveEnabled ? "Disable Live" : "Enable Live"}
               </Text>
             </Box>
           </Box>
-        </Box>
-        <Button
-          size="small"
-          variant={tenant.liveEnabled ? "tertiary" : "primary"}
-          onClick={onToggleLive}
-          disabled={isUpdating}
-        >
-          {tenant.liveEnabled ? "Disable Live" : "Enable Live"}
-        </Button>
-      </Box>
 
-      <Box display="flex" alignItems="center" gap={2}>
-        <Text size={2} color="default2" __whiteSpace="nowrap">
-          Partner Fee:
-        </Text>
-        <Box __width="80px">
-          <Input
-            type="number"
-            size="small"
-            value={feeValue}
-            onChange={(e) => setFeeValue(e.target.value)}
-            onBlur={handleFeeBlur}
-            min="0"
-            max="100"
-            step="0.01"
-            disabled={isUpdating}
-          />
+          {/* Tags row */}
+          <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
+            <LiveAccessTag liveEnabled={tenant.liveEnabled} />
+            <MerchantStatusTag
+              status={tenant.merchantStatus}
+              environment={tenant.merchantEnvironment}
+            />
+          </Box>
+
+          {/* Partner Fee */}
+          <Box
+            display="flex"
+            alignItems="center"
+            gap={2}
+            paddingX={3}
+            paddingY={2}
+            borderRadius={4}
+            borderWidth={1}
+            borderColor="default1"
+            __width="fit-content"
+          >
+            <Text size={2} color="default2" __whiteSpace="nowrap">
+              Partner Fee
+            </Text>
+            <Box __width="60px">
+              <Input
+                type="number"
+                size="small"
+                value={feeValue}
+                onChange={(e) => setFeeValue(e.target.value)}
+                onBlur={handleFeeBlur}
+                min="0"
+                max="100"
+                step="0.01"
+                disabled={isUpdating}
+              />
+            </Box>
+            <Text size={2} color="default2">%</Text>
+          </Box>
         </Box>
-        <Text size={2} color="default2">
-          %
-        </Text>
       </Box>
     </Box>
   );

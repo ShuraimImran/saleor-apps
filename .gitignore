@@ -48,5 +48,7 @@ yarn-error.log*
 apps/paypal/index.html
 
 apps/paypal/docs/image.*
+apps/paypal/docs/*.png
 
 apps/paypal/docs/*.md
+
