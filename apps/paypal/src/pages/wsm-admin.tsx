@@ -471,28 +471,22 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
     <Box display="flex" flexDirection="column" gap={4}>
       {/* Search bar */}
       <Box
-        padding={3}
-        borderRadius={4}
-        borderWidth={1}
-        borderColor="default1"
-        __backgroundColor="#FFFFFF"
         display="flex"
         gap={2}
         alignItems="center"
       >
-        <Text __color="#9CA3AF" __fontSize="16px">&#x1F50D;</Text>
         <Box __flex="1">
           <Input
             type="text"
-            size="small"
             value={searchInput}
             onChange={(e) => handleSearchInputChange(e.target.value)}
             placeholder="Search tenants by domain..."
           />
         </Box>
         {searchInput && (
-          <Box
-            __cursor="pointer"
+          <Button
+            size="small"
+            variant="tertiary"
             onClick={() => {
               setSearchInput("");
               setSearch("");
@@ -502,8 +496,8 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
               }
             }}
           >
-            <Text __color="#9CA3AF" fontWeight="bold" __fontSize="14px">x</Text>
-          </Box>
+            Clear
+          </Button>
         )}
       </Box>
 
@@ -732,7 +726,7 @@ const LiveAccessTag = ({ liveEnabled }: { liveEnabled: boolean }) => (
     paddingX={3}
     paddingY={1}
     __borderRadius="9999px"
-    __backgroundColor={liveEnabled ? "#0D9488" : "#DC2626"}
+    __backgroundColor={liveEnabled ? "#0D9488" : "#F59E0B"}
     display="flex"
     alignItems="center"
     justifyContent="center"
@@ -786,8 +780,8 @@ const TenantRow = ({
     <Box
       borderRadius={4}
       borderWidth={1}
-      borderColor="default1"
-      __backgroundColor="#FFFFFF"
+      borderColor={tenant.liveEnabled ? "success1" : "default1"}
+      __backgroundColor={tenant.liveEnabled ? "#F0FDF4" : "#F9FAFB"}
       __overflow="hidden"
     >
       <Box display="flex">
@@ -810,48 +804,31 @@ const TenantRow = ({
                 <Text size={1} fontWeight="medium" __color="#6B7280" __letterSpacing="0.05em">
                   ENVIRONMENT:
                 </Text>
-                {tenant.environment === "LIVE" ? (
-                  <Box
-                    paddingX={2}
-                    paddingY={1}
-                    __borderRadius="4px"
-                    __backgroundColor="#0D9488"
-                  >
-                    <Text size={1} fontWeight="bold" __color="#FFFFFF" __lineHeight="1">
-                      LIVE
-                    </Text>
-                  </Box>
-                ) : (
-                  <Text size={1} fontWeight="bold" __color="#374151">
-                    SANDBOX
+                <Box
+                  paddingX={2}
+                  __borderRadius="9999px"
+                  __backgroundColor={tenant.environment === "LIVE" ? "#0D9488" : "#F3F4F6"}
+                  borderWidth={1}
+                  borderColor={tenant.environment === "LIVE" ? "success1" : "default1"}
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="center"
+                  __height="20px"
+                >
+                  <Text size={1} fontWeight="bold" __color={tenant.environment === "LIVE" ? "#FFFFFF" : "#6B7280"} __lineHeight="1" __fontSize="10px">
+                    {tenant.environment}
                   </Text>
-                )}
+                </Box>
               </Box>
             </Box>
-            <Box
-              paddingX={4}
-              paddingY={2}
-              __borderRadius="9999px"
-              __backgroundColor={tenant.liveEnabled ? "#FFFFFF" : "#1E293B"}
-              __cursor="pointer"
-              borderWidth={1}
-              borderColor={tenant.liveEnabled ? "default1" : "default1"}
-              display="flex"
-              alignItems="center"
-              justifyContent="center"
-              onClick={() => {
-                if (!isUpdating) onToggleLive();
-              }}
-              __opacity={isUpdating ? "0.5" : "1"}
+            <Button
+              size="small"
+              variant={tenant.liveEnabled ? "secondary" : "primary"}
+              onClick={onToggleLive}
+              disabled={isUpdating}
             >
-              <Text
-                size={2}
-                fontWeight="medium"
-                __color={tenant.liveEnabled ? "#374151" : "#FFFFFF"}
-              >
-                {tenant.liveEnabled ? "Disable Live" : "Enable Live"}
-              </Text>
-            </Box>
+              {tenant.liveEnabled ? "Disable Live" : "Enable Live"}
+            </Button>
           </Box>
 
           {/* Tags row */}
