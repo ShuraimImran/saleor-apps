@@ -4,7 +4,6 @@ import { NextPage } from "next";
 import { useEffect,useState } from "react";
 
 import { trpcClient } from "@/modules/trpc/trpc-client";
-import { AppHeader } from "@/modules/ui/app-header";
 
 type PayPalEnvironment = "SANDBOX" | "LIVE";
 
@@ -41,6 +40,37 @@ const ConfigRow = ({ label, value }: { label: string; value: string }) => (
     </Box>
   </Box>
 );
+
+const WebhookRow = ({ webhookId }: { webhookId: string }) => {
+  const [showFull, setShowFull] = useState(false);
+
+  return (
+    <Box
+      display="flex"
+      alignItems="center"
+      paddingX={4}
+      paddingY={3}
+      borderBottomWidth={1}
+      borderColor="default1"
+    >
+      <Box __width="160px" __minWidth="160px">
+        <Text size={2} __color="#6B7280">Webhook:</Text>
+      </Box>
+      <Box __flex="1" __overflow="hidden">
+        <Text size={2} fontWeight="medium" __wordBreak="break-all">
+          {showFull ? webhookId : `***${webhookId.slice(-4)}`}
+        </Text>
+      </Box>
+      <Box
+        __cursor="pointer"
+        paddingX={2}
+        onClick={() => setShowFull((v) => !v)}
+      >
+        <Text size={2} __color="#6B7280">{showFull ? "Hide" : "Show"}</Text>
+      </Box>
+    </Box>
+  );
+};
 
 const EnvironmentConfigPanel = ({
   environment,
@@ -95,6 +125,7 @@ const EnvironmentConfigPanel = ({
   const handleTest = () => {
     if (!form.clientId || !form.clientSecret) {
       setMessage({ type: "error", text: "Please enter Client ID and Client Secret" });
+      setTimeout(() => setMessage(null), 3000);
 
       return;
     }
@@ -106,6 +137,7 @@ const EnvironmentConfigPanel = ({
   const handleSave = () => {
     if (!form.clientId || !form.clientSecret) {
       setMessage({ type: "error", text: "Please enter Client ID and Client Secret" });
+      setTimeout(() => setMessage(null), 3000);
 
       return;
     }
@@ -201,7 +233,13 @@ const EnvironmentConfigPanel = ({
             </Text>
           </Box>
 
-          <Box borderWidth={1} borderColor="default1" __margin="16px 20px" borderRadius={4}>
+          <Box
+            borderWidth={1}
+            borderColor="default1"
+            __margin="16px 20px"
+            borderRadius={4}
+            __backgroundColor="#FAFAFA"
+          >
             <ConfigRow label="Client ID" value={existingConfig.clientId} />
             <ConfigRow label="Client Secret" value={existingConfig.clientSecret} />
             {existingConfig.partnerMerchantId && (
@@ -215,22 +253,14 @@ const EnvironmentConfigPanel = ({
               <ConfigRow label="BN Code" value={existingConfig.bnCode} />
             )}
             {existingConfig.webhookId && (
-              <ConfigRow label="Webhook" value={`***${existingConfig.webhookId.slice(-4)}`} />
+              <WebhookRow webhookId={existingConfig.webhookId} />
             )}
           </Box>
 
-          <Box paddingX={5} paddingY={3} display="flex" justifyContent="space-between" alignItems="center">
+          <Box paddingX={5} paddingY={3}>
             <Text size={1} __color="#9CA3AF">
               Last updated: {new Date(existingConfig.updatedAt).toLocaleString()}
             </Text>
-            <Button
-              variant="secondary"
-              size="small"
-              onClick={handleTest}
-              disabled={isTestingCredentials}
-            >
-              {isTestingCredentials ? "Testing..." : "Test Credentials"}
-            </Button>
           </Box>
         </Box>
       )}
@@ -241,7 +271,7 @@ const EnvironmentConfigPanel = ({
           <Box
             display="flex"
             alignItems="center"
-            justifyContent="center"
+            justifyContent="space-between"
             marginBottom={5}
             borderBottomWidth={1}
             borderColor="default1"
@@ -250,6 +280,14 @@ const EnvironmentConfigPanel = ({
             <Text size={1} fontWeight="bold" __color="#6B7280" __letterSpacing="0.05em">
               UPDATE CREDENTIALS
             </Text>
+            <Button
+              variant="secondary"
+              size="small"
+              onClick={handleTest}
+              disabled={isTestingCredentials || !form.clientId || !form.clientSecret}
+            >
+              {isTestingCredentials ? "Testing..." : "Test Credentials"}
+            </Button>
           </Box>
 
           <Box display="flex" flexDirection="column" gap={4}>
@@ -390,6 +428,7 @@ const LoginForm = ({ onLogin }: { onLogin: () => void }) => {
 
       if (!response.ok) {
         setError(data.error || "Login failed");
+        setTimeout(() => setError(null), 3000);
         setIsLoading(false);
 
         return;
@@ -407,7 +446,7 @@ const LoginForm = ({ onLogin }: { onLogin: () => void }) => {
       display="flex"
       justifyContent="center"
       alignItems="center"
-      style={{ minHeight: "100vh" }}
+      style={{ height: "100vh", overflow: "hidden" }}
       __backgroundColor="#F8FAFC"
     >
       <Box
@@ -423,7 +462,7 @@ const LoginForm = ({ onLogin }: { onLogin: () => void }) => {
         gap={5}
       >
         <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
-          <Text size={6} fontWeight="bold">WSM Admin</Text>
+          <Text size={6} fontWeight="bold">WSM PayPal Administrative Panel</Text>
           <Text size={3} color="default2">Sign in to manage PayPal configuration</Text>
         </Box>
 
@@ -559,14 +598,45 @@ const WsmAdminPage: NextPage = () => {
 
   return (
     <Box>
-      <AppHeader />
-      {/* Logout bar */}
-      <Box paddingX={8} paddingY={2} display="flex" justifyContent="flex-end" alignItems="center" gap={3}>
-        <Text size={2} color="default2">{adminEmail}</Text>
-        <Button size="small" variant="tertiary" onClick={handleLogout}>
-          Logout
-        </Button>
+      {/* Custom header with logout */}
+      <Box
+        marginBottom={12}
+        paddingBottom={8}
+        borderBottomWidth={1}
+        borderColor="default1"
+      >
+        <Box display="flex" justifyContent="space-between" alignItems="center">
+          <Text as="h1" size={10} fontWeight="bold" __color="#1a1a1a">
+            PayPal Payment Configuration
+          </Text>
+          <Box display="flex" alignItems="center" gap={3}>
+            <Text size={2} color="default2">{adminEmail}</Text>
+            <Button size="small" variant="secondary" onClick={handleLogout}>
+              Logout
+            </Button>
+          </Box>
+        </Box>
+        <Text size={3} color="default2" marginTop={3}>
+          Configure your PayPal integration to start accepting payments.
+        </Text>
       </Box>
+      <Layout.AppSection
+        marginBottom={8}
+        heading="PayPal App related Tenant Management"
+        sideContent={
+          <Box display="flex" flexDirection="column" gap={4}>
+            <Text>
+              Manage which tenants have access to Live (production) mode.
+              By default, all tenants are restricted to Sandbox only.
+            </Text>
+            <Text>
+              Enable live access for a tenant when they are ready to process real payments.
+            </Text>
+          </Box>
+        }
+      >
+        <TenantManagementSection />
+      </Layout.AppSection>
       <Layout.AppSection
         marginBottom={8}
         heading="WSM Global PayPal Configuration"
@@ -597,23 +667,6 @@ const WsmAdminPage: NextPage = () => {
             onSaved={() => refetchConfig()}
           />
         </Box>
-      </Layout.AppSection>
-      <Layout.AppSection
-        marginBottom={8}
-        heading="Tenant Management"
-        sideContent={
-          <Box display="flex" flexDirection="column" gap={4}>
-            <Text>
-              Manage which tenants have access to Live (production) mode.
-              By default, all tenants are restricted to Sandbox only.
-            </Text>
-            <Text>
-              Enable live access for a tenant when they are ready to process real payments.
-            </Text>
-          </Box>
-        }
-      >
-        <TenantManagementSection />
       </Layout.AppSection>
     </Box>
   );
