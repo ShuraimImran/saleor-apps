@@ -165,9 +165,16 @@ export class PayPalTenantConfigRepository {
   }>, Error>> {
     try {
       const query = `
-        SELECT saleor_api_url, environment, live_enabled, partner_fee_percent, soft_descriptor
-        FROM paypal_tenant_config
-        ORDER BY saleor_api_url
+        SELECT
+          apl.tenant AS saleor_api_url,
+          COALESCE(tc.environment, 'SANDBOX') AS environment,
+          COALESCE(tc.live_enabled, FALSE) AS live_enabled,
+          COALESCE(tc.partner_fee_percent, 0) AS partner_fee_percent,
+          tc.soft_descriptor
+        FROM saleor_app_configuration apl
+        LEFT JOIN paypal_tenant_config tc ON tc.saleor_api_url = apl.tenant
+        WHERE apl.is_active = TRUE
+        ORDER BY apl.tenant
       `;
 
       const result = await this.pool.query(query);
