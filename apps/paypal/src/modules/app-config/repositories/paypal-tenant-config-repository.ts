@@ -198,10 +198,9 @@ export class PayPalTenantConfigRepository {
       }
 
       if (filter === "LIVE") {
-        whereClause += ` AND tc.environment = 'LIVE'`;
+        whereClause += ` AND tc.live_enabled = TRUE`;
       } else if (filter === "SANDBOX") {
-        // Include tenants with SANDBOX or no config (defaults to SANDBOX)
-        whereClause += ` AND (tc.environment = 'SANDBOX' OR tc.environment IS NULL)`;
+        whereClause += ` AND (tc.live_enabled = FALSE OR tc.live_enabled IS NULL)`;
       }
 
       // Count total

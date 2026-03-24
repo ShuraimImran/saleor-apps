@@ -401,6 +401,7 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const searchTimeoutRef = { current: null as ReturnType<typeof setTimeout> | null };
   const [filter, setFilter] = useState<"ALL" | "SANDBOX" | "LIVE">("ALL");
   const [page, setPage] = useState(1);
   const [confirmDisable, setConfirmDisable] = useState<string | null>(null); // saleorApiUrl to confirm
@@ -453,9 +454,17 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
   const total = tenantsData?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 
-  const handleSearch = () => {
-    setSearch(searchInput);
-    setPage(1);
+  const handleSearchInputChange = (value: string) => {
+    setSearchInput(value);
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      setSearch(value);
+      setPage(1);
+    }, 300);
   };
 
   return (
@@ -467,17 +476,11 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
             type="text"
             size="small"
             value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === "Enter") handleSearch();
-            }}
+            onChange={(e) => handleSearchInputChange(e.target.value)}
             placeholder="Search tenants by URL..."
           />
         </Box>
-        <Button size="small" variant="secondary" onClick={handleSearch}>
-          Search
-        </Button>
-        {search && (
+        {searchInput && (
           <Button
             size="small"
             variant="tertiary"
@@ -485,6 +488,9 @@ const TenantManagementSection = ({ secretKey }: { secretKey: string }) => {
               setSearchInput("");
               setSearch("");
               setPage(1);
+              if (searchTimeoutRef.current) {
+                clearTimeout(searchTimeoutRef.current);
+              }
             }}
           >
             Clear
