@@ -98,8 +98,25 @@ export interface PayPalOrder {
     payments?: {
       captures?: Array<{
         id: string;
-        status: string;
+        /*
+         * CAUTION: this is the capture's own status — independent of
+         * order.status above. A capture can be DECLINED while the order
+         * is COMPLETED. Always interpret capture responses through
+         * `interpretCaptureResponse` in ./capture-result.ts.
+         */
+        status:
+          | "COMPLETED"
+          | "DECLINED"
+          | "PARTIALLY_REFUNDED"
+          | "PENDING"
+          | "REFUNDED"
+          | "FAILED";
         amount: PayPalMoney;
+        processor_response?: {
+          response_code?: string;
+          avs_code?: string;
+          cvv_code?: string;
+        };
       }>;
       authorizations?: Array<{
         id: string;

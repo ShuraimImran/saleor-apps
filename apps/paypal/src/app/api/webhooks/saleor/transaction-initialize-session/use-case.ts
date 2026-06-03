@@ -16,8 +16,15 @@ import {
   ICustomerVaultRepository,
   PostgresCustomerVaultRepository,
 } from "@/modules/customer-vault/customer-vault-repository";
+import {
+  formatDeclineMessage,
+  interpretCaptureResponse,
+} from "@/modules/paypal/capture-result";
 import { PayPalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
-import { mapPayPalErrorToApiError } from "@/modules/paypal/paypal-api-error";
+import {
+  mapPayPalErrorToApiError,
+  PayPalApiError,
+} from "@/modules/paypal/paypal-api-error";
 import { createPayPalMoney } from "@/modules/paypal/paypal-money";
 import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
 import { IPayPalOrdersApiFactory, PayPalOrderItem } from "@/modules/paypal/types";
@@ -1193,15 +1200,70 @@ export class TransactionInitializeSessionUseCase {
     }
 
     /*
-     * Handle COMPLETED status - vaulted card payments are auto-captured by PayPal
-     * No need for TransactionProcess, payment is already done
+     * COMPLETED order — vaulted card payments are auto-captured by PayPal at
+     * order creation. Check the inner capture status before reporting success:
+     * order.status COMPLETED can coexist with capture.status DECLINED.
      */
     if (paypalOrder.status === "COMPLETED") {
-      this.logger.info("PayPal order auto-completed (vaulted card payment)", {
+      const outcome = interpretCaptureResponse(paypalOrder);
+
+      this.logger.info("PayPal order auto-completed at creation", {
         paypalOrderId: paypalOrder.id,
-        captureId: paypalOrder.purchase_units?.[0]?.payments?.captures?.[0]?.id,
+        captureOutcome: outcome.kind,
       });
 
+      if (outcome.kind === "declined") {
+        this.logger.warn("Auto-captured PayPal order was declined", {
+          paypalOrderId: paypalOrder.id,
+          captureId: outcome.captureId,
+          captureStatus: outcome.captureStatus,
+          reasonCode: outcome.reasonCode,
+          avsCode: outcome.avsCode,
+          cvvCode: outcome.cvvCode,
+        });
+
+        const failureResult =
+          event.action.actionType === "CHARGE"
+            ? new ChargeFailureResult()
+            : new AuthorizationFailureResult();
+
+        return ok(
+          new TransactionInitializeSessionUseCaseResponses.Failure({
+            transactionResult: failureResult,
+            error: new PayPalApiError(formatDeclineMessage(outcome), {
+              paypalErrorName: "CAPTURE_DECLINED",
+              paypalErrorMessage: outcome.captureStatus,
+            }),
+            paypalOrderId: createPayPalOrderId(paypalOrder.id),
+            appContext: appContextContainer.getContextValue(),
+          }),
+        );
+      }
+
+      if (outcome.kind === "missing") {
+        this.logger.error("Auto-completed order missing capture object", {
+          paypalOrderId: paypalOrder.id,
+          orderStatus: outcome.orderStatus,
+        });
+
+        const failureResult =
+          event.action.actionType === "CHARGE"
+            ? new ChargeFailureResult()
+            : new AuthorizationFailureResult();
+
+        return ok(
+          new TransactionInitializeSessionUseCaseResponses.Failure({
+            transactionResult: failureResult,
+            error: new PayPalApiError("No capture in PayPal response", {
+              paypalErrorName: "CAPTURE_MISSING",
+            }),
+            paypalOrderId: createPayPalOrderId(paypalOrder.id),
+            appContext: appContextContainer.getContextValue(),
+          }),
+        );
+      }
+
+      // outcome.kind is "succeeded" or "pending"
       const saleorMoneyResult = resolveSaleorMoneyFromPayPalOrder(paypalOrder);
 
       if (saleorMoneyResult.isErr()) {
@@ -1217,7 +1279,6 @@ export class TransactionInitializeSessionUseCase {
         );
       }
 
-      // Return CHARGE_SUCCESS since payment is already captured
       const successResult = new ChargeSuccessResult();
 
       return ok(

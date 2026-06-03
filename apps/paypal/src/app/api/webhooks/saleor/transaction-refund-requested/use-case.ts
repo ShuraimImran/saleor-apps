@@ -206,6 +206,32 @@ export class TransactionRefundRequestedUseCase {
       captureStatus: capture.status,
     });
 
+    /*
+     * PayPal will reject refunds of non-COMPLETED captures with
+     * REFUND_TRANSACTION_TYPE_NOT_ALLOWED. Short-circuit instead of
+     * firing a guaranteed-to-fail request. (Pre-fix, this gap surfaced
+     * the upstream capture-status bug — keep it explicit so it stays
+     * a clean failure path.)
+     */
+    if (capture.status !== "COMPLETED" && capture.status !== "PARTIALLY_REFUNDED") {
+      this.logger.warn("Refund skipped — capture is not in a refundable state", {
+        orderId: paypalOrderId,
+        captureId,
+        captureStatus: capture.status,
+      });
+
+      return ok(
+        new TransactionRefundRequestedUseCaseResponses.Failure({
+          paypalOrderId,
+          error: new PayPalApiError(
+            `Capture ${captureId} is not refundable (status: ${capture.status})`,
+            { paypalErrorName: "CAPTURE_NOT_REFUNDABLE" },
+          ),
+          appContext: appContextContainer.getContextValue(),
+        }),
+      );
+    }
+
     const refundResult = await paypalRefundsApi.refundCapture({
       captureId,
       amount: paypalMoney,

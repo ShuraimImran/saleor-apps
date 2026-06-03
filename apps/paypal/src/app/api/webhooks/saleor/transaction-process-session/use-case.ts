@@ -10,8 +10,15 @@ import { appContextContainer } from "@/lib/app-context";
 import { getPool } from "@/lib/database";
 import { BaseError } from "@/lib/errors";
 import { createLogger } from "@/lib/logger";
+import {
+  formatDeclineMessage,
+  interpretCaptureResponse,
+} from "@/modules/paypal/capture-result";
 import { PayPalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
-import { mapPayPalErrorToApiError } from "@/modules/paypal/paypal-api-error";
+import {
+  mapPayPalErrorToApiError,
+  PayPalApiError,
+} from "@/modules/paypal/paypal-api-error";
 import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
 import { IPayPalOrdersApiFactory } from "@/modules/paypal/types";
 import { resolveSaleorMoneyFromPayPalOrder } from "@/modules/saleor/resolve-saleor-money-from-paypal-order";
@@ -185,11 +192,77 @@ export class TransactionProcessSessionUseCase {
 
     const paypalOrder = processResult.value;
 
-    this.logger.info("Successfully processed PayPal order", {
+    /*
+     * PayPal returned HTTP 2xx, but a 2xx capture response can still
+     * carry a DECLINED capture. order.status alone is not enough.
+     */
+    const outcome = interpretCaptureResponse(paypalOrder);
+
+    this.logger.info("Capture response received", {
       paypalOrderId,
-      status: paypalOrder.status,
+      orderStatus: paypalOrder.status,
+      captureOutcome: outcome.kind,
       actionType: event.action.actionType,
     });
+
+    if (outcome.kind === "declined") {
+      this.logger.warn("PayPal capture declined", {
+        paypalOrderId,
+        captureId: outcome.captureId,
+        captureStatus: outcome.captureStatus,
+        reasonCode: outcome.reasonCode,
+        avsCode: outcome.avsCode,
+        cvvCode: outcome.cvvCode,
+      });
+
+      const failureResult =
+        event.action.actionType === "CHARGE"
+          ? new ChargeFailureResult()
+          : new AuthorizationFailureResult();
+
+      return ok(
+        new TransactionProcessSessionUseCaseResponses.Failure({
+          transactionResult: failureResult,
+          error: new PayPalApiError(formatDeclineMessage(outcome), {
+            paypalErrorName: "CAPTURE_DECLINED",
+            paypalErrorMessage: outcome.captureStatus,
+          }),
+          paypalOrderId,
+          appContext: appContextContainer.getContextValue(),
+        }),
+      );
+    }
+
+    if (outcome.kind === "missing") {
+      this.logger.error("Capture response missing capture object", {
+        paypalOrderId,
+        orderStatus: outcome.orderStatus,
+      });
+
+      const failureResult =
+        event.action.actionType === "CHARGE"
+          ? new ChargeFailureResult()
+          : new AuthorizationFailureResult();
+
+      return ok(
+        new TransactionProcessSessionUseCaseResponses.Failure({
+          transactionResult: failureResult,
+          error: new PayPalApiError("No capture in PayPal response", {
+            paypalErrorName: "CAPTURE_MISSING",
+          }),
+          paypalOrderId,
+          appContext: appContextContainer.getContextValue(),
+        }),
+      );
+    }
+
+    /*
+     * outcome.kind is "succeeded" or "pending" past this point.
+     * PENDING captures are rare for cards but legitimate (e.g. risk review).
+     * Saleor's CHARGE_SUCCESS still fits — the funds are committed; if PayPal
+     * subsequently fails them, the webhook-driven reconciliation handles it.
+     * If a separate CHARGE_REQUEST result is added later, branch here.
+     */
 
     // Log vault info if present (for debugging vaulting issues)
     const vaultInfo = paypalOrder.payment_source?.card?.attributes?.vault;
@@ -224,10 +297,6 @@ export class TransactionProcessSessionUseCase {
       );
     }
 
-    /*
-     * For process session, we typically return success result
-     * since the action has been completed
-     */
     const successResult = new ChargeSuccessResult();
 
     return ok(

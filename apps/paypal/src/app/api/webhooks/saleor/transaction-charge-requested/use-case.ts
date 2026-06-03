@@ -9,8 +9,15 @@ import { appContextContainer } from "@/lib/app-context";
 import { getPool } from "@/lib/database";
 import { BaseError } from "@/lib/errors";
 import { createLogger } from "@/lib/logger";
+import {
+  formatDeclineMessage,
+  interpretCaptureResponse,
+} from "@/modules/paypal/capture-result";
 import { PayPalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
-import { mapPayPalErrorToApiError } from "@/modules/paypal/paypal-api-error";
+import {
+  mapPayPalErrorToApiError,
+  PayPalApiError,
+} from "@/modules/paypal/paypal-api-error";
 import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
 import { IPayPalOrdersApiFactory } from "@/modules/paypal/types";
 import { resolveSaleorMoneyFromPayPalOrder } from "@/modules/saleor/resolve-saleor-money-from-paypal-order";
@@ -154,6 +161,60 @@ export class TransactionChargeRequestedUseCase {
     }
 
     const capturedOrder = captureOrderResult.value;
+
+    /*
+     * A 2xx capture response does not mean money moved. The inner
+     * capture.status carries the actual outcome and can be DECLINED
+     * while order.status is COMPLETED.
+     */
+    const outcome = interpretCaptureResponse(capturedOrder);
+
+    this.logger.info("Capture response received", {
+      paypalOrderId: orderIdResult,
+      orderStatus: capturedOrder.status,
+      captureOutcome: outcome.kind,
+    });
+
+    if (outcome.kind === "declined") {
+      this.logger.warn("PayPal capture declined", {
+        paypalOrderId: orderIdResult,
+        captureId: outcome.captureId,
+        captureStatus: outcome.captureStatus,
+        reasonCode: outcome.reasonCode,
+        avsCode: outcome.avsCode,
+        cvvCode: outcome.cvvCode,
+      });
+
+      return ok(
+        new TransactionChargeRequestedUseCaseResponses.Failure({
+          transactionResult: new ChargeFailureResult(),
+          paypalOrderId: orderIdResult,
+          error: new PayPalApiError(formatDeclineMessage(outcome), {
+            paypalErrorName: "CAPTURE_DECLINED",
+            paypalErrorMessage: outcome.captureStatus,
+          }),
+          appContext: appContextContainer.getContextValue(),
+        }),
+      );
+    }
+
+    if (outcome.kind === "missing") {
+      this.logger.error("Capture response missing capture object", {
+        paypalOrderId: orderIdResult,
+        orderStatus: outcome.orderStatus,
+      });
+
+      return ok(
+        new TransactionChargeRequestedUseCaseResponses.Failure({
+          transactionResult: new ChargeFailureResult(),
+          paypalOrderId: orderIdResult,
+          error: new PayPalApiError("No capture in PayPal response", {
+            paypalErrorName: "CAPTURE_MISSING",
+          }),
+          appContext: appContextContainer.getContextValue(),
+        }),
+      );
+    }
 
     /*
      * ========================================
