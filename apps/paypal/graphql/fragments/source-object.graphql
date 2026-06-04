@@ -91,6 +91,9 @@ fragment SourceObject on OrderOrCheckout {
           thumbnail {
             url
           }
+          images {
+            url
+          }
         }
       }
       totalPrice {

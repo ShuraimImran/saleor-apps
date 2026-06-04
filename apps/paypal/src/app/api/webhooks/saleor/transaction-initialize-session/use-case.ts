@@ -21,6 +21,7 @@ import {
   interpretCaptureResponse,
 } from "@/modules/paypal/capture-result";
 import { PayPalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
+import { pickPayPalImageUrl } from "@/modules/paypal/image-url";
 import {
   mapPayPalErrorToApiError,
   PayPalApiError,
@@ -149,7 +150,16 @@ function extractPayPalItemsFromSource(
           amount: unitAmount,
         }),
         sku: line.variant.sku || undefined,
-        image_url: line.variant.product?.thumbnail?.url || undefined,
+        /*
+         * thumbnail.url can be Saleor's /thumbnail/<id>/<size>/ proxy with no
+         * file extension, which PayPal rejects with INVALID_REQUEST. Fall back
+         * to images[0].url (S3-backed, has an extension) when the thumbnail
+         * doesn't match PayPal's image_url pattern.
+         */
+        image_url: pickPayPalImageUrl([
+          line.variant.product?.thumbnail?.url,
+          line.variant.product?.images?.[0]?.url,
+        ]),
         category: isDigital ? "DIGITAL_GOODS" : "PHYSICAL_GOODS",
       });
     }
@@ -172,7 +182,8 @@ function extractPayPalItemsFromSource(
           amount: unitAmount,
         }),
         sku: line.productSku || undefined,
-        image_url: line.thumbnail?.url || undefined,
+        // Order branch only exposes line.thumbnail — no images[] fallback available.
+        image_url: pickPayPalImageUrl([line.thumbnail?.url]),
         category: isDigital ? "DIGITAL_GOODS" : "PHYSICAL_GOODS",
       });
     }
