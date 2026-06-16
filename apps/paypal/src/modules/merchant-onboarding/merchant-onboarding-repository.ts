@@ -39,6 +39,11 @@ export interface MerchantOnboardingRecord {
   applePayEnabled: boolean;
   googlePayEnabled: boolean;
   vaultingEnabled: boolean;
+  // Merchant preference (explicit enable/disable). null = no explicit choice (use default).
+  prefPaypalButtons: boolean | null;
+  prefCard: boolean | null;
+  prefApplePay: boolean | null;
+  prefGooglePay: boolean | null;
   subscribedProducts: any[];
   activeCapabilities: any[];
   lastStatusCheck?: Date;
@@ -80,6 +85,11 @@ export interface UpdateMerchantOnboardingRequest {
   applePayEnabled?: boolean;
   googlePayEnabled?: boolean;
   vaultingEnabled?: boolean;
+  // Merchant preference. Pass `null` to reset to default, `undefined` to leave unchanged.
+  prefPaypalButtons?: boolean | null;
+  prefCard?: boolean | null;
+  prefApplePay?: boolean | null;
+  prefGooglePay?: boolean | null;
   subscribedProducts?: any[];
   activeCapabilities?: any[];
   lastStatusCheck?: Date;
@@ -123,6 +133,17 @@ export interface IMerchantOnboardingRepository {
     saleorApiUrl: string,
     trackingId: string,
     readiness: PaymentMethodReadiness
+  ): Promise<Result<MerchantOnboardingRecord, MerchantOnboardingRepositoryError>>;
+
+  updatePaymentMethodPreferences(
+    saleorApiUrl: string,
+    trackingId: string,
+    preferences: {
+      paypalButtons?: boolean | null;
+      card?: boolean | null;
+      applePay?: boolean | null;
+      googlePay?: boolean | null;
+    }
   ): Promise<Result<MerchantOnboardingRecord, MerchantOnboardingRepositoryError>>;
 
   list(
@@ -174,6 +195,10 @@ export class PostgresMerchantOnboardingRepository implements IMerchantOnboarding
       applePayEnabled: row.apple_pay_enabled,
       googlePayEnabled: row.google_pay_enabled,
       vaultingEnabled: row.vaulting_enabled,
+      prefPaypalButtons: row.paypal_buttons_pref ?? null,
+      prefCard: row.card_pref ?? null,
+      prefApplePay: row.apple_pay_pref ?? null,
+      prefGooglePay: row.google_pay_pref ?? null,
       subscribedProducts: row.subscribed_products || [],
       activeCapabilities: row.active_capabilities || [],
       lastStatusCheck: row.last_status_check,
@@ -216,6 +241,10 @@ export class PostgresMerchantOnboardingRepository implements IMerchantOnboarding
           apple_pay_enabled = FALSE,
           google_pay_enabled = FALSE,
           vaulting_enabled = FALSE,
+          paypal_buttons_pref = NULL,
+          card_pref = NULL,
+          apple_pay_pref = NULL,
+          google_pay_pref = NULL,
           subscribed_products = '[]',
           active_capabilities = '[]',
           last_status_check = NULL,
@@ -411,6 +440,27 @@ export class PostgresMerchantOnboardingRepository implements IMerchantOnboarding
         values.push(updates.vaultingEnabled);
       }
 
+      // Preference columns: `undefined` leaves unchanged; `null` resets to default; bool sets it.
+      if (updates.prefPaypalButtons !== undefined) {
+        setClause.push(`paypal_buttons_pref = $${paramIndex++}`);
+        values.push(updates.prefPaypalButtons);
+      }
+
+      if (updates.prefCard !== undefined) {
+        setClause.push(`card_pref = $${paramIndex++}`);
+        values.push(updates.prefCard);
+      }
+
+      if (updates.prefApplePay !== undefined) {
+        setClause.push(`apple_pay_pref = $${paramIndex++}`);
+        values.push(updates.prefApplePay);
+      }
+
+      if (updates.prefGooglePay !== undefined) {
+        setClause.push(`google_pay_pref = $${paramIndex++}`);
+        values.push(updates.prefGooglePay);
+      }
+
       if (updates.subscribedProducts !== undefined) {
         setClause.push(`subscribed_products = $${paramIndex++}`);
         values.push(JSON.stringify(updates.subscribedProducts));
@@ -476,6 +526,24 @@ export class PostgresMerchantOnboardingRepository implements IMerchantOnboarding
       vaultingEnabled: readiness.vaulting,
       lastStatusCheck: new Date(),
       statusCheckError: "",
+    });
+  }
+
+  async updatePaymentMethodPreferences(
+    saleorApiUrl: string,
+    trackingId: string,
+    preferences: {
+      paypalButtons?: boolean | null;
+      card?: boolean | null;
+      applePay?: boolean | null;
+      googlePay?: boolean | null;
+    }
+  ): Promise<Result<MerchantOnboardingRecord, MerchantOnboardingRepositoryError>> {
+    return this.update(saleorApiUrl, trackingId, {
+      prefPaypalButtons: preferences.paypalButtons,
+      prefCard: preferences.card,
+      prefApplePay: preferences.applePay,
+      prefGooglePay: preferences.googlePay,
     });
   }
 

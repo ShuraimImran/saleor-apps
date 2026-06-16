@@ -14,6 +14,7 @@ export const MerchantConnectionSection = () => {
   const [merchantEmail, setMerchantEmail] = useState<string>("");
   const [environment, setEnvironment] = useState<PayPalEnvironment>("SANDBOX");
   const [liveEnabled, setLiveEnabled] = useState(false);
+  const [pendingMethod, setPendingMethod] = useState<string | null>(null);
 
   // Load tenant config to get current environment
   const tenantConfig = trpcClient.appConfig.getTenantConfig.useQuery(undefined, { retry: false });
@@ -110,6 +111,29 @@ export const MerchantConnectionSection = () => {
         setTimeout(() => setError(null), 3000);
       },
     });
+
+  const { mutate: setPaymentMethodPreferences } =
+    trpcClient.merchantOnboarding.setPaymentMethodPreferences.useMutation({
+      onSuccess: () => {
+        refetchStatus();
+      },
+      onError: (err) => {
+        setError(`Failed to update payment method: ${err.message}`);
+        setTimeout(() => setError(null), 4000);
+      },
+      onSettled: () => {
+        setPendingMethod(null);
+      },
+    });
+
+  const handleTogglePaymentMethod = (
+    method: "paypalButtons" | "card" | "applePay" | "googlePay",
+    nextEnabled: boolean
+  ) => {
+    setError(null);
+    setPendingMethod(method);
+    setPaymentMethodPreferences({ [method]: nextEnabled });
+  };
 
   const { mutate: deleteMerchant, isLoading: isDeleting } =
     trpcClient.merchantOnboarding.deleteMerchant.useMutation({
@@ -794,29 +818,49 @@ export const MerchantConnectionSection = () => {
 
       {/* Payment Methods */}
       <Box __opacity={canProcessPayments ? "1" : "0.5"}>
-        <Text size={4} marginBottom={5} fontWeight="medium">
-          Payment Methods
-        </Text>
-        <Box
-          display="grid"
-          __gridTemplateColumns="1fr 1fr"
-          gap={3}
-        >
-          <PaymentMethodBadge
+        <Box marginBottom={3}>
+          <Text size={4} fontWeight="medium">
+            Payment Methods
+          </Text>
+        </Box>
+        <Box marginBottom={5}>
+          <Text size={2} color="default2">
+            Enable or disable the payment methods shown at checkout. Methods PayPal has not
+            approved for your account cannot be enabled.
+          </Text>
+        </Box>
+        <Box display="flex" flexDirection="column" gap={3}>
+          <PaymentMethodToggle
             label="PayPal Buttons"
-            enabled={canProcessPayments ? (merchantStatus.paymentMethods?.paypalButtons || false) : false}
+            allowed={!!canProcessPayments && (merchantStatus.paymentMethods?.paypalButtons || false)}
+            enabled={merchantStatus.paymentMethodPreferences?.paypalButtons || false}
+            saving={pendingMethod === "paypalButtons"}
+            disabled={!canProcessPayments || pendingMethod !== null}
+            onToggle={(next) => handleTogglePaymentMethod("paypalButtons", next)}
           />
-          <PaymentMethodBadge
+          <PaymentMethodToggle
             label="Card Processing"
-            enabled={canProcessPayments ? (merchantStatus.paymentMethods?.advancedCardProcessing || false) : false}
+            allowed={!!canProcessPayments && (merchantStatus.paymentMethods?.advancedCardProcessing || false)}
+            enabled={merchantStatus.paymentMethodPreferences?.advancedCardProcessing || false}
+            saving={pendingMethod === "card"}
+            disabled={!canProcessPayments || pendingMethod !== null}
+            onToggle={(next) => handleTogglePaymentMethod("card", next)}
           />
-          <PaymentMethodBadge
+          <PaymentMethodToggle
             label="Apple Pay"
-            enabled={canProcessPayments ? (merchantStatus.paymentMethods?.applePay || false) : false}
+            allowed={!!canProcessPayments && (merchantStatus.paymentMethods?.applePay || false)}
+            enabled={merchantStatus.paymentMethodPreferences?.applePay || false}
+            saving={pendingMethod === "applePay"}
+            disabled={!canProcessPayments || pendingMethod !== null}
+            onToggle={(next) => handleTogglePaymentMethod("applePay", next)}
           />
-          <PaymentMethodBadge
+          <PaymentMethodToggle
             label="Google Pay"
-            enabled={canProcessPayments ? (merchantStatus.paymentMethods?.googlePay || false) : false}
+            allowed={!!canProcessPayments && (merchantStatus.paymentMethods?.googlePay || false)}
+            enabled={merchantStatus.paymentMethodPreferences?.googlePay || false}
+            saving={pendingMethod === "googlePay"}
+            disabled={!canProcessPayments || pendingMethod !== null}
+            onToggle={(next) => handleTogglePaymentMethod("googlePay", next)}
           />
         </Box>
       </Box>
@@ -825,7 +869,7 @@ export const MerchantConnectionSection = () => {
       {trackingId && (
         <ApplePayDomainsSection
           trackingId={trackingId}
-          applePayEnabled={canProcessPayments ? (merchantStatus.paymentMethods?.applePay || false) : false}
+          applePayEnabled={merchantStatus.paymentMethodPreferences?.applePay || false}
         />
       )}
 
@@ -854,34 +898,82 @@ export const MerchantConnectionSection = () => {
   );
 };
 
-const PaymentMethodBadge = ({ label, enabled }: { label: string; enabled: boolean }) => {
+const PaymentMethodToggle = ({
+  label,
+  allowed,
+  enabled,
+  saving,
+  disabled,
+  onToggle,
+}: {
+  label: string;
+  allowed: boolean;
+  enabled: boolean;
+  saving: boolean;
+  disabled: boolean;
+  onToggle: (next: boolean) => void;
+}) => {
+  // A method can only be interacted with when PayPal allows it.
+  const interactive = allowed && !disabled;
+  const isOn = allowed && enabled;
+
+  const handleClick = () => {
+    if (!interactive) return;
+    onToggle(!isOn);
+  };
+
   return (
     <Box
       paddingX={4}
       paddingY={3}
       borderRadius={4}
       borderWidth={1}
-      borderColor={enabled ? "success1" : "default1"}
-      __backgroundColor={enabled ? "#F0FDFA" : "#F9FAFB"}
+      borderColor={isOn ? "success1" : "default1"}
+      __backgroundColor={isOn ? "#F0FDFA" : "#F9FAFB"}
       display="flex"
       alignItems="center"
       justifyContent="space-between"
     >
-      <Text size={3} fontWeight="medium" __color={enabled ? "#374151" : "#9CA3AF"}>
-        {label}
-      </Text>
+      <Box display="flex" flexDirection="column" gap={1}>
+        <Text size={3} fontWeight="medium" __color={allowed ? "#374151" : "#9CA3AF"}>
+          {label}
+        </Text>
+        {!allowed && (
+          <Text size={1} __color="#9CA3AF">
+            Not available on your PayPal account
+          </Text>
+        )}
+      </Box>
+
+      {/* Toggle switch */}
       <Box
-        __width="22px"
-        __height="22px"
-        __borderRadius="50%"
-        __backgroundColor={enabled ? "#10B981" : "#D1D5DB"}
+        onClick={handleClick}
+        __width="44px"
+        __height="24px"
+        __minWidth="44px"
+        __borderRadius="9999px"
+        __backgroundColor={isOn ? "#10B981" : "#D1D5DB"}
+        __cursor={interactive ? "pointer" : "not-allowed"}
+        __opacity={!allowed || saving ? "0.5" : "1"}
+        __transition="background-color 0.2s"
         display="flex"
         alignItems="center"
-        justifyContent="center"
+        title={
+          !allowed
+            ? "Not available on your PayPal account"
+            : isOn
+              ? "Enabled \u2014 click to disable"
+              : "Disabled \u2014 click to enable"
+        }
       >
-        <Text __color="#FFFFFF" fontWeight="bold" __fontSize="12px" __lineHeight="1">
-          {enabled ? "\u2713" : "\u2717"}
-        </Text>
+        <Box
+          __width="18px"
+          __height="18px"
+          __borderRadius="50%"
+          __backgroundColor="#FFFFFF"
+          __transition="margin 0.2s"
+          __marginLeft={isOn ? "23px" : "3px"}
+        />
       </Box>
     </Box>
   );

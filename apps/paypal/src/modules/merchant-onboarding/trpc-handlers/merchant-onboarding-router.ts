@@ -8,6 +8,7 @@ import { GetMerchantStatusTrpcHandler } from "./get-merchant-status-trpc-handler
 import { ListMerchantsTrpcHandler } from "./list-merchants-trpc-handler";
 import { RefreshMerchantStatusTrpcHandler } from "./refresh-merchant-status-trpc-handler";
 import { RegisterApplePayDomainHandler } from "./register-apple-pay-domain-handler";
+import { SetPaymentMethodPreferencesTrpcHandler } from "./set-payment-method-preferences-trpc-handler";
 import { UpdateMerchantIdTrpcHandler } from "./update-merchant-id-trpc-handler";
 
 /**
@@ -34,6 +35,12 @@ export const merchantOnboardingRouter = router({
    * Refresh merchant status from PayPal (check seller status API)
    */
   refreshMerchantStatus: new RefreshMerchantStatusTrpcHandler().getTrpcProcedure(),
+
+  /**
+   * Set the merchant's payment method preferences (explicit enable/disable).
+   * Only PayPal-allowed methods may be enabled.
+   */
+  setPaymentMethodPreferences: new SetPaymentMethodPreferencesTrpcHandler().getTrpcProcedure(),
 
   /**
    * List all merchant onboardings for the current Saleor instance

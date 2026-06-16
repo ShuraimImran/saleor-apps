@@ -127,11 +127,43 @@ export class PaymentGatewayInitializeSessionUseCase {
           if (readinessResult.isOk()) {
             const readiness = readinessResult.value;
 
+            /*
+             * Apply the merchant's explicit enable/disable preferences on top of PayPal's
+             * live capability. A method reaches the storefront only when PayPal allows it
+             * AND the merchant has it enabled. Unset preferences resolve to defaults
+             * (all on except Apple Pay).
+             */
+            const { PostgresMerchantOnboardingRepository } = await import(
+              "@/modules/merchant-onboarding/merchant-onboarding-repository"
+            );
+            const { resolveEffectivePaymentMethods } = await import(
+              "@/modules/merchant-onboarding/payment-method-preferences"
+            );
+
+            const onboardingRepo = PostgresMerchantOnboardingRepository.create(pool);
+            const onboardingResult = await onboardingRepo.getBySaleorApiUrl(authData.saleorApiUrl);
+            const onboardingRecord = onboardingResult.isOk() ? onboardingResult.value : null;
+
+            const effective = resolveEffectivePaymentMethods(
+              {
+                paypalButtons: readiness.paypalButtons,
+                advancedCardProcessing: readiness.advancedCardProcessing,
+                applePay: readiness.applePay,
+                googlePay: readiness.googlePay,
+              },
+              {
+                prefPaypalButtons: onboardingRecord?.prefPaypalButtons ?? null,
+                prefCard: onboardingRecord?.prefCard ?? null,
+                prefApplePay: onboardingRecord?.prefApplePay ?? null,
+                prefGooglePay: onboardingRecord?.prefGooglePay ?? null,
+              }
+            );
+
             paymentMethodReadiness = {
-              applePay: false, // TODO: Re-enable when ready for production Apple Pay (was: readiness.applePay)
-              googlePay: readiness.googlePay,
-              paypalButtons: readiness.paypalButtons,
-              advancedCardProcessing: readiness.advancedCardProcessing,
+              applePay: effective.applePay,
+              googlePay: effective.googlePay,
+              paypalButtons: effective.paypalButtons,
+              advancedCardProcessing: effective.advancedCardProcessing,
               vaulting: readiness.vaulting,
             };
 

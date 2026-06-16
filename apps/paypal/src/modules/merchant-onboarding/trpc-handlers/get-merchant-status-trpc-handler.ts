@@ -7,6 +7,7 @@ import { createSaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import { protectedClientProcedure } from "@/modules/trpc/protected-client-procedure";
 
 import { PostgresMerchantOnboardingRepository } from "../merchant-onboarding-repository";
+import { resolveEffectivePaymentMethods } from "../payment-method-preferences";
 
 /**
  * tRPC Handler for getting merchant onboarding status
@@ -67,6 +68,22 @@ export class GetMerchantStatusTrpcHandler {
 
           const record = result.value;
 
+          // Effective enabled state = PayPal capability AND merchant preference.
+          const effectivePaymentMethods = resolveEffectivePaymentMethods(
+            {
+              paypalButtons: record.paypalButtonsEnabled,
+              advancedCardProcessing: record.acdcEnabled,
+              applePay: record.applePayEnabled,
+              googlePay: record.googlePayEnabled,
+            },
+            {
+              prefPaypalButtons: record.prefPaypalButtons,
+              prefCard: record.prefCard,
+              prefApplePay: record.prefApplePay,
+              prefGooglePay: record.prefGooglePay,
+            }
+          );
+
           return {
             trackingId: record.trackingId,
             merchantEmail: record.merchantEmail,
@@ -77,6 +94,7 @@ export class GetMerchantStatusTrpcHandler {
             primaryEmailConfirmed: record.primaryEmailConfirmed,
             paymentsReceivable: record.paymentsReceivable,
             oauthIntegrated: record.oauthIntegrated,
+            // Capability — what PayPal allows for this merchant.
             paymentMethods: {
               paypalButtons: record.paypalButtonsEnabled,
               advancedCardProcessing: record.acdcEnabled,
@@ -84,6 +102,8 @@ export class GetMerchantStatusTrpcHandler {
               googlePay: record.googlePayEnabled,
               vaulting: record.vaultingEnabled,
             },
+            // Effective enabled state — capability AND the merchant's explicit preference.
+            paymentMethodPreferences: effectivePaymentMethods,
             lastStatusCheck: record.lastStatusCheck,
             statusCheckError: record.statusCheckError,
             createdAt: record.createdAt,

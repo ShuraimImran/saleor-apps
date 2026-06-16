@@ -287,6 +287,41 @@ export const initializeDatabase = async (): Promise<void> => {
       END IF;
     END $$;
 
+    -- Add payment method preference columns if they don't exist (for existing installations).
+    -- These are the merchant's explicit enable/disable choice, kept separate from the
+    -- *_enabled capability/readiness columns so a status refresh never clobbers the choice.
+    -- NULL = no explicit choice (resolves to default: on for all except Apple Pay).
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='paypal_merchant_onboarding' AND column_name='paypal_buttons_pref'
+      ) THEN
+        ALTER TABLE paypal_merchant_onboarding ADD COLUMN paypal_buttons_pref BOOLEAN;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='paypal_merchant_onboarding' AND column_name='card_pref'
+      ) THEN
+        ALTER TABLE paypal_merchant_onboarding ADD COLUMN card_pref BOOLEAN;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='paypal_merchant_onboarding' AND column_name='apple_pay_pref'
+      ) THEN
+        ALTER TABLE paypal_merchant_onboarding ADD COLUMN apple_pay_pref BOOLEAN;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='paypal_merchant_onboarding' AND column_name='google_pay_pref'
+      ) THEN
+        ALTER TABLE paypal_merchant_onboarding ADD COLUMN google_pay_pref BOOLEAN;
+      END IF;
+    END $$;
+
     -- Enforce one onboarding record per tenant: clean up duplicates, keep best record
     DELETE FROM paypal_merchant_onboarding
     WHERE id NOT IN (

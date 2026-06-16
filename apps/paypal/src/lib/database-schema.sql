@@ -31,12 +31,20 @@ CREATE TABLE IF NOT EXISTS paypal_merchant_onboarding (
   payments_receivable BOOLEAN DEFAULT FALSE,      -- PAYMENTS_RECEIVABLE flag
   oauth_integrated BOOLEAN DEFAULT FALSE,         -- OAuth permissions granted
 
-  -- Payment Method Readiness
+  -- Payment Method Readiness (PayPal capability — what PayPal allows for this merchant)
   paypal_buttons_enabled BOOLEAN DEFAULT FALSE,   -- PayPal button payments ready
   acdc_enabled BOOLEAN DEFAULT FALSE,             -- Advanced card processing ready
   apple_pay_enabled BOOLEAN DEFAULT FALSE,        -- Apple Pay ready
   google_pay_enabled BOOLEAN DEFAULT FALSE,       -- Google Pay ready
   vaulting_enabled BOOLEAN DEFAULT FALSE,         -- Payment vaulting ready
+
+  -- Payment Method Preferences (merchant's explicit enable/disable choice in the admin UI).
+  -- Kept separate from the *_enabled capability columns so a status refresh never clobbers
+  -- the choice. NULL = no explicit choice (default: on for all except Apple Pay).
+  paypal_buttons_pref BOOLEAN,                    -- NULL = default ON  (if allowed)
+  card_pref BOOLEAN,                              -- NULL = default ON  (if allowed)
+  apple_pay_pref BOOLEAN,                         -- NULL = default OFF (even if allowed)
+  google_pay_pref BOOLEAN,                        -- NULL = default ON  (if allowed)
 
   -- Products and Capabilities (JSONB for flexibility)
   subscribed_products JSONB DEFAULT '[]',         -- Array of product objects
