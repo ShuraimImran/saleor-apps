@@ -846,6 +846,7 @@ export const MerchantConnectionSection = () => {
             disabled={!canProcessPayments || pendingMethod !== null}
             onToggle={(next) => handleTogglePaymentMethod("card", next)}
           />
+          {/* TODO: Apple Pay toggling temporarily disabled — remove lockedReason to re-enable. */}
           <PaymentMethodToggle
             label="Apple Pay"
             allowed={!!canProcessPayments && (merchantStatus.paymentMethods?.applePay || false)}
@@ -853,6 +854,7 @@ export const MerchantConnectionSection = () => {
             saving={pendingMethod === "applePay"}
             disabled={!canProcessPayments || pendingMethod !== null}
             onToggle={(next) => handleTogglePaymentMethod("applePay", next)}
+            lockedReason="Temporarily unavailable"
           />
           <PaymentMethodToggle
             label="Google Pay"
@@ -905,6 +907,7 @@ const PaymentMethodToggle = ({
   saving,
   disabled,
   onToggle,
+  lockedReason,
 }: {
   label: string;
   allowed: boolean;
@@ -912,10 +915,13 @@ const PaymentMethodToggle = ({
   saving: boolean;
   disabled: boolean;
   onToggle: (next: boolean) => void;
+  // When set, the toggle is forced off and non-interactive (e.g. temporarily disabled).
+  lockedReason?: string;
 }) => {
-  // A method can only be interacted with when PayPal allows it.
-  const interactive = allowed && !disabled;
-  const isOn = allowed && enabled;
+  const locked = Boolean(lockedReason);
+  // A method can only be interacted with when PayPal allows it and it is not locked.
+  const interactive = allowed && !disabled && !locked;
+  const isOn = allowed && enabled && !locked;
 
   const handleClick = () => {
     if (!interactive) return;
@@ -935,13 +941,19 @@ const PaymentMethodToggle = ({
       justifyContent="space-between"
     >
       <Box display="flex" flexDirection="column" gap={1}>
-        <Text size={3} fontWeight="medium" __color={allowed ? "#374151" : "#9CA3AF"}>
+        <Text size={3} fontWeight="medium" __color={allowed && !locked ? "#374151" : "#9CA3AF"}>
           {label}
         </Text>
-        {!allowed && (
+        {locked ? (
           <Text size={1} __color="#9CA3AF">
-            Not available on your PayPal account
+            {lockedReason}
           </Text>
+        ) : (
+          !allowed && (
+            <Text size={1} __color="#9CA3AF">
+              Not available on your PayPal account
+            </Text>
+          )
         )}
       </Box>
 
@@ -954,16 +966,18 @@ const PaymentMethodToggle = ({
         __borderRadius="9999px"
         __backgroundColor={isOn ? "#10B981" : "#D1D5DB"}
         __cursor={interactive ? "pointer" : "not-allowed"}
-        __opacity={!allowed || saving ? "0.5" : "1"}
+        __opacity={!allowed || locked || saving ? "0.5" : "1"}
         __transition="background-color 0.2s"
         display="flex"
         alignItems="center"
         title={
-          !allowed
-            ? "Not available on your PayPal account"
-            : isOn
-              ? "Enabled \u2014 click to disable"
-              : "Disabled \u2014 click to enable"
+          locked
+            ? lockedReason
+            : !allowed
+              ? "Not available on your PayPal account"
+              : isOn
+                ? "Enabled \u2014 click to disable"
+                : "Disabled \u2014 click to enable"
         }
       >
         <Box
