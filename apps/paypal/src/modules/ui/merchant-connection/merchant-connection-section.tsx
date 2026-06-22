@@ -846,7 +846,6 @@ export const MerchantConnectionSection = () => {
             disabled={!canProcessPayments || pendingMethod !== null}
             onToggle={(next) => handleTogglePaymentMethod("card", next)}
           />
-          {/* TODO: Apple Pay toggling temporarily disabled — remove lockedReason to re-enable. */}
           <PaymentMethodToggle
             label="Apple Pay"
             allowed={!!canProcessPayments && (merchantStatus.paymentMethods?.applePay || false)}
@@ -854,7 +853,6 @@ export const MerchantConnectionSection = () => {
             saving={pendingMethod === "applePay"}
             disabled={!canProcessPayments || pendingMethod !== null}
             onToggle={(next) => handleTogglePaymentMethod("applePay", next)}
-            lockedReason="Temporarily unavailable"
           />
           <PaymentMethodToggle
             label="Google Pay"
