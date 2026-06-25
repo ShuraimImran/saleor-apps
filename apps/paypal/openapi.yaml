@@ -1,0 +1,1883 @@
+openapi: 3.1.0
+info:
+  title: Saleor PayPal Payment App
+  version: 1.0.0
+  description: |
+    A Saleor Payment App that integrates PayPal as a payment provider, supporting
+    PayPal Wallet, credit/debit cards, Apple Pay, Google Pay, Venmo, and advanced
+    card vaulting. All payment operations are driven by Saleor synchronous webhooks.
+
+    ## Authentication Schemes
+
+    | Scheme | Used By |
+    |--------|---------|
+    | Saleor JWT (`SaleorJWT`) | Saleor → App webhooks; verified via `verifyWebhookSignature` |
+    | PayPal Signature (`PayPalSignature`) | PayPal → App webhooks; verified via PayPal webhook verification API |
+    | App Token (`AppToken`) | tRPC endpoints; Saleor app bearer token sent from the iframe |
+    | WSM Cookie (`WsmAdminCookie`) | WSM Admin tRPC router; JWT stored in `wsm_admin_session` cookie |
+
+    ## Environments
+
+    - **Sandbox** – `https://api-m.sandbox.paypal.com`
+    - **Production** – `https://api-m.paypal.com`
+
+  contact:
+    email: abdullahkoraal@gmail.com
+  license:
+    name: See repository license
+
+servers:
+  - url: https://{appDomain}
+    description: Deployed app instance
+    variables:
+      appDomain:
+        default: localhost:3000
+        description: Domain where the PayPal app is hosted
+
+tags:
+  - name: Saleor System
+    description: Endpoints used by the Saleor platform for app lifecycle management
+  - name: Saleor Webhooks
+    description: Synchronous webhook handlers called by Saleor during payment flows
+  - name: PayPal Webhooks
+    description: Asynchronous event handlers called by PayPal
+  - name: WSM Admin Auth
+    description: Authentication for the WSM (Wholesale Merchant) super-admin panel
+  - name: tRPC – App Config
+    description: |
+      tRPC procedures for managing per-channel PayPal configurations.
+      All requests are `POST /api/trpc/{procedure}` with a JSON-RPC envelope.
+  - name: tRPC – Merchant Onboarding
+    description: tRPC procedures for the merchant onboarding (PayPal PPCP) workflow
+  - name: tRPC – Customer Vault
+    description: tRPC procedures for PayPal Advanced Vaulting (save payment methods)
+  - name: tRPC – WSM Admin
+    description: tRPC procedures for global PayPal configuration (super-admin only)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Saleor System ──────────────────────────────────────────────────────────
+
+  /api/manifest:
+    get:
+      tags: [Saleor System]
+      summary: App manifest
+      description: |
+        Returns the Saleor App manifest. Saleor calls this during installation to
+        discover the app's metadata, required permissions, and registered webhooks.
+      parameters:
+        - name: saleor-api-url
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uri
+          description: Base Saleor GraphQL URL provided during installation
+      responses:
+        "200":
+          description: Manifest document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppManifest"
+
+  /api/register:
+    post:
+      tags: [Saleor System]
+      summary: App registration
+      description: |
+        Receives the Saleor app token after installation completes. Stores the token
+        in the APL (Auth Persistence Layer) so subsequent API calls can authenticate
+        against the Saleor instance.
+      security:
+        - SaleorJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                auth_token:
+                  type: string
+                  description: Saleor app token
+      responses:
+        "200":
+          description: Registration successful
+        "400":
+          description: Bad request
+        "401":
+          description: Invalid Saleor signature
+
+  /api/paypal-callback:
+    post:
+      tags: [Saleor System]
+      summary: PayPal merchant onboarding callback
+      description: |
+        Called by the PayPal OAuth return URL after a merchant completes the
+        PayPal onboarding flow (ISU). Updates the merchant's `paypalMerchantId`
+        in the database. This endpoint is cross-tab safe via DB persistence.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [trackingId, merchantIdInPayPal]
+              properties:
+                trackingId:
+                  type: string
+                  description: Tracking ID used during partner referral creation
+                merchantIdInPayPal:
+                  type: string
+                  description: PayPal merchant ID assigned after onboarding
+      responses:
+        "200":
+          description: Merchant ID updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        "400":
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Onboarding record not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ── Saleor Webhooks ────────────────────────────────────────────────────────
+
+  /api/webhooks/saleor/payment-gateway-initialize-session:
+    post:
+      tags: [Saleor Webhooks]
+      summary: PAYMENT_GATEWAY_INITIALIZE_SESSION
+      description: |
+        Called by Saleor when a checkout begins. Returns the PayPal client ID and
+        payment method readiness flags needed to initialize the PayPal JS SDK on the
+        storefront. For logged-in buyers, also returns saved payment methods and a
+        user ID token for the vaulting flow.
+      security:
+        - SaleorJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleorWebhookRequest"
+      responses:
+        "200":
+          description: Gateway initialization data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/GatewayInitializeResponse"
+        "400":
+          description: Malformed request or missing PayPal configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal app error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/webhooks/saleor/transaction-initialize-session:
+    post:
+      tags: [Saleor Webhooks]
+      summary: TRANSACTION_INITIALIZE_SESSION
+      description: |
+        Called by Saleor to create a PayPal order. Creates a `CAPTURE` or
+        `AUTHORIZE` order via the PayPal Orders API v2. Handles vaulting by
+        optionally attaching an existing vault ID or requesting a new vault token.
+        Returns the PayPal order ID and transaction status to Saleor.
+      security:
+        - SaleorJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/SaleorWebhookRequest"
+                - type: object
+                  properties:
+                    data:
+                      $ref: "#/components/schemas/TransactionInitializeData"
+      responses:
+        "200":
+          description: Transaction initialization result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionResult"
+        "400":
+          description: Malformed request or missing PayPal configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal app error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/webhooks/saleor/transaction-process-session:
+    post:
+      tags: [Saleor Webhooks]
+      summary: TRANSACTION_PROCESS_SESSION
+      description: |
+        Called by Saleor after the customer approves the PayPal order. Captures or
+        confirms the order by calling the PayPal Orders API. Returns the final
+        `CHARGE_SUCCESS` or `CHARGE_FAILURE` status.
+      security:
+        - SaleorJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleorWebhookRequest"
+      responses:
+        "200":
+          description: Transaction process result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionResult"
+        "400":
+          description: Malformed request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal app error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/webhooks/saleor/transaction-charge-requested:
+    post:
+      tags: [Saleor Webhooks]
+      summary: TRANSACTION_CHARGE_REQUESTED
+      description: |
+        Called by Saleor to capture funds from an already-authorized PayPal order.
+        Calls `POST /v2/checkout/orders/{orderId}/capture` on the PayPal API.
+        Returns `CHARGE_SUCCESS` with `actions: ["REFUND"]` on success.
+      security:
+        - SaleorJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleorWebhookRequest"
+      responses:
+        "200":
+          description: Charge result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChargeResult"
+        "400":
+          description: Malformed request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal app error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/webhooks/saleor/transaction-refund-requested:
+    post:
+      tags: [Saleor Webhooks]
+      summary: TRANSACTION_REFUND_REQUESTED
+      description: |
+        Called by Saleor to refund a captured payment (full or partial). Calls
+        `POST /v2/payments/captures/{captureId}/refund` on the PayPal API. The
+        refund is async — PayPal confirms the final status via a platform event
+        webhook (`PAYMENT.CAPTURE.REFUNDED`).
+      security:
+        - SaleorJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleorWebhookRequest"
+      responses:
+        "200":
+          description: Refund initiated (async)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pspReference]
+                properties:
+                  pspReference:
+                    type: string
+                    description: PayPal refund ID
+        "400":
+          description: Malformed request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal app error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/webhooks/saleor/transaction-cancelation-requested:
+    post:
+      tags: [Saleor Webhooks]
+      summary: TRANSACTION_CANCELATION_REQUESTED
+      description: |
+        Called by Saleor to void or cancel a PayPal order/authorization.
+        Returns `CANCEL_SUCCESS` or `CANCEL_FAILURE`.
+      security:
+        - SaleorJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleorWebhookRequest"
+      responses:
+        "200":
+          description: Cancellation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelResult"
+        "400":
+          description: Malformed request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal app error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ── PayPal Webhooks ────────────────────────────────────────────────────────
+
+  /api/webhooks/paypal:
+    post:
+      tags: [PayPal Webhooks]
+      summary: PayPal merchant events
+      description: |
+        Receives PayPal platform events for merchant lifecycle:
+        - `MERCHANT.ONBOARDING.COMPLETED` – merchant finished PPCP onboarding
+        - `MERCHANT.PARTNER-CONSENT.REVOKED` – merchant revoked consent
+
+        The signature is verified via the PayPal Webhooks Verify Signature API.
+      security:
+        - PayPalSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayPalWebhookEvent"
+      responses:
+        "200":
+          description: Event received
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received:
+                    type: boolean
+                    example: true
+        "400":
+          description: Invalid event payload
+        "401":
+          description: Signature verification failed
+        "500":
+          description: Internal error
+
+  /api/webhooks/paypal/platform-events:
+    post:
+      tags: [PayPal Webhooks]
+      summary: PayPal transaction platform events
+      description: |
+        Receives asynchronous PayPal transaction lifecycle events and reports them
+        back to Saleor via the `TransactionEventReport` GraphQL mutation.
+
+        Supported event types:
+        - `PAYMENT.CAPTURE.COMPLETED`
+        - `PAYMENT.CAPTURE.DENIED`
+        - `PAYMENT.CAPTURE.REFUNDED`
+        - `PAYMENT.CAPTURE.REVERSED`
+        - `PAYMENT.AUTHORIZATION.CREATED`
+        - `PAYMENT.AUTHORIZATION.VOIDED`
+        - `CUSTOMER.MERCHANT-INTEGRATION.PRODUCT-SUBSCRIPTION-UPDATED`
+        - `VAULT.PAYMENT-TOKEN.CREATED`
+        - `VAULT.PAYMENT-TOKEN.DELETED`
+      security:
+        - PayPalSignature: []
+      parameters:
+        - name: env
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [SANDBOX, LIVE]
+          description: PayPal environment that triggered this event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayPalWebhookEvent"
+      responses:
+        "200":
+          description: Event received and reported to Saleor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received:
+                    type: boolean
+                    example: true
+        "400":
+          description: Invalid event payload
+        "401":
+          description: Signature verification failed
+        "500":
+          description: Internal error
+
+  # ── WSM Admin Auth ─────────────────────────────────────────────────────────
+
+  /api/wsm-admin/auth:
+    post:
+      tags: [WSM Admin Auth]
+      summary: WSM admin login
+      description: |
+        Authenticates a WSM super-admin with email and password. On success, sets
+        an HTTP-only `wsm_admin_session` cookie containing a signed JWT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        "200":
+          description: Login successful
+          headers:
+            Set-Cookie:
+              description: |
+                `wsm_admin_session=<JWT>; HttpOnly; SameSite=Strict; Path=/`
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  email:
+                    type: string
+        "400":
+          description: Missing email or password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    get:
+      tags: [WSM Admin Auth]
+      summary: Check WSM admin session
+      description: Validates the `wsm_admin_session` cookie and returns the authenticated email.
+      security:
+        - WsmAdminCookie: []
+      responses:
+        "200":
+          description: Session is valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                    example: true
+                  email:
+                    type: string
+        "401":
+          description: Session missing or expired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                    example: false
+
+    delete:
+      tags: [WSM Admin Auth]
+      summary: WSM admin logout
+      description: Clears the `wsm_admin_session` cookie, ending the admin session.
+      security:
+        - WsmAdminCookie: []
+      responses:
+        "200":
+          description: Logged out
+          headers:
+            Set-Cookie:
+              description: Cookie cleared
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+
+  # ── tRPC – App Config ──────────────────────────────────────────────────────
+
+  /api/trpc/appConfig.saveNewPayPalConfig:
+    post:
+      tags: [tRPC – App Config]
+      summary: Create a PayPal configuration
+      description: |
+        Creates a new named PayPal credential set (client ID + secret + environment)
+        that can be mapped to one or more Saleor channels.
+
+        **tRPC input envelope**: `{ "0": { "json": <input> } }`
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrpcInput_NewPayPalConfig"
+      responses:
+        "200":
+          description: Created configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrpcOutput_PayPalConfigItem"
+
+  /api/trpc/appConfig.getPayPalConfigsList:
+    get:
+      tags: [tRPC – App Config]
+      summary: List PayPal configurations
+      description: Returns all PayPal configurations stored for this Saleor installation.
+      security:
+        - AppToken: []
+      responses:
+        "200":
+          description: List of configurations (secrets omitted)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrpcOutput_PayPalConfigItem"
+
+  /api/trpc/appConfig.removePayPalConfig:
+    post:
+      tags: [tRPC – App Config]
+      summary: Delete a PayPal configuration
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [configId]
+              properties:
+                configId:
+                  type: string
+      responses:
+        "200":
+          description: Deletion result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /api/trpc/appConfig.fetchChannels:
+    get:
+      tags: [tRPC – App Config]
+      summary: List Saleor channels
+      description: Fetches all channels from the connected Saleor instance.
+      security:
+        - AppToken: []
+      responses:
+        "200":
+          description: Channel list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SaleorChannel"
+
+  /api/trpc/appConfig.channelsConfigsMapping:
+    get:
+      tags: [tRPC – App Config]
+      summary: Get channel → config mappings
+      description: Returns which PayPal config is assigned to each channel.
+      security:
+        - AppToken: []
+      responses:
+        "200":
+          description: Mappings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChannelConfigMapping"
+
+  /api/trpc/appConfig.updateMapping:
+    post:
+      tags: [tRPC – App Config]
+      summary: Assign config to channel
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channelId, configId]
+              properties:
+                channelId:
+                  type: string
+                configId:
+                  type: string
+      responses:
+        "200":
+          description: Mapping updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /api/trpc/appConfig.getTenantConfig:
+    get:
+      tags: [tRPC – App Config]
+      summary: Get tenant-level config
+      description: Returns tenant-wide PayPal settings (soft descriptor, environment override).
+      security:
+        - AppToken: []
+      responses:
+        "200":
+          description: Tenant config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantConfig"
+
+  /api/trpc/appConfig.setTenantConfig:
+    post:
+      tags: [tRPC – App Config]
+      summary: Update tenant-level config
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantConfig"
+      responses:
+        "200":
+          description: Update result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  # ── tRPC – Merchant Onboarding ─────────────────────────────────────────────
+
+  /api/trpc/merchantOnboarding.createMerchantReferral:
+    post:
+      tags: [tRPC – Merchant Onboarding]
+      summary: Start merchant onboarding
+      description: |
+        Creates a PayPal Partner Referral via `POST /v2/customer/partner-referrals`.
+        Returns an `actionUrl` that the merchant should open to complete PPCP onboarding.
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMerchantReferralInput"
+      responses:
+        "200":
+          description: Referral created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [trackingId, actionUrl]
+                properties:
+                  trackingId:
+                    type: string
+                  actionUrl:
+                    type: string
+                    format: uri
+
+  /api/trpc/merchantOnboarding.getMerchantStatus:
+    get:
+      tags: [tRPC – Merchant Onboarding]
+      summary: Get merchant onboarding status
+      security:
+        - AppToken: []
+      parameters:
+        - name: trackingId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Merchant status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MerchantStatus"
+
+  /api/trpc/merchantOnboarding.refreshMerchantStatus:
+    post:
+      tags: [tRPC – Merchant Onboarding]
+      summary: Refresh merchant status from PayPal
+      description: |
+        Queries the PayPal Seller Status API (`GET /v1/customer/partners/{partnerId}/merchant-integrations/{merchantId}`)
+        and refreshes the stored status.
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trackingId:
+                  type: string
+      responses:
+        "200":
+          description: Refreshed merchant status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MerchantStatus"
+
+  /api/trpc/merchantOnboarding.updateMerchantId:
+    post:
+      tags: [tRPC – Merchant Onboarding]
+      summary: Update merchant's PayPal ID
+      description: Manually sets the `paypalMerchantId` after ISU completion.
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [trackingId, paypalMerchantId]
+              properties:
+                trackingId:
+                  type: string
+                paypalMerchantId:
+                  type: string
+      responses:
+        "200":
+          description: Update result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /api/trpc/merchantOnboarding.listMerchants:
+    get:
+      tags: [tRPC – Merchant Onboarding]
+      summary: List all merchants
+      security:
+        - AppToken: []
+      responses:
+        "200":
+          description: Merchant list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MerchantStatus"
+
+  /api/trpc/merchantOnboarding.deleteMerchant:
+    post:
+      tags: [tRPC – Merchant Onboarding]
+      summary: Delete merchant record
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [trackingId]
+              properties:
+                trackingId:
+                  type: string
+      responses:
+        "200":
+          description: Deletion result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /api/trpc/merchantOnboarding.registerApplePayDomain:
+    post:
+      tags: [tRPC – Merchant Onboarding]
+      summary: Register Apple Pay domain
+      description: |
+        Calls PayPal's `POST /v1/customer/wallet-domains` to register a domain for
+        Apple Pay. Requires the merchant to have `APPLE_PAY` capability active.
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain]
+              properties:
+                domain:
+                  type: string
+                  example: checkout.mystore.com
+      responses:
+        "200":
+          description: Domain registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /api/trpc/merchantOnboarding.getApplePayDomains:
+    get:
+      tags: [tRPC – Merchant Onboarding]
+      summary: List registered Apple Pay domains
+      security:
+        - AppToken: []
+      responses:
+        "200":
+          description: Domain list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    domain:
+                      type: string
+                    registeredAt:
+                      type: string
+                      format: date-time
+
+  /api/trpc/merchantOnboarding.deleteApplePayDomain:
+    post:
+      tags: [tRPC – Merchant Onboarding]
+      summary: Unregister Apple Pay domain
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain]
+              properties:
+                domain:
+                  type: string
+      responses:
+        "200":
+          description: Domain removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  # ── tRPC – Customer Vault ──────────────────────────────────────────────────
+
+  /api/trpc/customerVault.generateClientToken:
+    get:
+      tags: [tRPC – Customer Vault]
+      summary: Generate PayPal JS SDK client token
+      description: |
+        Generates a short-lived client token via the PayPal Vault API for initializing
+        the PayPal JS SDK v6 with a customer context. Used for the "Return Buyer" flow.
+      security:
+        - AppToken: []
+      responses:
+        "200":
+          description: Client token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [clientToken]
+                properties:
+                  clientToken:
+                    type: string
+
+  /api/trpc/customerVault.listSavedPaymentMethods:
+    get:
+      tags: [tRPC – Customer Vault]
+      summary: List saved payment methods
+      description: Returns all vaulted payment methods for the currently logged-in Saleor customer.
+      security:
+        - AppToken: []
+      responses:
+        "200":
+          description: Saved methods
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SavedPaymentMethod"
+
+  /api/trpc/customerVault.deleteSavedPaymentMethod:
+    post:
+      tags: [tRPC – Customer Vault]
+      summary: Delete a saved payment method
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paymentTokenId]
+              properties:
+                paymentTokenId:
+                  type: string
+      responses:
+        "200":
+          description: Deletion result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /api/trpc/customerVault.createSetupToken:
+    post:
+      tags: [tRPC – Customer Vault]
+      summary: Create vaulting setup token
+      description: |
+        Creates a PayPal setup token for the "Save Without Purchase" flow. The
+        returned token is passed to the PayPal JS SDK to collect payment method details.
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customerId:
+                  type: string
+                  description: Existing PayPal customer ID (optional)
+      responses:
+        "200":
+          description: Setup token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [setupToken]
+                properties:
+                  setupToken:
+                    type: string
+
+  /api/trpc/customerVault.createPaymentTokenFromSetupToken:
+    post:
+      tags: [tRPC – Customer Vault]
+      summary: Confirm vaulting from setup token
+      description: |
+        Exchanges an approved setup token for a permanent payment token. Completes
+        the "Save Without Purchase" flow.
+      security:
+        - AppToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [setupTokenId]
+              properties:
+                setupTokenId:
+                  type: string
+      responses:
+        "200":
+          description: Payment token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [paymentTokenId]
+                properties:
+                  paymentTokenId:
+                    type: string
+
+  # ── tRPC – WSM Admin ───────────────────────────────────────────────────────
+
+  /api/trpc/wsmAdmin.getGlobalConfig:
+    get:
+      tags: [tRPC – WSM Admin]
+      summary: Get global PayPal configuration
+      description: Returns the partner-level PayPal credentials and webhook registration status.
+      security:
+        - WsmAdminCookie: []
+      responses:
+        "200":
+          description: Global configuration (secret omitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalPayPalConfig"
+
+  /api/trpc/wsmAdmin.setGlobalConfig:
+    post:
+      tags: [tRPC – WSM Admin]
+      summary: Update global PayPal configuration
+      description: |
+        Saves partner-level PayPal credentials and registers PayPal webhooks for both
+        SANDBOX and LIVE environments. The client secret is encrypted at rest.
+      security:
+        - WsmAdminCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetGlobalConfigInput"
+      responses:
+        "200":
+          description: Updated config with webhook info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalPayPalConfig"
+
+  /api/trpc/wsmAdmin.testCredentials:
+    post:
+      tags: [tRPC – WSM Admin]
+      summary: Test PayPal API credentials
+      description: Validates a set of PayPal credentials by calling the OAuth token endpoint.
+      security:
+        - WsmAdminCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientId, clientSecret, environment]
+              properties:
+                clientId:
+                  type: string
+                clientSecret:
+                  type: string
+                environment:
+                  $ref: "#/components/schemas/PayPalEnvironment"
+      responses:
+        "200":
+          description: Credential test result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /api/trpc/wsmAdmin.listTenants:
+    get:
+      tags: [tRPC – WSM Admin]
+      summary: List registered tenants
+      description: Returns all Saleor installations that have installed this app.
+      security:
+        - WsmAdminCookie: []
+      responses:
+        "200":
+          description: Tenant list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TenantRecord"
+
+  /api/trpc/wsmAdmin.setTenantLiveAccess:
+    post:
+      tags: [tRPC – WSM Admin]
+      summary: Enable/disable LIVE environment for tenant
+      security:
+        - WsmAdminCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [saleorApiUrl, liveAccessAllowed]
+              properties:
+                saleorApiUrl:
+                  type: string
+                  format: uri
+                liveAccessAllowed:
+                  type: boolean
+      responses:
+        "200":
+          description: Update result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /api/trpc/wsmAdmin.setTenantFee:
+    post:
+      tags: [tRPC – WSM Admin]
+      summary: Set platform fee for tenant
+      security:
+        - WsmAdminCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [saleorApiUrl, tenantFeePercent]
+              properties:
+                saleorApiUrl:
+                  type: string
+                  format: uri
+                tenantFeePercent:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                  description: Platform fee as a percentage of transaction amount
+      responses:
+        "200":
+          description: Update result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPONENTS
+# ─────────────────────────────────────────────────────────────────────────────
+components:
+
+  securitySchemes:
+    SaleorJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT signed by the Saleor instance. The app verifies it using
+        `verifyWebhookSignature` from `@saleor/app-sdk`.
+    PayPalSignature:
+      type: apiKey
+      in: header
+      name: PAYPAL-TRANSMISSION-SIG
+      description: |
+        PayPal webhook signature headers. The app verifies using the PayPal
+        Verify Webhook Signature API before processing.
+    AppToken:
+      type: http
+      scheme: bearer
+      description: |
+        Saleor app bearer token sent from the app iframe. Verified by tRPC
+        middleware using the APL.
+    WsmAdminCookie:
+      type: apiKey
+      in: cookie
+      name: wsm_admin_session
+      description: HTTP-only JWT cookie set after successful WSM admin login.
+
+  schemas:
+
+    # ── Common ──────────────────────────────────────────────────────────────
+
+    PayPalEnvironment:
+      type: string
+      enum: [SANDBOX, LIVE]
+      description: PayPal API environment
+
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+
+    SuccessResult:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+
+    # ── Manifest ─────────────────────────────────────────────────────────────
+
+    AppManifest:
+      type: object
+      required: [id, name, version, permissions, webhooks, appUrl, tokenTargetUrl]
+      properties:
+        id:
+          type: string
+          example: saleor.app.payment.paypal
+        name:
+          type: string
+          example: PayPal
+        version:
+          type: string
+          example: 1.0.0
+        about:
+          type: string
+        author:
+          type: string
+        appUrl:
+          type: string
+          format: uri
+          description: URL of the app's configuration UI
+        tokenTargetUrl:
+          type: string
+          format: uri
+          description: URL that Saleor sends the auth token to after installation
+        homepageUrl:
+          type: string
+          format: uri
+        dataPrivacyUrl:
+          type: string
+          format: uri
+        supportUrl:
+          type: string
+          format: uri
+        requiredSaleorVersion:
+          type: string
+          example: ">=3.21 <4"
+        permissions:
+          type: array
+          items:
+            type: string
+          example: ["HANDLE_PAYMENTS"]
+        brand:
+          type: object
+          properties:
+            logo:
+              type: object
+              properties:
+                default:
+                  type: string
+                  format: uri
+        extensions:
+          type: array
+          items: {}
+        webhooks:
+          type: array
+          items:
+            type: object
+            required: [event, name, targetUrl, isActive]
+            properties:
+              event:
+                type: string
+              name:
+                type: string
+              targetUrl:
+                type: string
+                format: uri
+              isActive:
+                type: boolean
+
+    # ── Saleor Webhooks ───────────────────────────────────────────────────────
+
+    SaleorWebhookRequest:
+      type: object
+      description: |
+        GraphQL subscription event payload from Saleor. The exact shape is
+        determined by the webhook's GraphQL subscription document. Common
+        fields are shown here.
+      properties:
+        version:
+          type: string
+        issuedAt:
+          type: string
+          format: date-time
+        recipient:
+          type: object
+          properties:
+            privateMetadata:
+              type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: string
+        sourceObject:
+          type: object
+          description: The Saleor order or checkout related to this event
+        authData:
+          type: object
+          properties:
+            saleorApiUrl:
+              type: string
+              format: uri
+            token:
+              type: string
+
+    GatewayInitializeResponse:
+      type: object
+      properties:
+        paypalClientId:
+          type: string
+          description: WSM partner PayPal client ID for SDK initialization
+        merchantClientId:
+          type: string
+          description: Merchant's own PayPal client ID (if PPCP connected)
+        merchantId:
+          type: string
+          description: PayPal merchant ID (payer ID)
+        paymentMethodReadiness:
+          $ref: "#/components/schemas/PaymentMethodReadiness"
+        savedPaymentMethods:
+          type: array
+          items:
+            $ref: "#/components/schemas/SavedPaymentMethod"
+          description: Previously vaulted methods for the current buyer
+        userIdToken:
+          type: string
+          description: PayPal user ID token for SDK vaulting initialization
+
+    PaymentMethodReadiness:
+      type: object
+      description: Which payment methods are active for this merchant
+      properties:
+        paypalButtons:
+          type: boolean
+        advancedCardProcessing:
+          type: boolean
+        applePay:
+          type: boolean
+        googlePay:
+          type: boolean
+        vaulting:
+          type: boolean
+
+    TransactionInitializeData:
+      type: object
+      description: Custom `data` field passed by the storefront in TRANSACTION_INITIALIZE_SESSION
+      properties:
+        paymentMethodType:
+          type: string
+          enum: [card, paypal, venmo, apple_pay]
+        savePaymentMethod:
+          type: boolean
+          description: Whether to vault this payment method after success
+        vaultId:
+          type: string
+          description: Existing vault ID to use for a return buyer
+        saleorUserId:
+          type: string
+          description: Saleor customer ID for linking the PayPal vault customer
+        merchantInitiated:
+          type: boolean
+          description: True for merchant-initiated transactions (MIT/subscriptions)
+        idempotencyKey:
+          type: string
+          description: Client-supplied idempotency key
+
+    TransactionResult:
+      type: object
+      required: [result, pspReference, message, actions]
+      properties:
+        result:
+          type: string
+          enum:
+            - CHARGE_SUCCESS
+            - AUTHORIZATION_SUCCESS
+            - CHARGE_ACTION_REQUIRED
+            - AUTHORIZATION_ACTION_REQUIRED
+            - CHARGE_FAILURE
+            - AUTHORIZATION_FAILURE
+        amount:
+          type: string
+          nullable: true
+          description: Transaction amount as a decimal string
+        pspReference:
+          type: string
+          description: PayPal Order ID
+        message:
+          type: string
+        actions:
+          type: array
+          items:
+            type: string
+            enum: [CHARGE, REFUND, CANCEL]
+        data:
+          type: object
+          properties:
+            paypal_order_id:
+              type: string
+            environment:
+              $ref: "#/components/schemas/PayPalEnvironment"
+            vaulting:
+              type: object
+              nullable: true
+              properties:
+                enabled:
+                  type: boolean
+                customerId:
+                  type: string
+                  nullable: true
+                isReturnBuyer:
+                  type: boolean
+            client_token:
+              type: string
+              nullable: true
+              description: PayPal JS SDK client token for vaulting
+
+    ChargeResult:
+      type: object
+      required: [result, pspReference, message]
+      properties:
+        result:
+          type: string
+          enum: [CHARGE_SUCCESS, CHARGE_FAILURE]
+        pspReference:
+          type: string
+        message:
+          type: string
+        actions:
+          type: array
+          items:
+            type: string
+          example: ["REFUND"]
+
+    CancelResult:
+      type: object
+      required: [result, pspReference, message]
+      properties:
+        result:
+          type: string
+          enum: [CANCEL_SUCCESS, CANCEL_FAILURE]
+        amount:
+          type: string
+          nullable: true
+        pspReference:
+          type: string
+        message:
+          type: string
+        actions:
+          type: array
+          items:
+            type: string
+
+    # ── PayPal Webhooks ───────────────────────────────────────────────────────
+
+    PayPalWebhookEvent:
+      type: object
+      required: [id, event_type, create_time, resource]
+      properties:
+        id:
+          type: string
+          description: Unique event ID from PayPal
+        event_type:
+          type: string
+          description: |
+            PayPal event type. Examples:
+            `PAYMENT.CAPTURE.COMPLETED`, `MERCHANT.ONBOARDING.COMPLETED`,
+            `VAULT.PAYMENT-TOKEN.CREATED`
+        event_version:
+          type: string
+          example: "1.0"
+        create_time:
+          type: string
+          format: date-time
+        resource_type:
+          type: string
+        resource:
+          type: object
+          description: Event-specific payload. Schema varies by event_type.
+        summary:
+          type: string
+
+    # ── App Config ───────────────────────────────────────────────────────────
+
+    TrpcInput_NewPayPalConfig:
+      type: object
+      required: [name, clientId, clientSecret, environment]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Human-readable label for this config
+        clientId:
+          type: string
+          minLength: 1
+          description: PayPal REST app client ID
+        clientSecret:
+          type: string
+          minLength: 1
+          description: PayPal REST app client secret (stored encrypted)
+        environment:
+          $ref: "#/components/schemas/PayPalEnvironment"
+
+    TrpcOutput_PayPalConfigItem:
+      type: object
+      required: [id, name, clientId, environment]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        clientId:
+          type: string
+        environment:
+          $ref: "#/components/schemas/PayPalEnvironment"
+
+    SaleorChannel:
+      type: object
+      required: [id, name, currencyCode]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        currencyCode:
+          type: string
+          example: USD
+
+    ChannelConfigMapping:
+      type: object
+      required: [channelId]
+      properties:
+        channelId:
+          type: string
+        configId:
+          type: string
+        configName:
+          type: string
+
+    TenantConfig:
+      type: object
+      properties:
+        softDescriptor:
+          type: string
+          description: Statement descriptor shown on customer bank statements
+        environment:
+          $ref: "#/components/schemas/PayPalEnvironment"
+
+    # ── Merchant Onboarding ───────────────────────────────────────────────────
+
+    CreateMerchantReferralInput:
+      type: object
+      required: [trackingId, merchantEmail, returnUrl]
+      properties:
+        trackingId:
+          type: string
+          description: Unique identifier to track this onboarding session
+        merchantEmail:
+          type: string
+          format: email
+        merchantCountry:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: ISO 3166-1 alpha-2 country code
+        preferredLanguage:
+          type: string
+          example: en-US
+        returnUrl:
+          type: string
+          format: uri
+          description: URL PayPal redirects to after onboarding completes
+        returnUrlDescription:
+          type: string
+        logoUrl:
+          type: string
+          format: uri
+        businessName:
+          type: string
+        businessType:
+          type: string
+          enum: [INDIVIDUAL, PROPRIETORSHIP, PARTNERSHIP, CORPORATION, NONPROFIT, GOVERNMENT]
+        businessWebsite:
+          type: string
+          format: uri
+        enablePPCP:
+          type: boolean
+          default: true
+        enableApplePay:
+          type: boolean
+          default: true
+        enableGooglePay:
+          type: boolean
+          default: true
+        enableVaulting:
+          type: boolean
+          default: true
+
+    MerchantStatus:
+      type: object
+      required: [trackingId, merchantEmail, onboardingStatus, primaryEmailConfirmed, paymentsReceivable, oauthIntegrated, paymentMethods, createdAt, updatedAt]
+      properties:
+        trackingId:
+          type: string
+        merchantEmail:
+          type: string
+          format: email
+        paypalMerchantId:
+          type: string
+          nullable: true
+        onboardingEnvironment:
+          $ref: "#/components/schemas/PayPalEnvironment"
+        onboardingStatus:
+          type: string
+          enum: [PENDING, IN_PROGRESS, COMPLETED, FAILED]
+        actionUrl:
+          type: string
+          format: uri
+          description: URL to continue incomplete onboarding
+        primaryEmailConfirmed:
+          type: boolean
+        paymentsReceivable:
+          type: boolean
+        oauthIntegrated:
+          type: boolean
+        paymentMethods:
+          $ref: "#/components/schemas/PaymentMethodReadiness"
+        lastStatusCheck:
+          type: string
+          format: date-time
+        statusCheckError:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ── Customer Vault ────────────────────────────────────────────────────────
+
+    SavedPaymentMethod:
+      type: object
+      required: [id, type]
+      discriminator:
+        propertyName: type
+      properties:
+        id:
+          type: string
+          description: PayPal payment token ID (vault ID)
+        type:
+          type: string
+          enum: [card, paypal, venmo, apple_pay]
+        card:
+          type: object
+          properties:
+            brand:
+              type: string
+              example: VISA
+            lastDigits:
+              type: string
+              example: "4242"
+            expiry:
+              type: string
+              example: "2027-12"
+        paypal:
+          type: object
+          properties:
+            email:
+              type: string
+              format: email
+            name:
+              type: string
+        venmo:
+          type: object
+          properties:
+            email:
+              type: string
+              format: email
+            userName:
+              type: string
+            name:
+              type: string
+        applePay:
+          type: object
+          properties:
+            brand:
+              type: string
+            lastDigits:
+              type: string
+            expiry:
+              type: string
+            cardType:
+              type: string
+            email:
+              type: string
+            name:
+              type: string
+
+    # ── WSM Admin ─────────────────────────────────────────────────────────────
+
+    GlobalPayPalConfig:
+      type: object
+      required: [clientId, environment]
+      properties:
+        clientId:
+          type: string
+        environment:
+          $ref: "#/components/schemas/PayPalEnvironment"
+        partnerMerchantId:
+          type: string
+          description: WSM partner's PayPal merchant ID (payer ID)
+        partnerFeePercent:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Default platform fee percentage charged to merchants
+        bnCode:
+          type: string
+          description: PayPal BN (Build Notation) code for transaction attribution
+        webhookId:
+          type: string
+          description: ID of the registered PayPal webhook
+        webhookUrl:
+          type: string
+          format: uri
+          description: Registered PayPal webhook endpoint URL
+
+    SetGlobalConfigInput:
+      type: object
+      required: [clientId, clientSecret, environment]
+      properties:
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+          description: Encrypted at rest; never returned in responses
+        partnerMerchantId:
+          type: string
+        partnerFeePercent:
+          type: number
+          minimum: 0
+          maximum: 100
+        bnCode:
+          type: string
+        environment:
+          $ref: "#/components/schemas/PayPalEnvironment"
+
+    TenantRecord:
+      type: object
+      required: [saleorApiUrl, liveAccessAllowed]
+      properties:
+        saleorApiUrl:
+          type: string
+          format: uri
+        liveAccessAllowed:
+          type: boolean
+        tenantFeePercent:
+          type: number
+          nullable: true
+          description: Per-tenant fee override; falls back to global `partnerFeePercent`

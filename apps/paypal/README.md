@@ -5,6 +5,7 @@ A Saleor Payment App that enables merchants to accept online payments through Pa
 ## Table of Contents
 
 - [Overview](#overview)
+- [API Reference](#api-reference)
 - [Supported Payment Methods](#supported-payment-methods)
 - [Architecture](#architecture)
 - [PayPal API Integration](#paypal-api-integration)
@@ -15,6 +16,34 @@ A Saleor Payment App that enables merchants to accept online payments through Pa
 - [Error Handling](#error-handling)
 - [Development](#development)
 - [Technical Specifications](#technical-specifications)
+
+## API Reference
+
+The full API surface is documented as an OpenAPI 3.1 specification:
+
+- **[openapi.yaml](openapi.yaml)** — machine-readable spec covering all endpoints
+
+The spec documents:
+
+| Category | Endpoints |
+|----------|-----------|
+| Saleor system | `GET /api/manifest`, `POST /api/register` |
+| Saleor synchronous webhooks | 6 webhook handlers (`payment-gateway-initialize-session`, `transaction-initialize-session`, `transaction-process-session`, `transaction-charge-requested`, `transaction-refund-requested`, `transaction-cancelation-requested`) |
+| PayPal asynchronous webhooks | `POST /api/webhooks/paypal`, `POST /api/webhooks/paypal/platform-events` |
+| PayPal onboarding callback | `POST /api/paypal-callback` |
+| WSM admin auth | `POST/GET/DELETE /api/wsm-admin/auth` |
+| tRPC – App Config | 8 procedures (`appConfig.*`) |
+| tRPC – Merchant Onboarding | 9 procedures (`merchantOnboarding.*`) |
+| tRPC – Customer Vault | 5 procedures (`customerVault.*`) |
+| tRPC – WSM Admin | 6 procedures (`wsmAdmin.*`) |
+
+You can render the spec locally with any OpenAPI viewer, for example:
+
+```bash
+npx @redocly/cli preview-docs openapi.yaml
+# or
+npx swagger-ui-watcher openapi.yaml
+```
 
 ## Overview
 
