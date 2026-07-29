@@ -12,6 +12,7 @@ import {
   verifyWebhookSignature,
 } from "@/modules/paypal/paypal-webhook-verification";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
+import { markOrderCapturedByWebhook } from "@/modules/reconciliation/reconciliation";
 
 const logger = createLogger("PayPalWebhookHandler");
 
@@ -112,6 +113,33 @@ async function handleMerchantConsentRevoked(event: PayPalWebhookEvent) {
   logger.info("Merchant consent revoked - should update status to REVOKED", {
     merchant_id: merchantId,
   });
+}
+
+/**
+ * Handle PAYMENT.CAPTURE.COMPLETED webhook (WSM6-1373).
+ *
+ * PayPal notifying us directly that a capture completed is a second,
+ * independent confirmation path — it doesn't depend on our own outbound
+ * capture-order call chain at all, so it can resolve a reconciliation row
+ * even if our side never got a usable answer back from that call.
+ */
+async function handlePaymentCaptureCompleted(event: PayPalWebhookEvent) {
+  const orderId: string | undefined = event.resource?.supplementary_data?.related_ids?.order_id;
+
+  if (!orderId) {
+    logger.warn("PAYMENT.CAPTURE.COMPLETED missing order_id in supplementary_data", {
+      event_id: event.id,
+    });
+    return;
+  }
+
+  logger.info("Processing PAYMENT.CAPTURE.COMPLETED webhook", {
+    event_id: event.id,
+    order_id: orderId,
+    capture_id: event.resource?.id,
+  });
+
+  await markOrderCapturedByWebhook(orderId);
 }
 
 /**
@@ -243,6 +271,10 @@ async function PayPalWebhookHandler(request: NextRequest): Promise<Response> {
 
       case "MERCHANT.PARTNER-CONSENT.REVOKED":
         await handleMerchantConsentRevoked(event);
+        break;
+
+      case "PAYMENT.CAPTURE.COMPLETED":
+        await handlePaymentCaptureCompleted(event);
         break;
 
       default:

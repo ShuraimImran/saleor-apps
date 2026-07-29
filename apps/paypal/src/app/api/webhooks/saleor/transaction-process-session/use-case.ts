@@ -29,6 +29,9 @@ import {
 } from "@/modules/transaction-result/failure-result";
 import { ChargeSuccessResult } from "@/modules/transaction-result/success-result";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
+import { savePendingReconciliation, startReconciliationSweep } from "@/modules/reconciliation/reconciliation";
+
+startReconciliationSweep();
 
 import {
   TransactionProcessSessionUseCaseResponses,
@@ -263,6 +266,20 @@ export class TransactionProcessSessionUseCase {
      * subsequently fails them, the webhook-driven reconciliation handles it.
      * If a separate CHARGE_REQUEST result is added later, branch here.
      */
+
+    // WSM6-1373: PayPal has genuinely captured this payment — save a
+    // reconciliation row *right now*, before anything else below gets a
+    // chance to throw or fail and lose the order despite the real charge.
+    if (event.sourceObject.__typename === "Checkout") {
+      await savePendingReconciliation({
+        tenant: authData.saleorApiUrl,
+        checkoutId: event.sourceObject.id,
+        transactionId: event.transaction.id,
+        channelId,
+        paypalOrderId,
+        amount: Number(event.action.amount),
+      });
+    }
 
     // Log vault info if present (for debugging vaulting issues)
     const vaultInfo = paypalOrder.payment_source?.card?.attributes?.vault;
