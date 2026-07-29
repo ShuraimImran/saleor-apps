@@ -32,6 +32,7 @@ import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-
 import { savePendingReconciliation, startReconciliationSweep } from "@/modules/reconciliation/reconciliation";
 import { withPaymentLock } from "@/modules/reconciliation/payment-attempt-lock";
 import { assertNotAlreadyPaid } from "@/modules/reconciliation/checkout-balance";
+import { hasUnresolvedPaymentAttempt } from "@/modules/reconciliation/cross-gateway-guard";
 import { createGraphQLClient } from "@/lib/graphql-client";
 
 startReconciliationSweep();
@@ -171,6 +172,29 @@ export class TransactionProcessSessionUseCase {
     const balanceCheckSourceId = event.sourceObject.id;
     const balanceCheckIsOrder = event.sourceObject.__typename === "Order";
     const graphQLClient = createGraphQLClient(authData.saleorApiUrl, authData.token);
+
+    // Closes the async-reconciliation-window gap: a prior ambiguous charge
+    // (on either gateway) not yet reported to Saleor won't show up in
+    // totalBalance below, but it's still real money — refuse rather than
+    // let a second one through while it's unresolved.
+    if (await hasUnresolvedPaymentAttempt(balanceCheckSourceId)) {
+      const failureResult =
+        event.action.actionType === "CHARGE"
+          ? new ChargeFailureResult()
+          : new AuthorizationFailureResult();
+
+      return ok(
+        new TransactionProcessSessionUseCaseResponses.Failure({
+          transactionResult: failureResult,
+          error: new PayPalApiError(
+            "A previous payment attempt for this order is still being confirmed. Please wait a few minutes before trying again.",
+            { paypalErrorName: "RECONCILIATION_PENDING" },
+          ),
+          paypalOrderId,
+          appContext: appContextContainer.getContextValue(),
+        }),
+      );
+    }
 
     const balanceCheck = await assertNotAlreadyPaid(
       graphQLClient,
