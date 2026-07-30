@@ -419,6 +419,34 @@ export const initializeDatabase = async (): Promise<void> => {
       BEFORE UPDATE ON paypal_customer_vault
       FOR EACH ROW
       EXECUTE FUNCTION update_customer_vault_timestamp();
+
+    -- PayPal reconciliation (WSM6-1373 safety net — see
+    -- src/modules/reconciliation/reconciliation.ts). A real capture can
+    -- succeed and still never reach Saleor if anything fails right after —
+    -- this table is the durable record that lets a background sweep confirm
+    -- the capture with PayPal directly and finish creating the order.
+    CREATE TABLE IF NOT EXISTS paypal_reconciliation (
+      id BIGSERIAL PRIMARY KEY,
+      tenant TEXT NOT NULL,
+      checkout_id TEXT NOT NULL,
+      transaction_id TEXT NOT NULL,
+      channel_id TEXT,
+      paypal_order_id TEXT NOT NULL,
+      amount NUMERIC NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_checked_at TIMESTAMPTZ,
+      resolved_at TIMESTAMPTZ,
+      note TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS paypal_reconciliation_pending
+      ON paypal_reconciliation (status, last_checked_at);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS paypal_reconciliation_order_pending
+      ON paypal_reconciliation (tenant, paypal_order_id)
+      WHERE status = 'pending';
   `;
 
   try {

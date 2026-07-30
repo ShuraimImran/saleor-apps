@@ -1,6 +1,7 @@
 fragment TransactionProcessSessionEvent on TransactionProcessSession {
   ...EventMetadata
   transaction {
+    id
     pspReference
   }
   action {

@@ -29,6 +29,13 @@ import {
 } from "@/modules/transaction-result/failure-result";
 import { ChargeSuccessResult } from "@/modules/transaction-result/success-result";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
+import { savePendingReconciliation, startReconciliationSweep } from "@/modules/reconciliation/reconciliation";
+import { withPaymentLock } from "@/modules/reconciliation/payment-attempt-lock";
+import { assertNotAlreadyPaid } from "@/modules/reconciliation/checkout-balance";
+import { hasUnresolvedPaymentAttempt } from "@/modules/reconciliation/cross-gateway-guard";
+import { createGraphQLClient } from "@/lib/graphql-client";
+
+startReconciliationSweep();
 
 import {
   TransactionProcessSessionUseCaseResponses,
@@ -158,25 +165,89 @@ export class TransactionProcessSessionUseCase {
       actionType: event.action.actionType,
     });
 
-    // Based on action type, either capture or authorize the order
-    let processResult;
+    // Double-payment guard (order #60 class of bug): refuse outright if
+    // this checkout/order is already paid elsewhere (cross-gateway — reads
+    // Saleor's own aggregate balance), and serialize concurrent attempts
+    // on the same checkout (e.g. two tabs) via a shared short-lived lock.
+    const balanceCheckSourceId = event.sourceObject.id;
+    const balanceCheckIsOrder = event.sourceObject.__typename === "Order";
+    const graphQLClient = createGraphQLClient(authData.saleorApiUrl, authData.token);
 
-    if (event.action.actionType === "CHARGE") {
-      processResult = await paypalOrdersApi.captureOrder({ orderId: paypalOrderId });
-    } else {
-      processResult = await paypalOrdersApi.authorizeOrder({ orderId: paypalOrderId });
+    // Closes the async-reconciliation-window gap: a prior ambiguous charge
+    // (on either gateway) not yet reported to Saleor won't show up in
+    // totalBalance below, but it's still real money — refuse rather than
+    // let a second one through while it's unresolved.
+    if (await hasUnresolvedPaymentAttempt(balanceCheckSourceId)) {
+      const failureResult =
+        event.action.actionType === "CHARGE"
+          ? new ChargeFailureResult()
+          : new AuthorizationFailureResult();
+
+      return ok(
+        new TransactionProcessSessionUseCaseResponses.Failure({
+          transactionResult: failureResult,
+          error: new PayPalApiError(
+            "A previous payment attempt for this order is still being confirmed. Please wait a few minutes before trying again.",
+            { paypalErrorName: "RECONCILIATION_PENDING" },
+          ),
+          paypalOrderId,
+          appContext: appContextContainer.getContextValue(),
+        }),
+      );
     }
 
+    const balanceCheck = await assertNotAlreadyPaid(
+      graphQLClient,
+      balanceCheckSourceId,
+      balanceCheckIsOrder,
+      Number(event.action.amount),
+    );
+
+    if (!balanceCheck.allowed) {
+      const failureResult =
+        event.action.actionType === "CHARGE"
+          ? new ChargeFailureResult()
+          : new AuthorizationFailureResult();
+
+      return ok(
+        new TransactionProcessSessionUseCaseResponses.Failure({
+          transactionResult: failureResult,
+          error: new PayPalApiError(balanceCheck.message, { paypalErrorName: "OVERCHARGE_BLOCKED" }),
+          paypalOrderId,
+          appContext: appContextContainer.getContextValue(),
+        }),
+      );
+    }
+
+    // Based on action type, either capture or authorize the order
+    const processResult = await withPaymentLock(
+      balanceCheckSourceId,
+      () =>
+        event.action.actionType === "CHARGE"
+          ? paypalOrdersApi.captureOrder({ orderId: paypalOrderId })
+          : paypalOrdersApi.authorizeOrder({ orderId: paypalOrderId }),
+      () => err({ code: "PAYMENT_LOCK_BUSY" as const }),
+    );
+
     if (processResult.isErr()) {
-      const error = mapPayPalErrorToApiError(processResult.error);
-      
+      const isLockBusy =
+        !!processResult.error &&
+        typeof processResult.error === "object" &&
+        (processResult.error as { code?: string }).code === "PAYMENT_LOCK_BUSY";
+
+      const error = isLockBusy
+        ? new PayPalApiError("Another payment attempt is already being processed for this order.", {
+            paypalErrorName: "PAYMENT_LOCK_BUSY",
+          })
+        : mapPayPalErrorToApiError(processResult.error);
+
       this.logger.error("Failed to process PayPal order", {
         error,
         paypalOrderId,
         actionType: event.action.actionType,
       });
 
-      const failureResult = event.action.actionType === "CHARGE" 
+      const failureResult = event.action.actionType === "CHARGE"
         ? new ChargeFailureResult()
         : new AuthorizationFailureResult();
 
@@ -263,6 +334,20 @@ export class TransactionProcessSessionUseCase {
      * subsequently fails them, the webhook-driven reconciliation handles it.
      * If a separate CHARGE_REQUEST result is added later, branch here.
      */
+
+    // WSM6-1373: PayPal has genuinely captured this payment — save a
+    // reconciliation row *right now*, before anything else below gets a
+    // chance to throw or fail and lose the order despite the real charge.
+    if (event.sourceObject.__typename === "Checkout") {
+      await savePendingReconciliation({
+        tenant: authData.saleorApiUrl,
+        checkoutId: event.sourceObject.id,
+        transactionId: event.transaction.id,
+        channelId,
+        paypalOrderId,
+        amount: Number(event.action.amount),
+      });
+    }
 
     // Log vault info if present (for debugging vaulting issues)
     const vaultInfo = paypalOrder.payment_source?.card?.attributes?.vault;
