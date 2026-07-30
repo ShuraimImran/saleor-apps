@@ -1,11 +1,11 @@
 import { getPool } from "@/lib/database";
 import { createGraphQLClient } from "@/lib/graphql-client";
 import { createLogger } from "@/lib/logger";
-import { paypalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
+import { saleorApp } from "@/lib/saleor-app";
 import { interpretCaptureResponse } from "@/modules/paypal/capture-result";
+import { paypalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
 import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
 import { PayPalOrdersApiFactory } from "@/modules/paypal/paypal-orders-api-factory";
-import { saleorApp } from "@/lib/saleor-app";
 
 const logger = createLogger("PayPalReconciliation");
 
@@ -17,31 +17,49 @@ const logger = createLogger("PayPalReconciliation");
  * (6.0-authorize-net-app/src/lib/reconciliation.ts) — same shape, same
  * reasoning, different gateway.
  *
- * Required schema:
- *
- *   CREATE TABLE IF NOT EXISTS paypal_reconciliation (
- *     id BIGSERIAL PRIMARY KEY,
- *     tenant TEXT NOT NULL,
- *     checkout_id TEXT NOT NULL,
- *     transaction_id TEXT NOT NULL,
- *     channel_id TEXT,
- *     paypal_order_id TEXT NOT NULL,
- *     amount NUMERIC NOT NULL,
- *     status TEXT NOT NULL DEFAULT 'pending',
- *     attempts INT NOT NULL DEFAULT 0,
- *     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
- *     last_checked_at TIMESTAMPTZ,
- *     resolved_at TIMESTAMPTZ,
- *     note TEXT
- *   );
- *   CREATE INDEX IF NOT EXISTS paypal_reconciliation_pending
- *     ON paypal_reconciliation (status, last_checked_at);
- *   -- One pending row per PayPal order — a retried capture attempt on the
- *   -- same order shouldn't create duplicate reconciliation rows.
- *   CREATE UNIQUE INDEX IF NOT EXISTS paypal_reconciliation_order_pending
- *     ON paypal_reconciliation (tenant, paypal_order_id)
- *     WHERE status = 'pending';
+ * Schema is self-provisioned by `ensureSchema()` below rather than relying
+ * solely on the manual `pnpm migrate:database` step — a missed migration
+ * after deploy used to mean the cross-gateway guard's fail-closed error
+ * handling silently blocked every payment on both gateways, not just this
+ * feature. Same fix mirrored in the Authorize.Net app's
+ * `src/lib/reconciliation.ts`.
  */
+let schemaReadyPromise: Promise<void> | null = null;
+
+export function ensureSchema(): Promise<void> {
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = getPool()
+      .query(
+        `CREATE TABLE IF NOT EXISTS paypal_reconciliation (
+           id BIGSERIAL PRIMARY KEY,
+           tenant TEXT NOT NULL,
+           checkout_id TEXT NOT NULL,
+           transaction_id TEXT NOT NULL,
+           channel_id TEXT,
+           paypal_order_id TEXT NOT NULL,
+           amount NUMERIC NOT NULL,
+           status TEXT NOT NULL DEFAULT 'pending',
+           attempts INT NOT NULL DEFAULT 0,
+           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+           last_checked_at TIMESTAMPTZ,
+           resolved_at TIMESTAMPTZ,
+           note TEXT
+         );
+         CREATE INDEX IF NOT EXISTS paypal_reconciliation_pending
+           ON paypal_reconciliation (status, last_checked_at);
+         CREATE UNIQUE INDEX IF NOT EXISTS paypal_reconciliation_order_pending
+           ON paypal_reconciliation (tenant, paypal_order_id)
+           WHERE status = 'pending';`,
+      )
+      .then(() => undefined)
+      .catch((error) => {
+        schemaReadyPromise = null;
+        throw error;
+      });
+  }
+
+  return schemaReadyPromise;
+}
 
 export type ReconciliationStatus =
   | "pending"
@@ -66,6 +84,7 @@ export async function savePendingReconciliation(
   args: PendingReconciliationArgs,
 ): Promise<void> {
   try {
+    await ensureSchema();
     await getPool().query(
       `INSERT INTO paypal_reconciliation
          (tenant, checkout_id, transaction_id, channel_id, paypal_order_id, amount)
@@ -95,12 +114,14 @@ export async function savePendingReconciliation(
  */
 export async function markOrderCapturedByWebhook(paypalOrderId: string): Promise<void> {
   try {
+    await ensureSchema();
     const { rowCount } = await getPool().query(
       `UPDATE paypal_reconciliation
        SET last_checked_at = NULL -- force the next sweep tick to pick it up immediately
        WHERE paypal_order_id = $1 AND status = 'pending'`,
       [paypalOrderId],
     );
+
     if (rowCount) {
       logger.info("Fast-tracked reconciliation row from PAYMENT.CAPTURE.COMPLETED webhook", {
         paypalOrderId,
@@ -137,6 +158,7 @@ async function fetchDueRows(): Promise<ReconciliationRow[]> {
      LIMIT 50`,
     [GRACE_PERIOD_MS, SWEEP_INTERVAL_MS],
   );
+
   return rows as ReconciliationRow[];
 }
 
@@ -179,6 +201,7 @@ async function finishOrder(
     .toPromise();
 
   const reportErrors = reportResult.data?.transactionEventReport?.errors ?? [];
+
   if (reportResult.error || reportErrors.length > 0) {
     return {
       ok: false,
@@ -204,10 +227,12 @@ async function finishOrder(
   const alreadyCompleted = completeErrors.some((e: { code?: string }) =>
     ["CHECKOUT_NOT_FOUND", "ORDER_ALREADY_EXISTS"].includes(e.code ?? ""),
   );
-  // Terminal: retrying won't help — e.g. NO_LINES means the checkout's stock
-  // reservation lapsed (or the cart was otherwise emptied) before we got
-  // here. The charge is still real money with no order; flag for a human
-  // instead of looping on a checkout that can't be completed as-is.
+  /*
+   * Terminal: retrying won't help — e.g. NO_LINES means the checkout's stock
+   * reservation lapsed (or the cart was otherwise emptied) before we got
+   * here. The charge is still real money with no order; flag for a human
+   * instead of looping on a checkout that can't be completed as-is.
+   */
   const terminal = completeErrors.some((e: { code?: string }) =>
     ["NO_LINES", "INSUFFICIENT_STOCK", "VOUCHER_NOT_APPLICABLE", "SHIPPING_METHOD_NOT_SET", "BILLING_ADDRESS_NOT_SET", "SHIPPING_ADDRESS_NOT_SET"].includes(e.code ?? ""),
   );
@@ -224,19 +249,24 @@ async function finishOrder(
     checkoutId: row.checkout_id,
     orderNumber: order?.number ?? "(already existed)",
   });
+
   return { ok: true };
 }
 
 async function processRow(row: ReconciliationRow): Promise<void> {
   const authData = await saleorApp.apl.get(row.tenant);
+
   if (!authData) {
     await markRow(row.id, "needs_review", "Tenant auth data unavailable during reconciliation");
+
     return;
   }
 
   const configResult = await paypalConfigRepo.getPayPalConfig(authData, row.channel_id ?? undefined);
+
   if (configResult.isErr() || !configResult.value) {
     await markRow(row.id, "needs_review", "PayPal config unavailable during reconciliation");
+
     return;
   }
   const config = configResult.value;
@@ -259,6 +289,7 @@ async function processRow(row: ReconciliationRow): Promise<void> {
     } else {
       await markRow(row.id, "pending", `Lookup error (attempt ${row.attempts + 1}): ${String(orderResult.error)}`);
     }
+
     return;
   }
 
@@ -270,6 +301,7 @@ async function processRow(row: ReconciliationRow): Promise<void> {
       "resolved_failed",
       `PayPal outcome: ${outcome.kind} — correctly no order.`,
     );
+
     return;
   }
 
@@ -279,11 +311,13 @@ async function processRow(row: ReconciliationRow): Promise<void> {
     } else {
       await markRow(row.id, "pending", "PayPal capture still pending");
     }
+
     return;
   }
 
   // outcome.kind === "succeeded": the capture is real. Finish the job.
   const outcomeResult = await finishOrder(row.tenant, authData.token, row, outcome.captureId);
+
   if (outcomeResult.ok) {
     await markRow(row.id, "resolved_success", `PayPal captureId ${outcome.captureId}`);
   } else if (outcomeResult.terminal || row.attempts + 1 >= MAX_ATTEMPTS) {
@@ -294,11 +328,21 @@ async function processRow(row: ReconciliationRow): Promise<void> {
 }
 
 export async function sweepPendingReconciliations(): Promise<void> {
+  try {
+    await ensureSchema();
+  } catch (error) {
+    logger.error("Sweep: failed to ensure schema", { error });
+
+    return;
+  }
+
   let rows: ReconciliationRow[];
+
   try {
     rows = await fetchDueRows();
   } catch (error) {
     logger.error("Sweep: failed to fetch due rows", { error });
+
     return;
   }
 
