@@ -2,6 +2,7 @@ import { getPool } from "@/lib/database";
 import { createGraphQLClient } from "@/lib/graphql-client";
 import { createLogger } from "@/lib/logger";
 import { saleorApp } from "@/lib/saleor-app";
+import { diffCheckoutSnapshot, fetchCheckoutSnapshot, type CheckoutSnapshot } from "@/lib/checkout-snapshot";
 import { interpretCaptureResponse } from "@/modules/paypal/capture-result";
 import { paypalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
 import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
@@ -43,13 +44,15 @@ export function ensureSchema(): Promise<void> {
            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
            last_checked_at TIMESTAMPTZ,
            resolved_at TIMESTAMPTZ,
-           note TEXT
+           note TEXT,
+           checkout_snapshot JSONB
          );
          CREATE INDEX IF NOT EXISTS paypal_reconciliation_pending
            ON paypal_reconciliation (status, last_checked_at);
          CREATE UNIQUE INDEX IF NOT EXISTS paypal_reconciliation_order_pending
            ON paypal_reconciliation (tenant, paypal_order_id)
-           WHERE status = 'pending';`,
+           WHERE status = 'pending';
+         ALTER TABLE IF EXISTS paypal_reconciliation ADD COLUMN IF NOT EXISTS checkout_snapshot JSONB;`,
       )
       .then(() => undefined)
       .catch((error) => {
@@ -78,6 +81,7 @@ export interface PendingReconciliationArgs {
   channelId?: string;
   paypalOrderId: string;
   amount: number;
+  checkoutSnapshot?: CheckoutSnapshot;
 }
 
 export async function savePendingReconciliation(
@@ -87,8 +91,8 @@ export async function savePendingReconciliation(
     await ensureSchema();
     await getPool().query(
       `INSERT INTO paypal_reconciliation
-         (tenant, checkout_id, transaction_id, channel_id, paypal_order_id, amount)
-       VALUES ($1, $2, $3, $4, $5, $6)
+         (tenant, checkout_id, transaction_id, channel_id, paypal_order_id, amount, checkout_snapshot)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (tenant, paypal_order_id) WHERE status = 'pending' DO NOTHING`,
       [
         args.tenant,
@@ -97,6 +101,7 @@ export async function savePendingReconciliation(
         args.channelId ?? null,
         args.paypalOrderId,
         args.amount,
+        args.checkoutSnapshot ? JSON.stringify(args.checkoutSnapshot) : null,
       ],
     );
     logger.info("Reconciliation row saved — will confirm with PayPal later", {
@@ -178,11 +183,12 @@ interface ReconciliationRow {
   paypal_order_id: string;
   amount: string;
   attempts: number;
+  checkout_snapshot: CheckoutSnapshot | null;
 }
 
 async function fetchDueRows(): Promise<ReconciliationRow[]> {
   const { rows } = await getPool().query(
-    `SELECT id, tenant, checkout_id, transaction_id, channel_id, paypal_order_id, amount, attempts
+    `SELECT id, tenant, checkout_id, transaction_id, channel_id, paypal_order_id, amount, attempts, checkout_snapshot
      FROM paypal_reconciliation
      WHERE status = 'pending'
        AND (
@@ -195,7 +201,10 @@ async function fetchDueRows(): Promise<ReconciliationRow[]> {
     [GRACE_PERIOD_MS, SWEEP_INTERVAL_MS],
   );
 
-  return rows as ReconciliationRow[];
+  return rows.map((row: any) => ({
+    ...row,
+    checkout_snapshot: row.checkout_snapshot ? JSON.parse(row.checkout_snapshot) : null,
+  })) as ReconciliationRow[];
 }
 
 async function markRow(id: number, status: ReconciliationStatus, note?: string): Promise<void> {
@@ -306,17 +315,17 @@ async function finishOrder(
     };
   }
 
-  /*
-   * The charge is now durably reported to Saleor regardless of what happens
-   * next. Whether the checkout's contents still match what was actually
-   * paid for is now checked by Saleor's own checkoutComplete/
-   * create_order_from_checkout — the same enforcement point every
-   * completion path goes through (this sweep, a storefront's direct call,
-   * or the automatic-checkout-completion task), not something duplicated
-   * here. If it doesn't match, checkoutComplete refuses with
-   * CONTENT_CHANGED_AFTER_PAYMENT below (handled as terminal, same as
-   * SHIPPING_METHOD_NOT_SET etc.).
-   */
+  // Capture the checkout state now before calling checkoutComplete, so we can
+  // compare against what was paid for and annotate the order if there's drift.
+  let currentSnapshot: CheckoutSnapshot | null = null;
+  let diff: ReturnType<typeof diffCheckoutSnapshot> | null = null;
+  if (row.checkout_snapshot) {
+    currentSnapshot = await fetchCheckoutSnapshot(client, row.checkout_id);
+    if (currentSnapshot) {
+      diff = diffCheckoutSnapshot(row.checkout_snapshot, currentSnapshot);
+    }
+  }
+
   const completeResult = await client
     .mutation(
       `mutation FinishCheckout($id: ID!) {
@@ -349,12 +358,6 @@ async function finishOrder(
       "BILLING_ADDRESS_NOT_SET",
       "SHIPPING_ADDRESS_NOT_SET",
       "CHECKOUT_NOT_FULLY_PAID",
-      /*
-       * The checkout's line items no longer match what was actually paid
-       * for (Saleor's own create_order_from_checkout enforces this now,
-       * for every completion path — see checkout_cleaner.py). Retrying
-       * won't fix a real content mismatch; a human needs to look at it.
-       */
       "CONTENT_CHANGED_AFTER_PAYMENT",
     ].includes(e.code ?? ""),
   );
@@ -365,6 +368,39 @@ async function finishOrder(
       terminal,
       message: `checkoutComplete failed: ${completeResult.error?.message ?? JSON.stringify(completeErrors)}`,
     };
+  }
+
+  // If the order was created and there's a diff (even if not blocking it),
+  // annotate the order with the mismatch details so the merchant can see
+  // what happened on that specific order.
+  if (order && diff) {
+    try {
+      await client
+        .mutation(
+          `mutation UpdateOrderMetadata($id: ID!, $input: [MetadataInput!]!) {
+            orderUpdate(id: $id, input: { privateMetadata: $input }) {
+              errors { field message }
+              order { id }
+            }
+          }`,
+          {
+            id: order.id,
+            input: [
+              {
+                key: "payment_reconciliation_diff",
+                value: JSON.stringify({
+                  message: diff.message,
+                  paid_for: row.checkout_snapshot,
+                  current: currentSnapshot,
+                }),
+              },
+            ],
+          },
+        )
+        .toPromise();
+    } catch (error) {
+      logger.warn("Failed to annotate order with reconciliation diff", { error, orderId: order.id });
+    }
   }
 
   logger.info("Reconciliation resolved checkout", {
