@@ -9,6 +9,7 @@ import { TransactionProcessSessionEventFragment } from "@/generated/graphql";
 import { appContextContainer } from "@/lib/app-context";
 import { getPool } from "@/lib/database";
 import { BaseError } from "@/lib/errors";
+import { createGraphQLClient } from "@/lib/graphql-client";
 import { createLogger } from "@/lib/logger";
 import {
   formatDeclineMessage,
@@ -21,6 +22,10 @@ import {
 } from "@/modules/paypal/paypal-api-error";
 import { createPayPalOrderId } from "@/modules/paypal/paypal-order-id";
 import { IPayPalOrdersApiFactory } from "@/modules/paypal/types";
+import { assertNotAlreadyPaid } from "@/modules/reconciliation/checkout-balance";
+import { hasUnresolvedPaymentAttempt, messageForAttemptCheck } from "@/modules/reconciliation/cross-gateway-guard";
+import { withPaymentLock } from "@/modules/reconciliation/payment-attempt-lock";
+import { resolveSynchronously, savePendingReconciliation, startReconciliationSweep } from "@/modules/reconciliation/reconciliation";
 import { resolveSaleorMoneyFromPayPalOrder } from "@/modules/saleor/resolve-saleor-money-from-paypal-order";
 import { SaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import {
@@ -29,18 +34,13 @@ import {
 } from "@/modules/transaction-result/failure-result";
 import { ChargeSuccessResult } from "@/modules/transaction-result/success-result";
 import { GlobalPayPalConfigRepository } from "@/modules/wsm-admin/global-paypal-config-repository";
-import { savePendingReconciliation, startReconciliationSweep } from "@/modules/reconciliation/reconciliation";
-import { withPaymentLock } from "@/modules/reconciliation/payment-attempt-lock";
-import { assertNotAlreadyPaid } from "@/modules/reconciliation/checkout-balance";
-import { hasUnresolvedPaymentAttempt } from "@/modules/reconciliation/cross-gateway-guard";
-import { createGraphQLClient } from "@/lib/graphql-client";
-
-startReconciliationSweep();
 
 import {
   TransactionProcessSessionUseCaseResponses,
   TransactionProcessSessionUseCaseResponsesType,
 } from "./use-case-response";
+
+startReconciliationSweep();
 
 type UseCaseExecuteResult = Result<
   TransactionProcessSessionUseCaseResponsesType,
@@ -165,19 +165,31 @@ export class TransactionProcessSessionUseCase {
       actionType: event.action.actionType,
     });
 
-    // Double-payment guard (order #60 class of bug): refuse outright if
-    // this checkout/order is already paid elsewhere (cross-gateway — reads
-    // Saleor's own aggregate balance), and serialize concurrent attempts
-    // on the same checkout (e.g. two tabs) via a shared short-lived lock.
+    /*
+     * Double-payment guard (order #60 class of bug): refuse outright if
+     * this checkout/order is already paid elsewhere (cross-gateway — reads
+     * Saleor's own aggregate balance), and serialize concurrent attempts
+     * on the same checkout (e.g. two tabs) via a shared short-lived lock.
+     */
     const balanceCheckSourceId = event.sourceObject.id;
     const balanceCheckIsOrder = event.sourceObject.__typename === "Order";
     const graphQLClient = createGraphQLClient(authData.saleorApiUrl, authData.token);
 
-    // Closes the async-reconciliation-window gap: a prior ambiguous charge
-    // (on either gateway) not yet reported to Saleor won't show up in
-    // totalBalance below, but it's still real money — refuse rather than
-    // let a second one through while it's unresolved.
-    if (await hasUnresolvedPaymentAttempt(balanceCheckSourceId)) {
+    /*
+     * Closes the async-reconciliation-window gap: a prior ambiguous charge
+     * (on either gateway) not yet reported to Saleor won't show up in
+     * totalBalance below, but it's still real money — refuse rather than
+     * let a second one through while it's unresolved.
+     */
+    const attemptCheck = await hasUnresolvedPaymentAttempt(balanceCheckSourceId);
+
+    if (attemptCheck.blocked) {
+      if (attemptCheck.reason === "query_error") {
+        this.logger.warn(
+          "Blocked capture attempt: cross-gateway reconciliation guard couldn't complete its lookup, failing closed (see the lookup-failed error for the real cause).",
+          { checkoutId: balanceCheckSourceId },
+        );
+      }
       const failureResult =
         event.action.actionType === "CHARGE"
           ? new ChargeFailureResult()
@@ -186,10 +198,7 @@ export class TransactionProcessSessionUseCase {
       return ok(
         new TransactionProcessSessionUseCaseResponses.Failure({
           transactionResult: failureResult,
-          error: new PayPalApiError(
-            "A previous payment attempt for this order is still being confirmed. Please wait a few minutes before trying again.",
-            { paypalErrorName: "RECONCILIATION_PENDING" },
-          ),
+          error: new PayPalApiError(messageForAttemptCheck(attemptCheck), { paypalErrorName: "RECONCILIATION_PENDING" }),
           paypalOrderId,
           appContext: appContextContainer.getContextValue(),
         }),
@@ -335,9 +344,11 @@ export class TransactionProcessSessionUseCase {
      * If a separate CHARGE_REQUEST result is added later, branch here.
      */
 
-    // WSM6-1373: PayPal has genuinely captured this payment — save a
-    // reconciliation row *right now*, before anything else below gets a
-    // chance to throw or fail and lose the order despite the real charge.
+    /*
+     * WSM6-1373: PayPal has genuinely captured this payment — save a
+     * reconciliation row *right now*, before anything else below gets a
+     * chance to throw or fail and lose the order despite the real charge.
+     */
     if (event.sourceObject.__typename === "Checkout") {
       await savePendingReconciliation({
         tenant: authData.saleorApiUrl,
@@ -383,6 +394,16 @@ export class TransactionProcessSessionUseCase {
     }
 
     const successResult = new ChargeSuccessResult();
+
+    /*
+     * We're about to report this charge to Saleor ourselves, synchronously —
+     * the pending row saved above is no longer needed to recover anything.
+     * Resolve it now so the sweep/webhook fast-track never re-reports the
+     * same charge under a different pspReference and doubles charged_value.
+     */
+    if (event.sourceObject.__typename === "Checkout") {
+      await resolveSynchronously(authData.saleorApiUrl, paypalOrderId);
+    }
 
     return ok(
       new TransactionProcessSessionUseCaseResponses.Success({

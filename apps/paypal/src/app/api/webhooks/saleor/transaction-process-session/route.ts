@@ -8,6 +8,7 @@ import {
 } from "@/app/api/webhooks/saleor/saleor-webhook-responses";
 import { appContextContainer } from "@/lib/app-context";
 import { BaseError } from "@/lib/errors";
+import { getCachedIdempotentResponse, storeIdempotentResponse } from "@/lib/idempotency";
 import { createLogger } from "@/lib/logger";
 import { withLoggerContext } from "@/lib/logger-context";
 import { paypalConfigRepo } from "@/modules/paypal/configuration/paypal-config-repo";
@@ -40,13 +41,33 @@ const handler = transactionProcessSessionWebhookDefinition.createHandler(async (
       return response.getResponse();
     }
 
+    /*
+     * TRANSACTION_PROCESS_SESSION has no idempotencyKey field of its own
+     * (unlike TRANSACTION_INITIALIZE_SESSION) — derive a stable key from
+     * the transaction being processed. A genuine Saleor retry of the same
+     * action targets the same transaction with the same actionType/amount.
+     */
+    const idempotencyKey = `${ctx.payload.transaction.id}:${ctx.payload.action.actionType}:${ctx.payload.action.amount}`;
+
+    const cached = (await getCachedIdempotentResponse(ctx.authData.saleorApiUrl, idempotencyKey)) as
+      | { status: number; body: unknown }
+      | null;
+
+    if (cached) {
+      logger.info("Returning cached response for retried transaction process session webhook", {
+        idempotencyKey,
+      });
+
+      return Response.json(cached.body, { status: cached.status });
+    }
+
     const result = await useCase.execute({
       authData: ctx.authData,
       event: ctx.payload,
     });
 
     return result.match(
-      (result) => {
+      async (result) => {
         logger.info("Successfully processed transaction process session webhook request", {
           result: result.transactionResult.result,
         });
@@ -59,7 +80,20 @@ const handler = transactionProcessSessionWebhookDefinition.createHandler(async (
             paypalEnv: appContext.paypalEnv,
           });
 
-          return result.getResponse();
+          const response = result.getResponse();
+
+          try {
+            const body = await response.clone().json();
+
+            await storeIdempotentResponse(ctx.authData.saleorApiUrl, idempotencyKey, {
+              status: response.status,
+              body,
+            });
+          } catch (cacheError) {
+            logger.error("Failed to cache idempotent response", { error: cacheError });
+          }
+
+          return response;
         } catch (error: unknown) {
           logger.error("Error generating response", {
             error,
@@ -69,7 +103,7 @@ const handler = transactionProcessSessionWebhookDefinition.createHandler(async (
           throw error;
         }
       },
-      (error) => {
+      async (error) => {
         if (error instanceof BaseError) {
           captureException(error);
         }
