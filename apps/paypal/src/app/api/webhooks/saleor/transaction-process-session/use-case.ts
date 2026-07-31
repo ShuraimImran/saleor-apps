@@ -25,7 +25,7 @@ import { IPayPalOrdersApiFactory } from "@/modules/paypal/types";
 import { assertNotAlreadyPaid } from "@/modules/reconciliation/checkout-balance";
 import { hasUnresolvedPaymentAttempt, messageForAttemptCheck } from "@/modules/reconciliation/cross-gateway-guard";
 import { withPaymentLock } from "@/modules/reconciliation/payment-attempt-lock";
-import { savePendingReconciliation, startReconciliationSweep } from "@/modules/reconciliation/reconciliation";
+import { resolveSynchronously, savePendingReconciliation, startReconciliationSweep } from "@/modules/reconciliation/reconciliation";
 import { resolveSaleorMoneyFromPayPalOrder } from "@/modules/saleor/resolve-saleor-money-from-paypal-order";
 import { SaleorApiUrl } from "@/modules/saleor/saleor-api-url";
 import {
@@ -394,6 +394,16 @@ export class TransactionProcessSessionUseCase {
     }
 
     const successResult = new ChargeSuccessResult();
+
+    /*
+     * We're about to report this charge to Saleor ourselves, synchronously —
+     * the pending row saved above is no longer needed to recover anything.
+     * Resolve it now so the sweep/webhook fast-track never re-reports the
+     * same charge under a different pspReference and doubles charged_value.
+     */
+    if (event.sourceObject.__typename === "Checkout") {
+      await resolveSynchronously(authData.saleorApiUrl, paypalOrderId);
+    }
 
     return ok(
       new TransactionProcessSessionUseCaseResponses.Success({

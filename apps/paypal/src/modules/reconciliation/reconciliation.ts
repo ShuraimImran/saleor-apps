@@ -90,7 +90,14 @@ export async function savePendingReconciliation(
          (tenant, checkout_id, transaction_id, channel_id, paypal_order_id, amount)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (tenant, paypal_order_id) WHERE status = 'pending' DO NOTHING`,
-      [args.tenant, args.checkoutId, args.transactionId, args.channelId ?? null, args.paypalOrderId, args.amount],
+      [
+        args.tenant,
+        args.checkoutId,
+        args.transactionId,
+        args.channelId ?? null,
+        args.paypalOrderId,
+        args.amount,
+      ],
     );
     logger.info("Reconciliation row saved — will confirm with PayPal later", {
       checkoutId: args.checkoutId,
@@ -130,6 +137,35 @@ export async function markOrderCapturedByWebhook(paypalOrderId: string): Promise
     }
   } catch (error) {
     logger.error("Failed to fast-track reconciliation row from webhook", { error, paypalOrderId });
+  }
+}
+
+/**
+ * Called right after the normal synchronous webhook flow has itself
+ * reported charge_success to Saleor. Without this, the row saved by
+ * savePendingReconciliation() (written eagerly, before we know the rest of
+ * this request will succeed — see its own doc comment) is left `pending`
+ * even on the happy path, and the sweep (or the PAYMENT.CAPTURE.COMPLETED
+ * webhook fast-tracking it) picks it up minutes later, confirms with
+ * PayPal again, and calls transactionEventReport a *second* time — with a
+ * different pspReference (the real capture id vs. whatever was used
+ * synchronously), so Saleor doesn't dedupe it and charged_value doubles.
+ * Reproduced live on orders #74/#75/#77 (2026-07-30) before this fix.
+ */
+export async function resolveSynchronously(tenant: string, paypalOrderId: string): Promise<void> {
+  try {
+    await ensureSchema();
+    await getPool().query(
+      `UPDATE paypal_reconciliation
+       SET status = 'resolved_success',
+           last_checked_at = NOW(),
+           resolved_at = NOW(),
+           note = 'Resolved synchronously — the normal response path already reported this charge to Saleor.'
+       WHERE tenant = $1 AND paypal_order_id = $2 AND status = 'pending'`,
+      [tenant, paypalOrderId],
+    );
+  } catch (error) {
+    logger.error("Failed to resolve reconciliation row synchronously", { error, paypalOrderId });
   }
 }
 
@@ -175,6 +211,52 @@ async function markRow(id: number, status: ReconciliationStatus, note?: string):
   );
 }
 
+/**
+ * Last-line defense before reporting a charge: the normal synchronous
+ * webhook path may already have reported this exact capture under a
+ * *different* pspReference (it uses the PayPal order id; the sweep uses the
+ * capture id — see reproduction on orders #74/#75/#77, 2026-07-30). Saleor's
+ * own transactionEventReport deduplication (`alreadyProcessed`) only matches an
+ * identical pspReference, so it can't catch that case — check the
+ * transaction's actual event history under both identifiers instead.
+ * resolveSynchronously() should already prevent this row from reaching the
+ * sweep at all; this is a second, independent check in case that write
+ * raced with a sweep tick or was missed for any other reason.
+ */
+async function hasMatchingSuccessEvent(
+  client: ReturnType<typeof createGraphQLClient>,
+  transactionId: string,
+  candidatePspReferences: string[],
+): Promise<boolean> {
+  const result = await client
+    .query(
+      `query ExistingTransactionEvents($id: ID!) {
+        transaction(id: $id) {
+          events { type pspReference }
+        }
+      }`,
+      { id: transactionId },
+    )
+    .toPromise();
+
+  if (result.error) {
+    logger.warn("Could not check existing transaction events before reporting — proceeding without this check", {
+      transactionId,
+      error: result.error,
+    });
+
+    return false;
+  }
+
+  const events = result.data?.transaction?.events ?? [];
+
+  return events.some(
+    (event: { type?: string | null; pspReference: string }) =>
+      (event.type === "CHARGE_SUCCESS" || event.type === "AUTHORIZATION_SUCCESS") &&
+      candidatePspReferences.includes(event.pspReference),
+  );
+}
+
 async function finishOrder(
   saleorApiUrl: string,
   token: string,
@@ -182,6 +264,20 @@ async function finishOrder(
   captureId: string,
 ): Promise<{ ok: true } | { ok: false; terminal: boolean; message: string }> {
   const client = createGraphQLClient(saleorApiUrl, token);
+
+  const alreadyReported = await hasMatchingSuccessEvent(client, row.transaction_id, [
+    row.paypal_order_id,
+    captureId,
+  ]);
+
+  if (alreadyReported) {
+    logger.info("Skipped duplicate transactionEventReport — a matching success event already exists", {
+      checkoutId: row.checkout_id,
+      paypalOrderId: row.paypal_order_id,
+    });
+
+    return { ok: true };
+  }
 
   const reportResult = await client
     .mutation(
@@ -210,6 +306,17 @@ async function finishOrder(
     };
   }
 
+  /*
+   * The charge is now durably reported to Saleor regardless of what happens
+   * next. Whether the checkout's contents still match what was actually
+   * paid for is now checked by Saleor's own checkoutComplete/
+   * create_order_from_checkout — the same enforcement point every
+   * completion path goes through (this sweep, a storefront's direct call,
+   * or the automatic-checkout-completion task), not something duplicated
+   * here. If it doesn't match, checkoutComplete refuses with
+   * CONTENT_CHANGED_AFTER_PAYMENT below (handled as terminal, same as
+   * SHIPPING_METHOD_NOT_SET etc.).
+   */
   const completeResult = await client
     .mutation(
       `mutation FinishCheckout($id: ID!) {
@@ -234,7 +341,22 @@ async function finishOrder(
    * instead of looping on a checkout that can't be completed as-is.
    */
   const terminal = completeErrors.some((e: { code?: string }) =>
-    ["NO_LINES", "INSUFFICIENT_STOCK", "VOUCHER_NOT_APPLICABLE", "SHIPPING_METHOD_NOT_SET", "BILLING_ADDRESS_NOT_SET", "SHIPPING_ADDRESS_NOT_SET"].includes(e.code ?? ""),
+    [
+      "NO_LINES",
+      "INSUFFICIENT_STOCK",
+      "VOUCHER_NOT_APPLICABLE",
+      "SHIPPING_METHOD_NOT_SET",
+      "BILLING_ADDRESS_NOT_SET",
+      "SHIPPING_ADDRESS_NOT_SET",
+      "CHECKOUT_NOT_FULLY_PAID",
+      /*
+       * The checkout's line items no longer match what was actually paid
+       * for (Saleor's own create_order_from_checkout enforces this now,
+       * for every completion path — see checkout_cleaner.py). Retrying
+       * won't fix a real content mismatch; a human needs to look at it.
+       */
+      "CONTENT_CHANGED_AFTER_PAYMENT",
+    ].includes(e.code ?? ""),
   );
 
   if (completeResult.error || (completeErrors.length > 0 && !alreadyCompleted)) {
