@@ -1,4 +1,5 @@
 import { getPool } from "@/lib/database";
+import { provisionSchema } from "@/lib/schema";
 
 /**
  * Concurrency guard for two tabs/requests paying the same checkout at once
@@ -12,12 +13,11 @@ import { getPool } from "@/lib/database";
  * request, not the longer async-reconciliation window (see
  * wsm-app-platform/docs/double-payment-gap.md for that gap).
  *
- * Required schema:
- *
- *   CREATE TABLE IF NOT EXISTS payment_attempt_lock (
- *     checkout_id TEXT PRIMARY KEY,
- *     locked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
- *   );
+ * The `payment_attempt_lock` table is provisioned at startup by
+ * `lib/schema.ts#provisionSchema` rather than a manual migration step: this
+ * guard fails *open*, so a missed migration silently disables double-payment
+ * protection while every request logs "relation payment_attempt_lock does not
+ * exist" and charges anyway.
  */
 
 const STALE_AFTER_MS = 30_000;
@@ -30,6 +30,12 @@ export class LockBusyError extends Error {
 }
 
 async function acquire(checkoutId: string): Promise<void> {
+  /*
+   * Normally a no-op resolved promise (startup already provisioned); this is
+   * the fallback for a boot where provisioning failed.
+   */
+  await provisionSchema();
+
   const pool = getPool();
 
   const inserted = await pool.query(
