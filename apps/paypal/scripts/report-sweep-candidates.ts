@@ -50,6 +50,8 @@
  *
  * The report goes to stdout; progress and warnings go to stderr, so
  * --format=json and --format=csv can be piped straight into other tools.
+ *
+ * cspell:words regclass MVCC
  */
 import { Pool, type PoolClient } from "pg";
 
