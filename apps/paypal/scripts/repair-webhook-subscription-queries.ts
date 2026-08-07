@@ -64,6 +64,18 @@ const logger = createMigrationScriptLogger("WebhookQueryRepair");
 const {
   values: { "saleor-api-url": saleorApiUrlArg, all: allInstalls, apply },
 } = parseArgs({
+
+  /*
+   * `pnpm run <script> -- --flag` forwards the literal `--` separator through to
+   * the script. parseArgs treats `--` as end-of-options and then rejects the
+   * real flags after it as positionals (ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL),
+   * which is exactly what the documented `pnpm repair:webhook-queries -- --saleor-api-url=…`
+   * invocation hits. This script takes no positionals, so drop any `--` before
+   * parsing — that keeps both the pnpm form and a direct `tsx …/repair-…ts --saleor-api-url=…`
+   * working.
+   */
+  args: process.argv.slice(2).filter((arg) => arg !== "--"),
+
   options: {
     "saleor-api-url": { type: "string" },
     all: { type: "boolean", default: false },
