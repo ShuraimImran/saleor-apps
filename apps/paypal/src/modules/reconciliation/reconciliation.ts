@@ -87,6 +87,24 @@ export interface PendingReconciliationArgs {
 export async function savePendingReconciliation(
   args: PendingReconciliationArgs,
 ): Promise<void> {
+  /*
+   * transaction.id was added to the TRANSACTION_PROCESS_SESSION subscription
+   * query for this feature. An install whose webhook was registered before
+   * that still sends payloads without it, so this arrives undefined and the
+   * insert dies on a NOT NULL violation whose error text says nothing about
+   * the real cause. Fail with the remedy instead of the symptom.
+   */
+  if (!args.transactionId) {
+    logger.error(
+      "Reconciliation row not saved: webhook payload has no transaction.id — this install's " +
+        "TRANSACTION_PROCESS_SESSION subscription query is stale. Run `pnpm migrate` (or reinstall " +
+        "the app) for this tenant. The reconciliation safety net is INACTIVE for it until then.",
+      { tenant: args.tenant, checkoutId: args.checkoutId, paypalOrderId: args.paypalOrderId },
+    );
+
+    return;
+  }
+
   try {
     await ensureSchema();
     await getPool().query(

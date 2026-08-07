@@ -6,6 +6,8 @@ import * as Sentry from "@sentry/nextjs";
 import { paymentGatewayInitializeSessionWebhookDefinition } from "@/app/api/webhooks/saleor/payment-gateway-initialize-session/webhook-definition";
 import { transactionCancelationRequestedWebhookDefinition } from "@/app/api/webhooks/saleor/transaction-cancelation-requested/webhook-definition";
 import { transactionChargeRequestedWebhookDefinition } from "@/app/api/webhooks/saleor/transaction-charge-requested/webhook-definition";
+import { transactionInitializeSessionWebhookDefinition } from "@/app/api/webhooks/saleor/transaction-initialize-session/webhook-definition";
+import { transactionProcessSessionWebhookDefinition } from "@/app/api/webhooks/saleor/transaction-process-session/webhook-definition";
 import { transactionRefundRequestedWebhookDefinition } from "@/app/api/webhooks/saleor/transaction-refund-requested/webhook-definition";
 import { env } from "@/lib/env";
 import { createInstrumentedGraphqlClient } from "@/lib/graphql-client";
@@ -81,9 +83,27 @@ const runMigrations = async () => {
 
           const baseUrl = new URL(targetUrl).origin;
 
+          /*
+           * Must list every webhook the manifest registers (see
+           * src/app/api/manifest/route.ts). A webhook missing here keeps the
+           * subscription query it was installed with forever — only a full
+           * reinstall would update it. That is how autocityclassic ended up
+           * sending TRANSACTION_PROCESS_SESSION payloads without
+           * transaction.id long after it was added to the fragment, which
+           * silently disabled the reconciliation safety net for that tenant
+           * (NOT NULL violation on paypal_reconciliation.transaction_id).
+           */
           const appWebhooks = [
             {
               ...paymentGatewayInitializeSessionWebhookDefinition.getWebhookManifest(baseUrl),
+              isActive: enabled,
+            },
+            {
+              ...transactionInitializeSessionWebhookDefinition.getWebhookManifest(baseUrl),
+              isActive: enabled,
+            },
+            {
+              ...transactionProcessSessionWebhookDefinition.getWebhookManifest(baseUrl),
               isActive: enabled,
             },
             {

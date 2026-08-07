@@ -59,12 +59,26 @@
  * module-load time and throws, so a static import would make even `--help` and
  * argument validation fail on a machine without credentials configured.
  */
+import type { AuthData } from "@saleor/app-sdk/APL";
 import type { Pool } from "pg";
 
 import type {
   PayPalReportedTransaction,
   SaleorRefsFromCustomField,
 } from "../src/modules/paypal/paypal-reporting-api";
+
+/**
+ * `app_name` this app's APL rows are stored under. Hardcoded to "PayPal" in
+ * src/lib/saleor-app.ts; overridable here only for odd deployments.
+ *
+ * Tenants are read straight from `saleor_app_configuration` rather than through
+ * `saleorApp.apl`, deliberately: the APL only talks to Postgres when
+ * `APL=postgres` is set, and otherwise silently falls back to FileAPL, whose
+ * `getAll()` returns [] when `.auth-data.json` is missing. That produces an
+ * empty report with no error — the script looks like it found no payments when
+ * it actually found no tenants to look at.
+ */
+const APP_NAME = process.env.SWEEP_APP_NAME ?? "PayPal";
 
 // ---------------------------------------------------------------- CLI
 
@@ -190,6 +204,88 @@ interface LocalRecords {
   /** Keyed by the Saleor TransactionItem id the row was created for. */
   bySaleorTransactionId: Map<string, { id: string; status: string; note: string | null }>;
   missingTable: boolean;
+}
+
+/**
+ * Installed tenants for this app, read straight from the shared APL table. The
+ * stored `configurations` blob *is* the AuthData the APL would have returned,
+ * so it is handed to the config repo unchanged.
+ *
+ * On finding none this throws with the `app_name` inventory that *is* present,
+ * rather than returning an empty list — an audit that silently reports "no
+ * payments" because it had no tenants to query is worse than one that refuses
+ * to run.
+ */
+async function loadTenants(pool: Pool): Promise<AuthData[]> {
+  const missingEnv = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"].filter(
+    (key) => !process.env[key],
+  );
+
+  if (missingEnv.length > 0) {
+    throw new Error(`Missing required environment variables: ${missingEnv.join(", ")}.`);
+  }
+
+  note(`DB ${process.env.DB_USER}@${process.env.DB_HOST}/${process.env.DB_NAME} · app_name=${APP_NAME}`);
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN TRANSACTION READ ONLY");
+
+    const { rows: present } = await client.query(
+      `SELECT to_regclass('saleor_app_configuration') IS NOT NULL AS present`,
+    );
+
+    if (present[0]?.present !== true) {
+      throw new Error(
+        `Table saleor_app_configuration does not exist in ${process.env.DB_NAME} — ` +
+          `this database has never had the app installed against it. Wrong DB_NAME?`,
+      );
+    }
+
+    const { rows } = await client.query(
+      `SELECT tenant, configurations
+         FROM saleor_app_configuration
+        WHERE app_name = $1 AND is_active = TRUE`,
+      [APP_NAME],
+    );
+
+    const tenants = rows
+      .filter((row) => row.configurations?.token)
+      .map((row) => row.configurations as AuthData);
+
+    if (tenants.length === 0) {
+      const { rows: inventory } = await client.query(
+        `SELECT app_name,
+                COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE is_active) ::int AS active
+           FROM saleor_app_configuration
+          GROUP BY app_name
+          ORDER BY app_name`,
+      );
+
+      const listing =
+        inventory.length === 0
+          ? "    (the table is empty — no app is installed against this database)"
+          : inventory
+              .map(
+                (entry: { app_name: string; total: number; active: number }) =>
+                  `    ${entry.app_name}: ${entry.active} active of ${entry.total}`,
+              )
+              .join("\n");
+
+      throw new Error(
+        `No active installations found for app_name="${APP_NAME}".\n` +
+          `  app_name values present in ${process.env.DB_NAME}:\n${listing}\n` +
+          `  If the app is registered under a different name, set SWEEP_APP_NAME to match.`,
+      );
+    }
+
+    return tenants;
+  } finally {
+    await client.query("COMMIT").catch(() => {});
+    client.release();
+  }
 }
 
 /**
@@ -509,9 +605,8 @@ async function main(): Promise<void> {
   const findings: Finding[] = [];
 
   // Deferred so --help and bad arguments don't require a configured env.
-  const [{ getPool }, { saleorApp }, { paypalConfigRepo }, reporting] = await Promise.all([
+  const [{ getPool }, { paypalConfigRepo }, reporting] = await Promise.all([
     import("../src/lib/database"),
-    import("../src/lib/saleor-app"),
     import("../src/modules/paypal/configuration/paypal-config-repo"),
     import("../src/modules/paypal/paypal-reporting-api"),
   ]);
@@ -519,7 +614,7 @@ async function main(): Promise<void> {
 
   note(`Auditing ${options.from.toISOString()} → ${options.to.toISOString()}`);
 
-  const tenants = await saleorApp.apl.getAll();
+  const tenants = await loadTenants(getPool());
 
   note(`Found ${tenants.length} installed tenant(s).`);
 

@@ -19,6 +19,7 @@
     "migrate": "pnpm tsx --env-file-if-exists=.env ./scripts/run-webhooks-migration.ts",
     "migrate:database": "pnpm tsx --env-file-if-exists=.env ./scripts/migrate-database.ts",
     "migrate:dry-run": "pnpm tsx --env-file-if-exists=.env ./scripts/run-webhooks-migration.ts --dry-run",
+    "repair:webhook-queries": "pnpm tsx --env-file-if-exists=.env ./scripts/repair-webhook-subscription-queries.ts",
     "report:sweep-candidates": "pnpm tsx --env-file-if-exists=.env ./scripts/report-sweep-candidates.ts",
     "report:untracked-transactions": "pnpm tsx --env-file-if-exists=.env ./scripts/report-untracked-gateway-transactions.ts",
     "reset-admin-password": "pnpm tsx --env-file-if-exists=.env ./scripts/reset-admin-password.ts",
