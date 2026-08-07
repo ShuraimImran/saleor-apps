@@ -21,7 +21,17 @@ export class PartnerReferralBuilder {
             integration_method: "PAYPAL",
             integration_type: "THIRD_PARTY",
             third_party_details: {
-              features: ["PAYMENT", "REFUND"], // Standard features
+              /*
+               * ADVANCED_TRANSACTIONS_SEARCH grants the partner access to the
+               * Transaction Search / Reporting API (GET /v1/reporting/transactions)
+               * on the merchant's behalf. It is required by the reconciliation
+               * recovery audit (scripts/report-untracked-gateway-transactions.ts via
+               * src/modules/paypal/paypal-reporting-api.ts) — the only gateway-first
+               * way to find a real PayPal capture this app has no local record of.
+               * Without it that call returns 403 NOT_AUTHORIZED. Merchants onboarded
+               * before this feature was added must re-consent to grant it.
+               */
+              features: ["PAYMENT", "REFUND", "ADVANCED_TRANSACTIONS_SEARCH"],
             },
           },
         },
