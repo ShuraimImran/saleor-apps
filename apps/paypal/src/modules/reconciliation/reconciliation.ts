@@ -105,6 +105,19 @@ export async function savePendingReconciliation(
     return;
   }
 
+  if (!args.checkoutId || !args.paypalOrderId) {
+    logger.error(
+      "Reconciliation save skipped — missing a required field, would have violated a NOT NULL constraint",
+      {
+        checkoutId: args.checkoutId,
+        transactionId: args.transactionId,
+        paypalOrderId: args.paypalOrderId,
+      },
+    );
+
+    return;
+  }
+
   try {
     await ensureSchema();
     await getPool().query(
