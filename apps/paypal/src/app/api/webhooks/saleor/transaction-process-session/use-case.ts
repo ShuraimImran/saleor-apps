@@ -66,6 +66,33 @@ export class TransactionProcessSessionUseCase {
   }): Promise<UseCaseExecuteResult> {
     const { authData, event } = args;
 
+    /*
+     * Fail closed, before any money moves: this reconciliation row is the
+     * only thing standing between an ambiguous capture and a permanently
+     * lost order (see reconciliation.ts). A cleaner log message after the
+     * fact doesn't fix that — if we don't have what we need to record this
+     * attempt, we must not attempt the charge at all. Confirmed live
+     * (2026-08-05): event.transaction.id came back empty on one real
+     * request despite the query selecting it, and the capture proceeded
+     * anyway with reconciliation silently unrecorded.
+     */
+    if (!event.transaction?.id || !event.sourceObject?.id) {
+      this.logger.error(
+        "Refusing to process — missing transaction or checkout id, cannot guarantee reconciliation",
+        {
+          hasTransactionId: !!event.transaction?.id,
+          hasSourceObjectId: !!event.sourceObject?.id,
+        },
+      );
+
+      return err(
+        new MalformedRequestResponse(
+          appContextContainer.getContextValue(),
+          new BaseError("Missing transaction or checkout id in transaction-process-session event"),
+        ),
+      );
+    }
+
     this.logger.info("Processing transaction process session event", {
       transactionId: event.transaction.pspReference,
       actionType: event.action.actionType,
