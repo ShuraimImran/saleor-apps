@@ -801,6 +801,14 @@ export class TransactionInitializeSessionUseCase {
      * Parse vaulting data from event.data (passed by frontend)
      */
     const vaultingData = parseVaultingData((event as any).data);
+    // Fall back to Saleor's own top-level idempotencyKey (the transactionInitialize
+    // mutation's `idempotencyKey` arg, exposed on the webhook event separately from
+    // `data`) when the frontend didn't nest one in `data.idempotencyKey`. Saleor
+    // already fetches this field in our subscription query; we just weren't
+    // reading it here.
+    if (!vaultingData.idempotencyKey && typeof (event as any).idempotencyKey === "string") {
+      vaultingData.idempotencyKey = (event as any).idempotencyKey;
+    }
     let vaultCustomerId: string | undefined;
 
     // Default to "card" for backward compatibility with Phase 1
