@@ -21,7 +21,7 @@ import {
   getChannelIdFromRequestedEventPayload,
   getTransactionFromRequestedEventPayload,
 } from "@/modules/saleor/transaction-requested-event-helpers";
-import { mapPayPalErrorToApiError } from "@/modules/paypal/paypal-api-error";
+import { PayPalApiError, mapPayPalErrorToApiError } from "@/modules/paypal/paypal-api-error";
 import { createPayPalMoney } from "@/modules/paypal/paypal-money";
 import {
   ChargeActionRequiredResult,
@@ -344,6 +344,35 @@ export class TransactionInitializeSessionUseCase {
       paypalEnv: config.environment || config.getPayPalEnvValue(),
     };
     appContextContainer.set(appContext);
+
+    /*
+     * WSM6-1569, fail closed: never initiate a PayPal order for a checkout
+     * that has no email. Saleor's checkoutComplete refuses with
+     * EMAIL_NOT_SET afterwards, so the buyer is charged and no order is
+     * ever created. Storefronts gate this too, but this is the one
+     * chokepoint every storefront shape shares. Order-sourced transactions
+     * (refunds, admin captures) carry userEmail instead and are untouched.
+     */
+    if (event.sourceObject.__typename === "Checkout" && !event.sourceObject.email) {
+      this.logger.error(
+        "Refusing to initialize payment: checkout has no email, checkoutComplete would fail EMAIL_NOT_SET (WSM6-1569)",
+        {
+          checkoutId: event.sourceObject.id,
+          transactionId: event.transaction.id,
+        },
+      );
+
+      return ok(
+        new TransactionInitializeSessionUseCaseResponses.Failure({
+          transactionResult:
+            event.action.actionType === "CHARGE"
+              ? new ChargeFailureResult()
+              : new AuthorizationFailureResult(),
+          error: new PayPalApiError("Checkout email is not set"),
+          appContext: appContextContainer.getContextValue(),
+        }),
+      );
+    }
 
     // Fetch BN code and partner fee percentage from global config
     let bnCode: string | undefined;
